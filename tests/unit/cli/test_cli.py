@@ -2033,3 +2033,41 @@ def test_scan_fail_on_accepts_lowercase(tmp_path: Path) -> None:
     result = CliRunner().invoke(cli, ["scan", str(proj), "--fail-on", "error"])
     assert result.exit_code == 1, result.output
     assert "--fail-on ERROR" in result.stderr
+
+
+def test_scan_warns_when_tree_changed_during_scan(tmp_path: Path, monkeypatch) -> None:
+    # The concurrent-writer FACT must reach CLI stderr as a warning (the
+    # NESTED-SCAN-ROOT echo pattern): a pre-commit hook log then names the true
+    # culprit the moment pre-commit blames the hook (2026-07-03 elspeth RCA).
+    from dataclasses import replace as _dc_replace
+
+    from wardline.core.finding import Finding, Kind, Location, Severity
+    from wardline.core.run import run_scan as _real_run_scan
+
+    def scan_with_mutation_fact(*args, **kwargs):
+        result = _real_run_scan(*args, **kwargs)
+        fact = Finding(
+            rule_id="WLN-ENGINE-TREE-CHANGED-DURING-SCAN",
+            message=(
+                "1 file(s) changed on disk while the scan ran (concurrent writer): app.py — "
+                "findings reflect each file as first read. If this scan ran as a pre-commit "
+                "hook, pre-commit's files-modified check may fail the hook even though "
+                "wardline's gate verdict is unaffected; retry once the concurrent writer settles."
+            ),
+            severity=Severity.NONE,
+            kind=Kind.FACT,
+            location=Location(path="app.py"),
+            fingerprint="f" * 64,
+            properties={"files_changed": ["app.py"]},
+        )
+        return _dc_replace(result, findings=[*result.findings, fact])
+
+    monkeypatch.setattr("wardline.cli.scan.run_scan", scan_with_mutation_fact)
+    project = tmp_path / "proj"
+    project.mkdir()
+    (project / "app.py").write_text("def ok():\n    return 1\n", encoding="utf-8")
+    out = tmp_path / "o.jsonl"
+    result = CliRunner().invoke(cli, ["scan", str(project), "--output", str(out)])
+    assert result.exit_code == 0, result.output
+    assert "warning: 1 file(s) changed on disk while the scan ran" in result.output
+    assert "pre-commit's files-modified check" in result.output

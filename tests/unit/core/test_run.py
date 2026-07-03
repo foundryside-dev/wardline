@@ -1094,3 +1094,69 @@ def test_gate_decision_passed_over_zero_files_unconstructible() -> None:
             fail_on_unanalyzed=True,
             files_scanned=3,
         )
+
+
+# --- concurrent-writer detection (WLN-ENGINE-TREE-CHANGED-DURING-SCAN) ----------------
+# A shared checkout under pre-commit: another session writing files during the scan
+# window gets the HOOK blamed by pre-commit's files-modified check (2026-07-03 elspeth
+# RCA). The engine watches the discovered inventory (stat snapshot at discovery,
+# re-stat after analysis) and surfaces any mutation as a non-gating FACT so every
+# surface (CLI warning, MCP result, artifact) can self-diagnose the harness failure.
+
+
+def _clean_two_file_project(tmp_path: Path) -> Path:
+    project = tmp_path / "proj"
+    project.mkdir()
+    (project / "a.py").write_text("def f():\n    return 1\n", encoding="utf-8")
+    (project / "b.py").write_text("def g():\n    return 2\n", encoding="utf-8")
+    return project
+
+
+def test_run_scan_flags_file_changed_during_scan(tmp_path: Path) -> None:
+    project = _clean_two_file_project(tmp_path)
+    mutated: list[str] = []
+
+    def mutate_mid_scan(event: dict) -> None:
+        if event.get("phase") == "analyzing" and not mutated:
+            # concurrent writer: append to a DIFFERENT tracked file mid-window
+            with (project / "a.py").open("a", encoding="utf-8") as fh:
+                fh.write("# concurrent edit\n")
+            mutated.append("a.py")
+
+    result = run_scan(project, progress_callback=mutate_mid_scan)
+
+    facts = [f for f in result.findings if f.rule_id == "WLN-ENGINE-TREE-CHANGED-DURING-SCAN"]
+    assert len(facts) == 1, [f.rule_id for f in result.findings]
+    fact = facts[0]
+    assert fact.kind is Kind.FACT
+    assert fact.severity is Severity.NONE
+    assert fact.properties["files_changed"] == ["a.py"]
+    assert "a.py" in fact.message
+    # the self-diagnosis payload: names the pre-commit consequence explicitly
+    assert "pre-commit" in fact.message
+    # never gates: an armed severity gate still passes
+    decision = gate_decision(result, Severity.ERROR)
+    assert decision.tripped is False
+    assert decision.verdict == "PASSED"
+
+
+def test_run_scan_no_fact_when_tree_quiescent(tmp_path: Path) -> None:
+    project = _clean_two_file_project(tmp_path)
+    result = run_scan(project)
+    assert not [f for f in result.findings if f.rule_id == "WLN-ENGINE-TREE-CHANGED-DURING-SCAN"]
+
+
+def test_run_scan_flags_file_deleted_during_scan(tmp_path: Path) -> None:
+    project = _clean_two_file_project(tmp_path)
+
+    def delete_after_analysis(event: dict) -> None:
+        # phase "analyzed" fires after every file was read — deletion is then purely
+        # a tree mutation, never a read failure
+        if event.get("phase") == "analyzed" and (project / "b.py").exists():
+            (project / "b.py").unlink()
+
+    result = run_scan(project, progress_callback=delete_after_analysis)
+
+    facts = [f for f in result.findings if f.rule_id == "WLN-ENGINE-TREE-CHANGED-DURING-SCAN"]
+    assert len(facts) == 1
+    assert facts[0].properties["files_changed"] == ["b.py"]

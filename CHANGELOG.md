@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Concurrent-writer detection**: the scan now stat-snapshots the discovered file
+  inventory at discovery and re-checks it after analysis. If any scanned file was
+  written, truncated, or deleted while the scan ran, it emits a non-gating
+  `WLN-ENGINE-TREE-CHANGED-DURING-SCAN` FACT (and a CLI `warning:`) naming the files
+  and the consequence — findings reflect each file as first read, and a pre-commit
+  harness may fail the hook via its own files-modified check even though wardline's
+  gate verdict is unaffected. Motivated by the 2026-07-03 elspeth RCA
+  (`docs/handoffs/2026-07-03-elspeth-precommit-intermittent-rca.md`), where exactly
+  that pre-commit behavior on a shared checkout was misread as a wardline failure.
+
 ### Security
 - **HTTP redirects are never followed on any credential-bearing transport.** urllib's
   default handler re-sends every non-`Content-*` header — `Authorization: Bearer` and

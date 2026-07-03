@@ -9,7 +9,7 @@ identical by construction — same findings, same ``active`` count, same gate.
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Callable
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import date
 from pathlib import Path
@@ -50,6 +50,36 @@ def _fp(*parts: str) -> str:
     digest = hashlib.sha256()
     digest.update("\x00".join(parts).encode("utf-8"))
     return digest.hexdigest()
+
+
+def _stat_snapshot(files: Sequence[Path]) -> dict[Path, tuple[int, int] | None]:
+    """``(st_mtime_ns, st_size)`` per discovered file (``None`` where stat fails) —
+    the concurrent-writer watch baseline, taken before analysis reads any file."""
+    snapshot: dict[Path, tuple[int, int] | None] = {}
+    for file in files:
+        try:
+            st = file.stat()
+            snapshot[file] = (st.st_mtime_ns, st.st_size)
+        except OSError:
+            snapshot[file] = None
+    return snapshot
+
+
+def _changed_during_scan(snapshot: Mapping[Path, tuple[int, int] | None], root: Path) -> list[str]:
+    """Repo-relative paths whose stat no longer matches *snapshot* — files written,
+    truncated, or deleted while the scan ran. Detection only sees the DISCOVERED
+    inventory: a concurrent write to a file outside it (a non-source tracked file)
+    is invisible here, which is why the FACT's message hedges with "may"."""
+    changed: list[str] = []
+    for file, before in snapshot.items():
+        try:
+            st = file.stat()
+            after: tuple[int, int] | None = (st.st_mtime_ns, st.st_size)
+        except OSError:
+            after = None
+        if after != before:
+            changed.append(_relpath(file, root))
+    return sorted(changed)
 
 
 def _relpath(file: Path, root: Path) -> str:
@@ -354,6 +384,9 @@ def run_scan(
         warnings.simplefilter("always")
         files = discover(root, cfg, confine_to_root=confine_to_root, suffixes=suffixes)
         captured_warnings = list(w)
+    # Concurrent-writer watch baseline: taken at discovery, BEFORE any callback or
+    # analysis read, so every later mutation of the inventory is inside the window.
+    tree_watch = _stat_snapshot(files)
     if progress_callback is not None:
         progress_callback({"phase": "discovered", "files_discovered": len(files)})
     for warn in captured_warnings:
@@ -423,6 +456,36 @@ def run_scan(
                 "files_analyzed": len(analyze_files),
                 "findings": len(raw),
             }
+        )
+    # Concurrent-writer detection (2026-07-03 elspeth RCA, docs/handoffs/): on a shared
+    # checkout under pre-commit, a second session writing files during the scan window
+    # gets the HOOK failed by pre-commit's diff-before/diff-after check — with output
+    # indistinguishable from a healthy run unless the scan itself says the tree moved.
+    # Surface it as a non-gating FACT (the NESTED-SCAN-ROOT carrier pattern) so the CLI
+    # warning, the MCP result, and the artifact all carry the self-diagnosis. Findings
+    # for a mutated file reflect its content as first read; that is scan-accuracy
+    # metadata, never an under-scan, so it does not count toward unanalyzed.
+    changed_during_scan = _changed_during_scan(tree_watch, root)
+    if changed_during_scan:
+        preview = ", ".join(changed_during_scan[:5])
+        overflow = len(changed_during_scan) - 5
+        suffix = f", … ({overflow} more)" if overflow > 0 else ""
+        raw.append(
+            Finding(
+                rule_id="WLN-ENGINE-TREE-CHANGED-DURING-SCAN",
+                message=(
+                    f"{len(changed_during_scan)} file(s) changed on disk while the scan ran "
+                    f"(concurrent writer): {preview}{suffix} — findings reflect each file as "
+                    "first read. If this scan ran as a pre-commit hook, pre-commit's "
+                    "files-modified check may fail the hook even though wardline's gate "
+                    "verdict is unaffected; retry once the concurrent writer settles."
+                ),
+                severity=Severity.NONE,
+                kind=Kind.FACT,
+                location=Location(path=changed_during_scan[0]),
+                fingerprint=_fp("WLN-ENGINE-TREE-CHANGED-DURING-SCAN"),
+                properties={"files_changed": changed_during_scan},
+            )
         )
     for warn in captured_warnings:
         msg = str(warn.message)

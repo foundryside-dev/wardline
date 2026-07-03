@@ -623,6 +623,13 @@ def scan(
     nested = next((f for f in result.findings if f.rule_id == "WLN-ENGINE-NESTED-SCAN-ROOT"), None)
     if nested is not None:
         click.echo(f"warning: {nested.message}", err=True)
+    # Concurrent-writer self-diagnosis (2026-07-03 elspeth RCA): when the scanned tree
+    # mutated mid-scan, a pre-commit harness may fail this hook via its files-modified
+    # check with output that otherwise looks healthy. The FACT carries the full
+    # explanation — reuse it verbatim so CLI and MCP say the same.
+    mutated = next((f for f in result.findings if f.rule_id == "WLN-ENGINE-TREE-CHANGED-DURING-SCAN"), None)
+    if mutated is not None:
+        click.echo(f"warning: {mutated.message}", err=True)
     # A discovered-but-not-analysed file is a silent under-scan; never hide it.
     if s.unanalyzed:
         click.echo(
