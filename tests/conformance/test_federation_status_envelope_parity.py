@@ -507,6 +507,26 @@ _GOLDEN_LOOMWEAVE_DEFAULT: dict[str, Any] = {
 }
 
 
+def test_result_builder_disabled_reason_is_partial_aware() -> None:
+    # wardline-7924d67d3b: the result-based builder feeds the CLI agent-summary,
+    # scan-job status.json (whose terminal `error` field persists this string), and
+    # scan_file_findings. A mid-emit drop with chunks landed must not flatten to
+    # "filigree unreachable" — the counts/failures alongside already say otherwise.
+    mid_drop = EmitResult(
+        reachable=False,
+        created=2,
+        updated=1,
+        failures=(FailedFinding(reason="partial", detail="chunk failed at transport layer"),),
+        token_sent=True,
+        url="http://x",
+        chunks_landed=1,
+    )
+    block = fs.filigree_emit_status(mid_drop, configured=True, include_destination=True)
+    reason = str(block["disabled_reason"])
+    assert "unreachable" not in reason
+    assert "mid-emit" in reason and "1 chunk(s) landed" in reason
+
+
 def test_filigree_builder_bytes_are_frozen() -> None:
     assert _eq(fs.filigree_emit_status(None, configured=False, include_destination=True), _GOLDEN_FILIGREE_NONE)
     assert _eq(fs.filigree_emit_status(_OK, configured=True, include_destination=True), _GOLDEN_FILIGREE_OK)

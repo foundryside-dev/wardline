@@ -610,7 +610,7 @@ def _record_pending_partial_failures(
 
 
 def filigree_disabled_reason(
-    *, reachable: bool, status: int | None, token_sent: bool = False, url: str | None = None
+    *, reachable: bool, status: int | None, token_sent: bool = False, url: str | None = None, chunks_landed: int = 0
 ) -> str | None:
     """The ``disabled_reason`` for an emit attempt, or None when Filigree was reached.
 
@@ -624,26 +624,35 @@ def filigree_disabled_reason(
     disagrees with the status (the inconsistent triple the standalone signature once allowed).
     ``reachable`` remains an input because ``status is None`` is ambiguous on its own — it
     means EITHER a 2xx success (reachable) OR a transport failure (unreachable).
+
+    ``chunks_landed > 0`` marks a MID-BATCH failure (wardline-7924d67d3b): earlier chunks
+    were ingested (their mark_unseen sweeps ran), so a flat "filigree unreachable" — which
+    scan_jobs persists verbatim as the terminal job ``error`` — would contradict the counts
+    beside it. The transport rung becomes "connection dropped mid-emit"; the status rungs
+    keep their diagnosis and append the landed-chunk truth.
     """
     if reachable:
         return None
     diagnostic_url = redact_url_for_diagnostics(url)
     at = f" at {diagnostic_url}" if diagnostic_url else ""
+    partial = f"; {chunks_landed} chunk(s) landed before the failure" if chunks_landed else ""
     if status in (401, 403):
         # 403 → token present but lacks access (a token won't help). 401 → split by whether a
         # token was actually SENT: absent (set one) vs rejected (the value is wrong). The old
         # flat "set WEFT_FEDERATION_TOKEN" implied absence even when a token was sent and
         # rejected — the C-7 misdiagnosis (weft-23574069a1).
         if status == 403:
-            return f"filigree forbidden (403){at}; token present but lacks access / blocked"
+            return f"filigree forbidden (403){at}; token present but lacks access / blocked{partial}"
         if token_sent:
             return (
                 f"filigree rejected the token (401){at}; a token WAS sent but its value is wrong — "
-                "align WEFT_FEDERATION_TOKEN (env or .env) to the canonical federation token"
+                f"align WEFT_FEDERATION_TOKEN (env or .env) to the canonical federation token{partial}"
             )
-        return f"filigree auth-rejected (401){at}; no token sent — set WEFT_FEDERATION_TOKEN (env or .env)"
+        return f"filigree auth-rejected (401){at}; no token sent — set WEFT_FEDERATION_TOKEN (env or .env){partial}"
     if status is not None:
-        return f"filigree server error ({status}){at}"
+        return f"filigree server error ({status}){at}{partial}"
+    if chunks_landed:
+        return f"filigree connection dropped mid-emit ({chunks_landed} chunk(s) landed before the failure){at}"
     return f"filigree unreachable{at}"
 
 

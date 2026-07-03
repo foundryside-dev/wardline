@@ -426,6 +426,10 @@ def test_mid_stream_soft_failure_preserves_prior_counts_and_records_pending(stat
     assert res.created == 2
     assert res.updated == 0
     assert res.failed == 1
+    # The landed-chunk count is the partial-emit discriminator every human surface
+    # keys on (wardline-7924d67d3b) — assert it on the 401/403/5xx paths too, not
+    # just the transport-drop path.
+    assert res.chunks_landed == 1
     assert [(failure.reason, failure.fingerprint) for failure in res.failures] == [
         ("partial", f"{FINGERPRINT_SCHEME}:{'c' * 64}")
     ]
@@ -567,6 +571,26 @@ def test_disabled_reason_403_and_unreachable_unchanged_in_shape() -> None:
     assert unreachable is not None and "unreachable" in unreachable and url in unreachable
     # reached/success -> no disabled_reason
     assert filigree_disabled_reason(reachable=True, status=None) is None
+
+
+def test_disabled_reason_partial_names_landed_chunks() -> None:
+    url = "http://h/api/weft/scan-results"
+    # Mid-emit transport drop with chunks landed: "unreachable" is only the
+    # first-contact truth — the persisted reason (scan-job terminal `error` field,
+    # wardline-7924d67d3b) must name the partial emit instead.
+    dropped = filigree_disabled_reason(reachable=False, status=None, url=url, chunks_landed=1)
+    assert dropped is not None
+    assert "unreachable" not in dropped
+    assert "mid-emit" in dropped and "1 chunk(s) landed" in dropped and url in dropped
+    # Mid-batch 5xx / auth keep their ladder diagnosis and append the partial truth.
+    server = filigree_disabled_reason(reachable=False, status=503, url=url, chunks_landed=2)
+    assert server is not None and "503" in server and "2 chunk(s) landed" in server
+    auth = filigree_disabled_reason(reachable=False, status=401, token_sent=True, url=url, chunks_landed=1)
+    assert auth is not None and "401" in auth and "1 chunk(s) landed" in auth
+    # Zero chunks landed: the first-contact ladder bytes are unchanged.
+    assert filigree_disabled_reason(reachable=False, status=None, url=url, chunks_landed=0) == (
+        filigree_disabled_reason(reachable=False, status=None, url=url)
+    )
 
 
 def test_diagnostic_url_redaction_removes_credentials_query_and_fragment() -> None:
