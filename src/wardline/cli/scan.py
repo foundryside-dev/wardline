@@ -523,6 +523,23 @@ def scan(
     if emit_result is not None:
         logged_filigree_url = _redact_url_for_log(filigree_url)
         if not emit_result.reachable:
+            # PDR-0023 at the human surface: a mid-batch failure is NOT first-contact
+            # unreachability. chunks_landed > 0 means Filigree already ingested earlier
+            # chunks (rows created/updated, their mark_unseen sweeps ran), so "findings
+            # written locally only" would misreport a real remote mutation. Render the
+            # partial counts + warnings in EVERY soft-failure sub-branch (auth / server
+            # error / transport alike) — the agent-facing status blocks already carry
+            # this truth; the operator line must not contradict them.
+            if emit_result.chunks_landed:
+                locality = (
+                    f"Partial emit: {emit_result.chunks_landed} chunk(s) landed before the failure — "
+                    f"{emit_result.created} created / {emit_result.updated} updated remotely; "
+                    f"{emit_result.failed} finding(s) did not land — re-emit to reconcile."
+                )
+                if emit_result.warnings:
+                    locality += f" {len(emit_result.warnings)} warning(s): " + "; ".join(emit_result.warnings)
+            else:
+                locality = "Findings written locally only."
             if emit_result.auth_rejected:
                 # Reachable but refused — actionable, NOT "could not reach" (dogfood #5).
                 # Split 401 (no/bad token → set one) from 403 (token present but lacks
@@ -530,8 +547,7 @@ def scan(
                 if emit_result.status == 403:
                     click.echo(
                         f"warning: Filigree returned 403 (forbidden) at {logged_filigree_url}; the token is "
-                        "present but lacks access (scope/permission) or the request is blocked. "
-                        "Findings written locally only.",
+                        f"present but lacks access (scope/permission) or the request is blocked. {locality}",
                         err=True,
                     )
                 elif emit_result.token_sent:
@@ -540,19 +556,27 @@ def scan(
                     click.echo(
                         f"warning: Filigree rejected the token (401) at {logged_filigree_url}; a token WAS sent but "
                         "its value is wrong — align WEFT_FEDERATION_TOKEN (env or .env) to the canonical "
-                        "federation token. Findings written locally only.",
+                        f"federation token. {locality}",
                         err=True,
                     )
                 else:
                     click.echo(
                         f"warning: Filigree returned 401 (auth rejected) at {logged_filigree_url}; no token was sent — "
-                        "set WEFT_FEDERATION_TOKEN (env or .env) to the project token. Findings written locally only.",
+                        f"set WEFT_FEDERATION_TOKEN (env or .env) to the project token. {locality}",
                         err=True,
                     )
             elif emit_result.status is not None:
                 click.echo(
-                    f"warning: Filigree returned {emit_result.status} (server error) at {logged_filigree_url}; "
-                    "findings written locally only.",
+                    f"warning: Filigree returned {emit_result.status} (server error) at {logged_filigree_url}. "
+                    f"{locality}",
+                    err=True,
+                )
+            elif emit_result.chunks_landed:
+                # status=None + chunks landed = the connection dropped MID-emit. "could
+                # not reach" is only the first-contact truth; naming it here would send
+                # the operator down the wrong (connectivity-from-zero) path.
+                click.echo(
+                    f"warning: Filigree connection dropped mid-emit at {logged_filigree_url}. {locality}",
                     err=True,
                 )
             else:
@@ -583,10 +607,24 @@ def scan(
         logged_loomweave_url = _redact_url_for_log(loomweave_url)
         if not loomweave_result.reachable:
             reason = loomweave_result.disabled_reason or "unreachable"
-            click.echo(
-                f"warning: Loomweave taint store not written at {logged_loomweave_url} ({reason}); scan unaffected.",
-                err=True,
-            )
+            if loomweave_result.written:
+                # Mid-batch soft failure (outage/403 on a later chunk): earlier chunks
+                # ARE committed (per-entity replace; `written` counts only chunks that
+                # landed before the failure — the write_taint_facts contract), so the
+                # flat "not written" would hide a real store mutation. The write is
+                # whole-batch idempotent — a full re-run reconciles.
+                click.echo(
+                    f"warning: Loomweave taint store partially written at {logged_loomweave_url} ({reason}): "
+                    f"{loomweave_result.written} taint fact(s) committed before the failure — "
+                    "re-run the scan to reconcile; scan unaffected.",
+                    err=True,
+                )
+            else:
+                click.echo(
+                    f"warning: Loomweave taint store not written at {logged_loomweave_url} ({reason}); "
+                    "scan unaffected.",
+                    err=True,
+                )
         else:
             line = f"wrote {loomweave_result.written} taint fact(s) to {logged_loomweave_url}"
             if loomweave_result.unresolved_qualnames:

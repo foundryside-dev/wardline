@@ -39,9 +39,9 @@ _ANCHORS: tuple[tuple[str, int, str], ...] = (
     ("src/wardline/core/run.py", 659, "active=sum"),
     ("src/wardline/core/run.py", 758, "honors_suppressions"),
     # src/wardline/cli/scan.py — CLI summary line + gate stderr
-    ("src/wardline/cli/scan.py", 616, "suppressed"),
-    ("src/wardline/cli/scan.py", 617, "{s.active} active"),
-    ("src/wardline/cli/scan.py", 676, "gate: FAILED"),
+    ("src/wardline/cli/scan.py", 654, "suppressed"),
+    ("src/wardline/cli/scan.py", 655, "{s.active} active"),
+    ("src/wardline/cli/scan.py", 714, "gate: FAILED"),
     # src/wardline/mcp/server.py — MCP scan summary + gate block
     ("src/wardline/mcp/server.py", 943, '"total": result.summary.total'),
     ("src/wardline/mcp/server.py", 944, '"active": result.summary.active'),
