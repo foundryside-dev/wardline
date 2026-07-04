@@ -453,16 +453,32 @@ class WardlineAnalyzer:
             return result
 
         def _iter_l2_body_nodes(node: ast.FunctionDef | ast.AsyncFunctionDef) -> Iterator[ast.AST]:
-            def walk(current: ast.AST) -> Iterator[ast.AST]:
-                for child in ast.iter_child_nodes(current):
-                    if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
+            stack: list[ast.AST] = []
+
+            def push_children(current: ast.AST) -> None:
+                children = []
+                for field in current._fields:
+                    try:
+                        val = getattr(current, field)
+                    except AttributeError:
                         continue
-                    yield child
-                    yield from walk(child)
+                    if isinstance(val, list):
+                        for item in val:
+                            if isinstance(item, ast.AST):
+                                children.append(item)
+                    elif isinstance(val, ast.AST):
+                        children.append(val)
+                stack.extend(reversed(children))
 
             for stmt in node.body:
                 yield stmt
-                yield from walk(stmt)
+                push_children(stmt)
+                while stack:
+                    current = stack.pop()
+                    if isinstance(current, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
+                        continue
+                    yield current
+                    push_children(current)
 
         def _assignment_targets(node: ast.AST) -> list[ast.expr]:
             if isinstance(node, ast.Assign):
