@@ -37,7 +37,7 @@ loomweave = ["wardline[scanner]", "blake3>=1.0"]
 # The frontend plugs into the scanner pipeline (run_scan, the `--lang rust` click CLI)
 # and loads rust_taint.yaml, so it pulls `wardline[scanner]` (pyyaml/click/jsonschema):
 # `pip install wardline[rust]` is then usable standalone, not merely additive to [scanner].
-rust = ["wardline[scanner]", "tree-sitter>=0.25,<0.26", "tree-sitter-rust==0.24.2"]
+rust = ["wardline[scanner]", "tree-sitter>=0.25,<0.27", "tree-sitter-rust==0.24.2"]
 # The SP5 LLM triage judge is dependency-free (stdlib urllib -> OpenRouter); no extra needed.
 
 [dependency-groups]
