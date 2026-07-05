@@ -93,6 +93,25 @@ def build_import_alias_map(
     return alias_map
 
 
+def _reversed_children(node: ast.AST) -> list[ast.AST]:
+    """Return a list of AST children in reverse order, extracting directly from _fields
+    to avoid ast.iter_child_nodes overhead in hot paths."""
+    children: list[ast.AST] = []
+    for field in node._fields:
+        try:
+            value = getattr(node, field)
+        except AttributeError:
+            continue
+        if isinstance(value, list):
+            for item in value:
+                if isinstance(item, ast.AST):
+                    children.append(item)
+        elif isinstance(value, ast.AST):
+            children.append(value)
+    children.reverse()
+    return children
+
+
 def iter_calls_in_function_body(
     node: ast.FunctionDef | ast.AsyncFunctionDef,
 ) -> Iterator[ast.Call]:
@@ -104,39 +123,39 @@ def iter_calls_in_function_body(
     Header expressions that execute in the enclosing scope (decorators, default
     values, base classes, metaclass keywords) are still attributed to ``node``.
     """
+    stack: list[ast.AST] = list(reversed(node.body))
 
-    def walk_node(current: ast.AST) -> Iterator[ast.Call]:
+    while stack:
+        current = stack.pop()
+
         if isinstance(current, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            for decorator in current.decorator_list:
-                yield from walk_node(decorator)
-            yield from _walk_argument_defaults(current.args)
-            return
+            args = current.args
+            for kw_default in reversed(args.kw_defaults):
+                if kw_default is not None:
+                    stack.append(kw_default)
+            stack.extend(reversed(args.defaults))
+            stack.extend(reversed(current.decorator_list))
+            continue
+
         if isinstance(current, ast.ClassDef):
-            for decorator in current.decorator_list:
-                yield from walk_node(decorator)
-            for base in current.bases:
-                yield from walk_node(base)
-            for keyword in current.keywords:
-                yield from walk_node(keyword.value)
-            return
+            for keyword in reversed(current.keywords):
+                stack.append(keyword.value)
+            stack.extend(reversed(current.bases))
+            stack.extend(reversed(current.decorator_list))
+            continue
+
         if isinstance(current, ast.Lambda):
-            yield from _walk_argument_defaults(current.args)
-            return
+            args = current.args
+            for kw_default in reversed(args.kw_defaults):
+                if kw_default is not None:
+                    stack.append(kw_default)
+            stack.extend(reversed(args.defaults))
+            continue
+
         if isinstance(current, ast.Call):
             yield current
-        for child in ast.iter_child_nodes(current):
-            yield from walk_node(child)
 
-    def _walk_argument_defaults(args: ast.arguments) -> Iterator[ast.Call]:
-        for default in args.defaults:
-            yield from walk_node(default)
-        for kw_default in args.kw_defaults:
-            if kw_default is None:
-                continue
-            yield from walk_node(kw_default)
-
-    for stmt in node.body:
-        yield from walk_node(stmt)
+        stack.extend(_reversed_children(current))
 
 
 def resolve_self_method_fqn(

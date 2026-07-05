@@ -33,15 +33,36 @@ _TYPE_CHECKING_FQN = "typing.TYPE_CHECKING"
 _RAISING_CONVERSION_NAMES: frozenset[str] = frozenset({"int", "float", "complex", "Decimal", "Fraction", "UUID"})
 
 
+def _reversed_children(node: ast.AST) -> list[ast.AST]:
+    """Return a list of AST children in reverse order, extracting directly from _fields
+    to avoid ast.iter_child_nodes overhead in hot paths."""
+    children: list[ast.AST] = []
+    for field in node._fields:
+        try:
+            value = getattr(node, field)
+        except AttributeError:
+            continue
+        if isinstance(value, list):
+            for item in value:
+                if isinstance(item, ast.AST):
+                    children.append(item)
+        elif isinstance(value, ast.AST):
+            children.append(value)
+    children.reverse()
+    return children
+
+
 def _own_statements(node: ast.AST) -> Iterator[ast.stmt]:
     """Yield every statement in *node*'s own scope, not descending into nested
     def/class bodies. Includes the bodies of if/for/while/try/with at any depth."""
-    for child in ast.iter_child_nodes(node):
-        if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+    stack = _reversed_children(node)
+    while stack:
+        current = stack.pop()
+        if isinstance(current, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
             continue
-        if isinstance(child, ast.stmt):
-            yield child
-        yield from _own_statements(child)
+        if isinstance(current, ast.stmt):
+            yield current
+        stack.extend(_reversed_children(current))
 
 
 def _own_reachable_statements(
@@ -67,14 +88,16 @@ def _own_nodes_in_reachable_stmt(stmt: ast.stmt) -> Iterator[ast.AST]:
 
 
 def _walk_own_non_stmt_children(node: ast.AST) -> Iterator[ast.AST]:
-    for child in ast.iter_child_nodes(node):
-        if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
-            yield child
-        elif isinstance(child, ast.stmt):
+    stack = _reversed_children(node)
+    while stack:
+        current = stack.pop()
+        if isinstance(current, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
+            yield current
+        elif isinstance(current, ast.stmt):
             continue
         else:
-            yield child
-            yield from _walk_own_non_stmt_children(child)
+            yield current
+            stack.extend(_reversed_children(current))
 
 
 def _reachable_statements_in_block(
@@ -639,9 +662,11 @@ def own_nodes(node: ast.AST) -> Iterator[ast.AST]:
 
 
 def _walk_own(node: ast.AST) -> Iterator[ast.AST]:
-    for child in ast.iter_child_nodes(node):
-        if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
-            yield child
+    stack = _reversed_children(node)
+    while stack:
+        current = stack.pop()
+        if isinstance(current, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
+            yield current
         else:
-            yield child
-            yield from _walk_own(child)
+            yield current
+            stack.extend(_reversed_children(current))
