@@ -36,12 +36,28 @@ _RAISING_CONVERSION_NAMES: frozenset[str] = frozenset({"int", "float", "complex"
 def _own_statements(node: ast.AST) -> Iterator[ast.stmt]:
     """Yield every statement in *node*'s own scope, not descending into nested
     def/class bodies. Includes the bodies of if/for/while/try/with at any depth."""
-    for child in ast.iter_child_nodes(node):
-        if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-            continue
-        if isinstance(child, ast.stmt):
-            yield child
-        yield from _own_statements(child)
+    stack = [node]
+    while stack:
+        current = stack.pop()
+        typ = type(current)
+
+        if current is not node:
+            if typ in (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef):
+                continue
+            if isinstance(current, ast.stmt):
+                yield current
+
+        for field in reversed(current._fields):
+            try:
+                value = getattr(current, field)
+            except AttributeError:
+                continue
+            if isinstance(value, list):
+                for item in reversed(value):
+                    if isinstance(item, ast.AST):
+                        stack.append(item)
+            elif isinstance(value, ast.AST):
+                stack.append(value)
 
 
 def _own_reachable_statements(
@@ -639,9 +655,24 @@ def own_nodes(node: ast.AST) -> Iterator[ast.AST]:
 
 
 def _walk_own(node: ast.AST) -> Iterator[ast.AST]:
-    for child in ast.iter_child_nodes(node):
-        if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
-            yield child
-        else:
-            yield child
-            yield from _walk_own(child)
+    stack = [node]
+    while stack:
+        current = stack.pop()
+        typ = type(current)
+
+        if current is not node:
+            yield current
+            if typ in (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda):
+                continue
+
+        for field in reversed(current._fields):
+            try:
+                value = getattr(current, field)
+            except AttributeError:
+                continue
+            if isinstance(value, list):
+                for item in reversed(value):
+                    if isinstance(item, ast.AST):
+                        stack.append(item)
+            elif isinstance(value, ast.AST):
+                stack.append(value)
