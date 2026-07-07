@@ -937,6 +937,12 @@ def _scan(
                 explanations_truncated = True
         agent_summary["truncation"]["explanations_truncated"] = explanations_truncated
 
+    scan_lead_summary = {
+        "counts_by_kind": agent_summary["summary"]["counts_by_kind"],
+        "completeness": agent_summary["summary"]["completeness"],
+        "confidence": agent_summary["summary"]["confidence"],
+        "advisory": agent_summary["summary"]["advisory"],
+    }
     response: dict[str, Any] = {
         "files_scanned": result.files_scanned,
         "summary": {
@@ -954,6 +960,7 @@ def _scan(
             # source root — benign no-module skips are excluded). Surfaced so the
             # silent under-scan reaches the agent, not just the human-facing stderr.
             "unanalyzed": result.summary.unanalyzed,
+            **scan_lead_summary,
         },
         "gate": {
             "tripped": decision.tripped,
@@ -993,6 +1000,40 @@ def _scan(
     return response
 
 
+_SCAN_LEAD_SUMMARY_PROPERTIES: dict[str, Any] = {
+    "counts_by_kind": {
+        "type": "object",
+        "description": "Finding counts grouped by kind for the full scan result.",
+        "additionalProperties": {"type": "integer"},
+    },
+    "completeness": {
+        "type": "string",
+        "enum": ["complete", "partial"],
+        "description": "Whether this scan response is self-contained or needs a follow-up page or stronger run.",
+    },
+    "confidence": {
+        "type": "string",
+        "description": "Agent-facing confidence in the summary's usefulness for next-step planning.",
+    },
+    "advisory": {
+        "description": "Actionable next step when completeness is partial; null when complete.",
+        "oneOf": [
+            {"type": "null"},
+            {
+                "type": "object",
+                "properties": {
+                    "reason": {"type": "string"},
+                    "action": {"type": "string"},
+                },
+                "required": ["reason", "action"],
+                "additionalProperties": False,
+            },
+        ],
+    },
+}
+_SCAN_LEAD_SUMMARY_REQUIRED = ["counts_by_kind", "completeness", "confidence", "advisory"]
+
+
 _SCAN_OUTPUT_SCHEMA: dict[str, Any] = {
     "type": "object",
     "description": "Success payload of the wardline MCP `scan` tool (the dict _scan returns, served verbatim as "
@@ -1021,8 +1062,18 @@ _SCAN_OUTPUT_SCHEMA: dict[str, Any] = {
                     "description": "Files discovered but never analysed (parse errors / too-deep / missing source "
                     "roots); overlay count.",
                 },
+                **_SCAN_LEAD_SUMMARY_PROPERTIES,
             },
-            "required": ["total", "active", "baselined", "waived", "judged", "informational", "unanalyzed"],
+            "required": [
+                "total",
+                "active",
+                "baselined",
+                "waived",
+                "judged",
+                "informational",
+                "unanalyzed",
+                *_SCAN_LEAD_SUMMARY_REQUIRED,
+            ],
             "additionalProperties": False,
         },
         "gate": {
@@ -1187,6 +1238,7 @@ _SCAN_OUTPUT_SCHEMA: dict[str, Any] = {
                             "excludes them).",
                         },
                         "unanalyzed": {"type": "integer"},
+                        **_SCAN_LEAD_SUMMARY_PROPERTIES,
                     },
                     "required": [
                         "files_scanned",
@@ -1199,6 +1251,7 @@ _SCAN_OUTPUT_SCHEMA: dict[str, Any] = {
                         "judged",
                         "informational",
                         "unanalyzed",
+                        *_SCAN_LEAD_SUMMARY_REQUIRED,
                     ],
                     "additionalProperties": False,
                 },

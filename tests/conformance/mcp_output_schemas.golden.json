@@ -2823,8 +2823,51 @@
               "active_defects": {
                 "type": "integer"
               },
+              "advisory": {
+                "description": "Actionable next step when completeness is partial; null when complete.",
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "action": {
+                        "type": "string"
+                      },
+                      "reason": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "reason",
+                      "action"
+                    ],
+                    "type": "object"
+                  }
+                ]
+              },
               "baselined": {
                 "type": "integer"
+              },
+              "completeness": {
+                "description": "Whether this scan response is self-contained or needs a follow-up page or stronger run.",
+                "enum": [
+                  "complete",
+                  "partial"
+                ],
+                "type": "string"
+              },
+              "confidence": {
+                "description": "Agent-facing confidence in the summary's usefulness for next-step planning.",
+                "type": "string"
+              },
+              "counts_by_kind": {
+                "additionalProperties": {
+                  "type": "integer"
+                },
+                "description": "Finding counts grouped by kind for the full scan result.",
+                "type": "object"
               },
               "engine_facts": {
                 "description": "Kind.FACT findings with a WLN-ENGINE-* rule_id.",
@@ -2863,7 +2906,11 @@
               "waived",
               "judged",
               "informational",
-              "unanalyzed"
+              "unanalyzed",
+              "counts_by_kind",
+              "completeness",
+              "confidence",
+              "advisory"
             ],
             "type": "object"
           },
@@ -3475,8 +3522,51 @@
             "description": "Non-suppressed defects.",
             "type": "integer"
           },
+          "advisory": {
+            "description": "Actionable next step when completeness is partial; null when complete.",
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "action": {
+                    "type": "string"
+                  },
+                  "reason": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "reason",
+                  "action"
+                ],
+                "type": "object"
+              }
+            ]
+          },
           "baselined": {
             "type": "integer"
+          },
+          "completeness": {
+            "description": "Whether this scan response is self-contained or needs a follow-up page or stronger run.",
+            "enum": [
+              "complete",
+              "partial"
+            ],
+            "type": "string"
+          },
+          "confidence": {
+            "description": "Agent-facing confidence in the summary's usefulness for next-step planning.",
+            "type": "string"
+          },
+          "counts_by_kind": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "description": "Finding counts grouped by kind for the full scan result.",
+            "type": "object"
           },
           "informational": {
             "description": "All non-defect findings (facts, metrics, classifications).",
@@ -3504,7 +3594,11 @@
           "waived",
           "judged",
           "informational",
-          "unanalyzed"
+          "unanalyzed",
+          "counts_by_kind",
+          "completeness",
+          "confidence",
+          "advisory"
         ],
         "type": "object"
       }
