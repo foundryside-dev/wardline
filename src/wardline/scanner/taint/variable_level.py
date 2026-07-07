@@ -485,52 +485,12 @@ def _own_scope_lambdas(node: ast.AST) -> Iterator[ast.Lambda]:
     """Yield every ``ast.Lambda`` in *node*'s own scope (descends into lambdas, which
     are not separate entities, but NOT into nested ``def``/``class`` — those are
     analyzed as their own entities)."""
-    stack = []
-
-    children = []
-    for name in node._fields:
-        try:
-            value = getattr(node, name)
-        except AttributeError:
+    for child in ast.iter_child_nodes(node):
+        if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
             continue
-        if isinstance(value, ast.AST):
-            children.append(value)
-        elif isinstance(value, list):
-            for item in value:
-                if isinstance(item, ast.AST):
-                    children.append(item)
-
-    valid = []
-    for c in children:
-        if not isinstance(c, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-            valid.append(c)
-    if valid:
-        stack.extend(reversed(valid))
-
-    while stack:
-        current = stack.pop()
-        if isinstance(current, ast.Lambda):
-            yield current
-
-        children = []
-        for name in current._fields:
-            try:
-                value = getattr(current, name)
-            except AttributeError:
-                continue
-            if isinstance(value, ast.AST):
-                children.append(value)
-            elif isinstance(value, list):
-                for item in value:
-                    if isinstance(item, ast.AST):
-                        children.append(item)
-
-        valid = []
-        for c in children:
-            if not isinstance(c, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-                valid.append(c)
-        if valid:
-            stack.extend(reversed(valid))
+        if isinstance(child, ast.Lambda):
+            yield child
+        yield from _own_scope_lambdas(child)
 
 
 def _worst_ever_var_taints(

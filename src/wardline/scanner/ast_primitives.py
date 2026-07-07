@@ -104,51 +104,39 @@ def iter_calls_in_function_body(
     Header expressions that execute in the enclosing scope (decorators, default
     values, base classes, metaclass keywords) are still attributed to ``node``.
     """
-    stack = list(reversed(node.body))
-    while stack:
-        current = stack.pop()
 
+    def walk_node(current: ast.AST) -> Iterator[ast.Call]:
         if isinstance(current, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            for kw_default in reversed(current.args.kw_defaults):
-                if kw_default is not None:
-                    stack.append(kw_default)
-            for default in reversed(current.args.defaults):
-                stack.append(default)
-            stack.extend(reversed(current.decorator_list))
-            continue
-
+            for decorator in current.decorator_list:
+                yield from walk_node(decorator)
+            yield from _walk_argument_defaults(current.args)
+            return
         if isinstance(current, ast.ClassDef):
-            for keyword in reversed(current.keywords):
-                stack.append(keyword.value)
-            stack.extend(reversed(current.bases))
-            stack.extend(reversed(current.decorator_list))
-            continue
-
+            for decorator in current.decorator_list:
+                yield from walk_node(decorator)
+            for base in current.bases:
+                yield from walk_node(base)
+            for keyword in current.keywords:
+                yield from walk_node(keyword.value)
+            return
         if isinstance(current, ast.Lambda):
-            for kw_default in reversed(current.args.kw_defaults):
-                if kw_default is not None:
-                    stack.append(kw_default)
-            for default in reversed(current.args.defaults):
-                stack.append(default)
-            continue
-
+            yield from _walk_argument_defaults(current.args)
+            return
         if isinstance(current, ast.Call):
             yield current
+        for child in ast.iter_child_nodes(current):
+            yield from walk_node(child)
 
-        children = []
-        for name in current._fields:
-            try:
-                value = getattr(current, name)
-            except AttributeError:
+    def _walk_argument_defaults(args: ast.arguments) -> Iterator[ast.Call]:
+        for default in args.defaults:
+            yield from walk_node(default)
+        for kw_default in args.kw_defaults:
+            if kw_default is None:
                 continue
-            if isinstance(value, ast.AST):
-                children.append(value)
-            elif isinstance(value, list):
-                for item in value:
-                    if isinstance(item, ast.AST):
-                        children.append(item)
-        if children:
-            stack.extend(reversed(children))
+            yield from walk_node(kw_default)
+
+    for stmt in node.body:
+        yield from walk_node(stmt)
 
 
 def resolve_self_method_fqn(
