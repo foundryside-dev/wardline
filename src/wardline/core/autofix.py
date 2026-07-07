@@ -50,12 +50,52 @@ def has_comment_in_span(
 
 
 def _own_statements(node: ast.AST) -> Iterator[ast.stmt]:
-    for child in ast.iter_child_nodes(node):
-        if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+    stack = []
+
+    children = []
+    for name in node._fields:
+        try:
+            value = getattr(node, name)
+        except AttributeError:
             continue
-        if isinstance(child, ast.stmt):
-            yield child
-        yield from _own_statements(child)
+        if isinstance(value, ast.AST):
+            children.append(value)
+        elif isinstance(value, list):
+            for item in value:
+                if isinstance(item, ast.AST):
+                    children.append(item)
+
+    valid = []
+    for c in children:
+        if not isinstance(c, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            valid.append(c)
+    if valid:
+        stack.extend(reversed(valid))
+
+    while stack:
+        current = stack.pop()
+        if isinstance(current, ast.stmt):
+            yield current
+
+        children = []
+        for name in current._fields:
+            try:
+                value = getattr(current, name)
+            except AttributeError:
+                continue
+            if isinstance(value, ast.AST):
+                children.append(value)
+            elif isinstance(value, list):
+                for item in value:
+                    if isinstance(item, ast.AST):
+                        children.append(item)
+
+        valid = []
+        for c in children:
+            if not isinstance(c, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                valid.append(c)
+        if valid:
+            stack.extend(reversed(valid))
 
 
 def get_assert_nodes_for_function(func_node: ast.FunctionDef | ast.AsyncFunctionDef) -> list[ast.Assert]:

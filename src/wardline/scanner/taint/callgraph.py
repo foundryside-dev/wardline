@@ -43,23 +43,48 @@ from wardline.scanner.index import Entity
 def _own_nodes_in(node: ast.AST) -> Iterator[ast.AST]:
     """Yield *node* and every descendant in its own scope (including *node* itself), not
     descending into nested def/class/lambda scopes."""
-    yield node
-    for child in ast.iter_child_nodes(node):
-        if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
-            continue
-        yield from _own_nodes_in(child)
+    stack = [node]
+    first = True
+    while stack:
+        current = stack.pop()
+
+        if first:
+            yield current
+            first = False
+        else:
+            if isinstance(current, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
+                continue
+            yield current
+
+        children = []
+        for name in current._fields:
+            try:
+                value = getattr(current, name)
+            except AttributeError:
+                continue
+            if isinstance(value, ast.AST):
+                children.append(value)
+            elif isinstance(value, list):
+                for item in value:
+                    if isinstance(item, ast.AST):
+                        children.append(item)
+
+        if children:
+            stack.extend(reversed(children))
 
 
 def _target_names(target: ast.expr) -> Iterator[str]:
     """Yield the plain ``Name`` ids bound by an assignment/loop target (recursing into
     tuple/list/starred destructuring); attribute/subscript targets bind no local name."""
-    if isinstance(target, ast.Name):
-        yield target.id
-    elif isinstance(target, ast.Starred):
-        yield from _target_names(target.value)
-    elif isinstance(target, (ast.Tuple, ast.List)):
-        for elt in target.elts:
-            yield from _target_names(elt)
+    stack = [target]
+    while stack:
+        current = stack.pop()
+        if isinstance(current, ast.Name):
+            yield current.id
+        elif isinstance(current, ast.Starred):
+            stack.append(current.value)
+        elif isinstance(current, (ast.Tuple, ast.List)):
+            stack.extend(reversed(current.elts))
 
 
 def _candidate_receiver_classes(
