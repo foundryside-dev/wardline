@@ -453,7 +453,7 @@ class WardlineAnalyzer:
             return result
 
         def _iter_l2_body_nodes(node: ast.FunctionDef | ast.AsyncFunctionDef) -> Iterator[ast.AST]:
-            stack = list(reversed(node.body))
+            stack: list[ast.AST] = list(reversed(node.body))
             while stack:
                 current = stack.pop()
                 yield current

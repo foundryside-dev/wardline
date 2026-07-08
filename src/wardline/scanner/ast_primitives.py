@@ -104,7 +104,7 @@ def iter_calls_in_function_body(
     Header expressions that execute in the enclosing scope (decorators, default
     values, base classes, metaclass keywords) are still attributed to ``node``.
     """
-    stack = list(reversed(node.body))
+    stack: list[ast.AST] = list(reversed(node.body))
     while stack:
         current = stack.pop()
 
