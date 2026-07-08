@@ -1,0 +1,3 @@
+## 2024-07-08 - Fast AST Traversal
+**Learning:** Python's `ast` module can suffer from significant performance overhead when using deep recursion and heavily chained `yield from` calls (generator instantiation overhead). Iterating over `_fields` is faster than `ast.iter_child_nodes`.
+**Action:** When working on hot-path AST traversal functions, use an explicit stack combined with a simple `while` loop, `.pop()`, and `yield` to stream nodes back lazily while avoiding generator chaining. For perfect node ordering consistency when popping, lists of child nodes must be reversed before being pushed onto the stack.
