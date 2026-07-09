@@ -127,8 +127,9 @@ METADATA = RuleMetadata(
         "@trusted(level='ASSURED')\ndef f(p):\n    blob = validate(read_raw(p))\n"
         "    obj = pickle.loads(blob)\n    return blob",
         # numpy.load without allow_pickle=True is safe by default (no object unpickling).
+        "import numpy\n"
         "@external_boundary\ndef read_raw(p):\n    return p\n"
-        "@trusted(level='ASSURED')\ndef f(p):\n    return numpy.load(read_raw(p))",
+        "@trusted(level='ASSURED')\ndef f(p):\n    numpy.load(read_raw(p))\n    return 1",
     ),
 )
 

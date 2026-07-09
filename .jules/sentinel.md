@@ -7,3 +7,8 @@
 **Vulnerability:** The static analyzer was missing `yaml.unsafe_load` and `yaml.full_load` in its `_SERIALISATION_SINKS` mapping, potentially leading to false negatives when tracking untrusted data flowing into these dangerous deserialization functions.
 **Learning:** Even if functions are listed in rule specifications (like `_SINK_SPECS`), they also need to be properly categorized in the core taint propagation logic (`_SERIALISATION_SINKS`) to ensure the analyzer correctly sheds validation provenance (converting output to `UNKNOWN_RAW`).
 **Prevention:** When adding new sinks to rule definitions, always verify if they need to be added to core propagation mappings like `_SERIALISATION_SINKS` or `_PROPAGATING_BUILTINS`.
+
+## 2026-06-21 - Add third-party deserialization sinks to taint tracking
+**Vulnerability:** The static analyzer was missing functions like `dill.load`, `jsonpickle.decode`, `joblib.load`, `torch.load`, `numpy.load`, and `shelve.open` in its `_SERIALISATION_SINKS` mapping, potentially leading to false negatives when tracking untrusted data flowing into these dangerous functions.
+**Learning:** Functions that are used as sinks in rule specifications (`_SINK_SPECS` for `PY-WL-106`) also need to be properly categorized in core taint propagation logic (`_SERIALISATION_SINKS`) so the engine can correctly shed validation provenance.
+**Prevention:** When curating new sinks to rule definitions, ensure they are also added to core propagation mappings.
