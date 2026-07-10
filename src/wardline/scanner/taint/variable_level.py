@@ -42,6 +42,13 @@ if TYPE_CHECKING:
 # wins.)
 _SERIALISATION_SINKS: frozenset[str] = frozenset(
     {
+        "dill.load",
+        "dill.loads",
+        "jsonpickle.decode",
+        "joblib.load",
+        "torch.load",
+        "shelve.open",
+        "pickle.Unpickler.load",
         "json.dumps",
         "json.dump",
         "json.loads",
