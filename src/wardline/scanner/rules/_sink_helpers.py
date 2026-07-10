@@ -87,7 +87,8 @@ def enclosing_declared_tier(
         candidate = ".<locals>.".join(parts[:i])
         if candidate in declared_qualnames:
             return project_taints.get(candidate, TaintState.UNKNOWN_RAW)
-    return project_taints.get(qualname, TaintState.UNKNOWN_RAW)
+    parent_qualname = parts[0]
+    return project_taints.get(parent_qualname, TaintState.UNKNOWN_RAW)
 
 
 def dotted_name(node: ast.expr) -> str | None:

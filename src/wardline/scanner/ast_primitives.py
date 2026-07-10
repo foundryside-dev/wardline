@@ -121,6 +121,7 @@ def iter_calls_in_function_body(
             return
         if isinstance(current, ast.Lambda):
             yield from _walk_argument_defaults(current.args)
+            yield from walk_node(current.body)
             return
         if isinstance(current, ast.Call):
             yield current

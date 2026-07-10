@@ -95,9 +95,9 @@ def test_does_not_descend_into_nested_class_body() -> None:
     assert _call_names(src) == ["a"]
 
 
-def test_does_not_descend_into_lambda_body() -> None:
+def test_descends_into_lambda_body() -> None:
     src = "def f():\n    g = lambda: b()\n    a()\n"
-    assert _call_names(src) == ["a"]
+    assert set(_call_names(src)) == {"a", "b"}
 
 
 def test_nested_function_default_attributed_to_enclosing() -> None:

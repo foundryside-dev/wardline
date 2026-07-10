@@ -579,7 +579,7 @@
           "declared_return": "UNKNOWN_RAW",
           "resolved_call_count": 0,
           "source": "fallback",
-          "unresolved_call_count": 2
+          "unresolved_call_count": 3
         }
       }
     },
