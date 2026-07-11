@@ -10,8 +10,8 @@ from typing import IO, TYPE_CHECKING
 import click
 
 from wardline.core.artifacts import write_scan_artifact
+from wardline.core.config import WardlineConfig, resolve_filigree_url, resolve_loomweave_url
 from wardline.core.config import load as load_config
-from wardline.core.config import resolve_filigree_url, resolve_loomweave_url
 from wardline.core.confinement import SourceRootConfinement
 from wardline.core.delta_scope import (
     _MAX_PAYLOAD_BYTES,
@@ -435,7 +435,7 @@ def scan(
             artifact = build_legis_artifact(
                 result,
                 root=path,
-                config=cfg,
+                config=_effective_legis_config(result),
                 key=legis_key.encode("utf-8") if legis_key else None,
                 allow_dirty=allow_dirty,
             )
@@ -798,3 +798,9 @@ def _loomweave_status(result: object | None) -> dict[str, object]:
 
 def _redact_url_for_log(url: str | None) -> str:
     return redact_url_for_diagnostics(url) or "<not configured>"
+
+
+def _effective_legis_config(result: ScanResult) -> WardlineConfig:
+    if result.effective_config is None:
+        raise WardlineError("scan result did not retain its effective configuration")
+    return result.effective_config
