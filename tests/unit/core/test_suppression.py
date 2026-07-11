@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from datetime import UTC, date, datetime
 
 from wardline.core.baseline import Baseline
@@ -57,6 +58,8 @@ def test_source_defect_without_line_start_becomes_gating_engine_defect() -> None
         "original_fingerprint": _FP_A,
         "original_kind": "defect",
     }
+    identity = f"WLN-ENGINE-LINELESS-DEFECT\x00PY-WL-101\x00src/m.py\x00{_FP_A}\x00defect"
+    assert diagnostic.fingerprint == hashlib.sha256(identity.encode("utf-8")).hexdigest()
     assert gate_trips(out, Severity.ERROR) is True
 
 

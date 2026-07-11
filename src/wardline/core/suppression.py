@@ -62,6 +62,7 @@ def _lineless_defect_diagnostic(finding: Finding) -> Finding:
             finding.rule_id,
             finding.location.path,
             finding.fingerprint,
+            finding.kind.value,
         )
     )
     properties: Mapping[str, str] = {
