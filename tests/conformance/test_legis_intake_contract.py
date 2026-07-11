@@ -14,8 +14,8 @@ false-green. The mirror below is now faithful to legis's actual `from_wire` /
 `active_defects`, so it reds on exactly the drift the live server would reject.
 
 The Wardline side emits the signed artifact via `build_legis_artifact`, which projects
-the GATE population (`ScanResult.gate_population.findings` under the secure default, else
-`result.findings`) onto legis's accepted vocabulary (tier-only properties, mapped
+the tagged GATE population (`ScanResult.gate_population.findings`) onto legis's accepted
+vocabulary (tier-only properties, mapped
 suppression states, proof in `properties`). The conformance equality
 `len(active_defects(scan)) == <active defects in the gate population>` proves legis
 reproduces Wardline's OWN gate population — the same one `--fail-on` evaluates —
