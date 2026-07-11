@@ -1135,7 +1135,8 @@ _SCAN_OUTPUT_SCHEMA: dict[str, Any] = {
                         "chunks_landed": {
                             "type": "integer",
                             "minimum": 0,
-                            "description": "Chunks accepted before the failure (0 on success or first contact).",
+                            "description": "Number of chunks Filigree accepted during this emit attempt; zero only "
+                            "when none landed.",
                         },
                         "destination": {"$ref": "#/$defs/filigree_destination"},
                     },

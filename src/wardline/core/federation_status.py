@@ -232,7 +232,7 @@ def filigree_emit_status_schema(*, include_transport_detail: bool = True) -> dic
         properties["chunks_landed"] = {
             "type": "integer",
             "minimum": 0,
-            "description": "Chunks accepted before the failure; absent when not configured.",
+            "description": "Number of chunks Filigree accepted during this emit attempt; zero only when none landed.",
         }
         required.append("destination")
     return {

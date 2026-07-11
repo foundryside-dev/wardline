@@ -2461,7 +2461,7 @@
             "type": "boolean"
           },
           "chunks_landed": {
-            "description": "Chunks accepted before the failure; absent when not configured.",
+            "description": "Number of chunks Filigree accepted during this emit attempt; zero only when none landed.",
             "minimum": 0,
             "type": "integer"
           },
@@ -3001,7 +3001,7 @@
                 "type": "boolean"
               },
               "chunks_landed": {
-                "description": "Chunks accepted before the failure (0 on success or first contact).",
+                "description": "Number of chunks Filigree accepted during this emit attempt; zero only when none landed.",
                 "minimum": 0,
                 "type": "integer"
               },
