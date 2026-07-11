@@ -751,6 +751,28 @@ def test_new_since_scopes_lineless_diagnostic_by_changed_source_path(tmp_path: P
     assert gate_decision(result, Severity.ERROR).tripped is True
 
 
+def test_new_since_keeps_pydantic_discovery_limit_active(tmp_path: Path) -> None:
+    project, base = _changed_git_project(tmp_path)
+    (project / "svc.py").write_text("value = 1\n", encoding="utf-8")
+    for index in range(80):
+        source = (
+            "from pydantic import BaseModel\nclass Model0(BaseModel): pass\n"
+            if index == 0
+            else (f"from m{index - 1} import Model{index - 1}\nclass Model{index}(Model{index - 1}): pass\n")
+        )
+        (project / f"m{index}.py").write_text(source, encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=project, check=True)
+    subprocess.run(["git", "commit", "-m", "add model chain"], cwd=project, check=True)
+
+    result = run_scan(project, new_since=base)
+
+    emitted = next(f for f in result.findings if f.rule_id == "WLN-ENGINE-PYDANTIC-DISCOVERY-LIMIT")
+    gated = next(f for f in result.gate_population.findings if f.rule_id == "WLN-ENGINE-PYDANTIC-DISCOVERY-LIMIT")
+    assert emitted.suppressed is SuppressionState.ACTIVE
+    assert gated.suppressed is SuppressionState.ACTIVE
+    assert gate_decision(result, Severity.ERROR).tripped is True
+
+
 @pytest.mark.parametrize(
     "properties",
     [

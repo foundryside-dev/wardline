@@ -30,6 +30,7 @@ from wardline.core.discovery import discover, missing_source_roots
 from wardline.core.errors import ConfigError
 from wardline.core.finding import (
     ENGINE_PATH,
+    INCOMPLETE_ANALYSIS_RULE_IDS,
     UNANALYZED_RULE_IDS,
     Finding,
     Kind,
@@ -628,6 +629,9 @@ def run_scan(
             scoped: list[Finding] = []
             for f in candidates:
                 if f.kind is Kind.DEFECT and f.suppressed is SuppressionState.ACTIVE:
+                    if f.rule_id in INCOMPLETE_ANALYSIS_RULE_IDS:
+                        scoped.append(f)
+                        continue
                     delta_path = f.location.path
                     if f.rule_id == "WLN-ENGINE-LINELESS-DEFECT" and f.location.path == ENGINE_PATH:
                         original_path = f.properties.get("original_path")
