@@ -134,17 +134,18 @@ def test_model_chain_converges_without_degradation() -> None:
 
 
 def test_elspeth_shaped_graph_converges_deterministically() -> None:
-    files = _elspeth_shaped_modules()
+    modules = _elspeth_shaped_modules()
+    expected_models = frozenset(name for module in modules for name in module.class_qualnames)
 
-    assert len(files) == 593
-    assert sum(len(parsed.tree.body) for parsed in files) == 11_493
+    assert len(modules) == 593
+    assert sum(len(parsed.tree.body) for parsed in modules) == 11_493
 
-    forward = discovery.discover_project_pydantic_models(files)
-    reverse = discovery.discover_project_pydantic_models(tuple(reversed(files)))
+    forward = discovery.discover_project_pydantic_models(modules)
+    reverse = discovery.discover_project_pydantic_models(tuple(reversed(modules)))
 
     assert forward.degraded_reason is None
     assert reverse.degraded_reason is None
-    assert forward.models == reverse.models
+    assert forward.models == reverse.models == expected_models
     assert len(forward.models) == 263
     assert forward.model_counts_by_round == (206, 259, 263, 263)
     assert forward.round_number == 4
