@@ -332,7 +332,8 @@ def test_legis_artifact_reuses_exact_scan_config_once(tmp_path, monkeypatch, cas
 
     assert "legis_artifact" in out
     assert len(loads) == 1, case
-    assert built_with == [loads[0]]
+    assert len(built_with) == 1, case
+    assert built_with[0] is loads[0], case
     assert out["legis_artifact"]["rule_set_version"] == ruleset_hash(loads[0])
 
 

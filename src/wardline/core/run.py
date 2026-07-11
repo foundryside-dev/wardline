@@ -167,7 +167,7 @@ class ScanResult:
     # set drops co-located findings, so classifying against it would misreport a repo-
     # suppressed defect as 'active' and hide the --trust-suppressions escape guidance.
     # ``None`` ⇒ ``findings`` IS the un-narrowed annotated population (full scan,
-    # full-fallback, or --new-since, which relabels without filtering) — INV-1: the full
+    # full-fallback, or --new-since, which relabels without filtering) — INV-1: the full path carries nothing extra.
     annotated_findings: list[Finding] | None = None
     effective_config: config_mod.WardlineConfig | None = None  # Exact scan config; in-process only, never serialized.
 
