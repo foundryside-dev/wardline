@@ -332,7 +332,7 @@ def test_secure_default_gate_defect_is_enforced_by_legis(tmp_path: Path) -> None
     repo.mkdir()
     cfg = load_config(repo / "weft.toml")
     scan = wl_legis.build_legis_artifact(result, root=repo, config=cfg, key=None)
-    # gate population findings != findings here (active vs baselined) — that asymmetry is the point.
+    # Tagged gate findings differ from emitted findings here (active vs baselined).
     (projected,) = scan["findings"]
     assert projected["suppression_state"] == "active"
     legis_active = active_defects(scan)
@@ -341,9 +341,8 @@ def test_secure_default_gate_defect_is_enforced_by_legis(tmp_path: Path) -> None
 
 
 def test_trust_suppressions_path_projects_the_suppressed_view(tmp_path: Path) -> None:
-    # The --trust-suppressions / directly-constructed-ScanResult path: gate population findings is
-    # None, so the artifact honours the emitted (suppressed) findings exactly as the gate
-    # falls back to them. The baselined defect maps to `suppressed` (legis has no
+    # The --trust-suppressions path explicitly tags the suppressed findings as honoring
+    # repository suppressions. The baselined defect maps to `suppressed` (legis has no
     # `baselined` state) + injects proof, and is NOT in legis's active population.
     _, baselined = _gate_active_defect()
     result = ScanResult(

@@ -292,9 +292,9 @@ def filter_to_affected(
     PURE drop-filter: it never re-mints a fingerprint (INV-2). It is applied ONLY to the
     emitted ``findings`` list, NEVER to ``gate_population.findings`` (INV-4 / THREAT-001); the caller
     (``run_scan``) keeps the gate population as the unfiltered analyzed set so an
-    attacker-influenceable scope cannot hide co-located findings from the gate. Never
-    called with a ``None`` findings list (the historical secure-default sentinel
-    sentinel is left untouched)."""
+    attacker-influenceable scope cannot hide co-located findings from the gate. The input
+    is always the concrete emitted population; gate population selection happens in
+    ``run_scan`` before this display-only filter is called."""
     kept: list[Finding] = []
     for finding in findings:
         if finding.qualname is None:

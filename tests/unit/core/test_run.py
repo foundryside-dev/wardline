@@ -765,7 +765,8 @@ def test_new_since_scopes_both_populations_and_resists_suppression(tmp_path: Pat
         result = run_scan(tmp_path, new_since="HEAD~1")
 
     # The in-delta caller.f stays ACTIVE in the gate population despite the baseline entry.
-    assert result.gate_population.findings is not None
+    assert result.gate_population.posture is GateSuppressionPosture.UNSUPPRESSED
+    assert isinstance(result.gate_population.findings, tuple)
     gate_by_qn = {f.qualname: f for f in result.gate_population.findings if f.kind is Kind.DEFECT}
     assert gate_by_qn["caller.f"].suppressed is SuppressionState.ACTIVE
     # The out-of-delta unrelated.h is scoped OUT of the gate (delta: unchanged).

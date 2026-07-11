@@ -224,10 +224,9 @@ def test_delta_gate_decision_is_not_evaluated_for_advisory_subset(tmp_path: Path
 
 
 def test_delta_trust_suppressions_gate_population_is_unfiltered(tmp_path: Path) -> None:
-    """INV-4 / THREAT-001 under ``--trust-suppressions``: a delta scan MATERIALISES a
-    concrete gate population (post-suppression, pre-delta-filter) instead of leaving
-    ``gate population findings`` at the ``None`` sentinel — otherwise the gate would fall back to the
-    delta-FILTERED ``findings`` and a surgical-exclusion worklist could forge a green.
+    """INV-4 / THREAT-001 under ``--trust-suppressions``: a delta scan retains the
+    concrete post-suppression, pre-delta-filter gate population while narrowing only the
+    displayed findings, so a surgical-exclusion worklist cannot forge a green.
 
     The displayed ``findings`` are narrowed to ``alpha``, but the gate population retains
     BOTH co-located ERROR sinks, and the posture still HONORS suppressions (``--trust-
@@ -237,13 +236,11 @@ def test_delta_trust_suppressions_gate_population_is_unfiltered(tmp_path: Path) 
 
     result = run_scan(proj, affected=scope, trust_suppressions=True)
 
-    # Displayed: only alpha. Gate population: a CONCRETE list carrying BOTH sinks —
-    # never the None sentinel (which would fall back to the filtered display set).
+    # Displayed: only alpha. The mandatory tagged gate population carries BOTH sinks.
     assert _py101_quals(result.findings) == {"svc.alpha"}
     assert result.gate_population.posture is GateSuppressionPosture.HONORS_SUPPRESSIONS
     assert _py101_quals(result.gate_population.findings) == {"svc.alpha", "svc.beta"}
-    # The posture is still trust-suppressions (the verdict honors repo suppressions),
-    # but it is carried EXPLICITLY, decoupled from the gate population findings sentinel.
+    # The posture is still trust-suppressions: the verdict honors repo suppressions.
 
 
 def test_delta_trust_suppressions_cannot_forge_green(tmp_path: Path) -> None:

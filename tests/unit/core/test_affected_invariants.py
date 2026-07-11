@@ -333,12 +333,11 @@ def test_inv4_co_located_surgical_exclusion_cannot_forge_a_green(tmp_path: Path)
 def test_inv4_surgical_exclusion_cannot_forge_a_green_under_trust_suppressions(tmp_path: Path) -> None:
     """INV-4 / THREAT-001 under ``--trust-suppressions`` — the dangerous combination.
 
-    With ``trust_suppressions=True`` the gate would, on a FULL scan, fall back to the
-    suppressed ``findings`` (``gate population findings is None``). A delta scan filters ``findings``,
-    so a naive fallback would let a surgical-exclusion worklist hide an in-analyzed-file
-    ERROR from the gate and forge a PASSED. The fix MATERIALISES a concrete gate population
-    (post-suppression, pre-delta-filter), so the delta gate verdict is IDENTICAL to the
-    full scan's FAILED even though the ERROR was excluded from the DISPLAYED set."""
+    With ``trust_suppressions=True`` the mandatory gate population carries the
+    post-suppression, pre-delta-filter findings. A delta scan narrows only the display, so
+    a surgical-exclusion worklist cannot hide an in-analyzed-file ERROR from the gate. The
+    delta gate verdict is IDENTICAL to the full scan's FAILED even though the ERROR was
+    excluded from the DISPLAYED set."""
     proj = _evil_proj(tmp_path)
     # Names only the benign evil.touched; evil.py is analyzed (backdoor's ERROR is computed)
     # but the worklist surgically drops backdoor from the displayed findings.
@@ -351,8 +350,8 @@ def test_inv4_surgical_exclusion_cannot_forge_a_green_under_trust_suppressions(t
     assert delta.scope is not None and delta.scope.mode == "delta"
     # The backdoor ERROR is surgically excluded from the DISPLAYED findings...
     assert not any(f.location.path == "evil.py" and f.qualname == "evil.backdoor" for f in _py101(delta.findings))
-    # ...but the gate population is a CONCRETE list (the None sentinel was materialised) that
-    # still carries the backdoor ERROR; the posture stays trust-suppressions.
+    # ...but the tagged gate population still carries the backdoor ERROR and retains the
+    # trust-suppressions posture.
     assert delta.gate_population.posture is GateSuppressionPosture.HONORS_SUPPRESSIONS
     assert any(
         f.location.path == "evil.py" and f.qualname == "evil.backdoor" for f in _py101(delta.gate_population.findings)

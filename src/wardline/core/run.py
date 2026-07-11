@@ -313,14 +313,14 @@ def run_scan(
     scan outside the project root must opt out explicitly.
 
     ``trust_suppressions`` (default False) is the SECURITY default. When False the
-    ``--fail-on`` gate evaluates a separately-built UNSUPPRESSED population
-    (``ScanResult.gate_population_findings``): repository-controlled baseline/waiver/judged
-    files still annotate the emitted ``findings`` but cannot clear the gate, so a
-    malicious PR cannot self-suppress its own new defect. When True the gate falls
-    back to the suppressed ``findings`` (``gate_population_findings`` is set to None) — the
-    trusted local / judge-DX behaviour, an explicit operator trust decision suitable
-    only for a trusted checkout, never for enforcement on untrusted PR content. The
-    secure CI ratchet is the operator-supplied, unforgeable ``--new-since`` instead.
+    ``--fail-on`` gate evaluates a separately-built ``UNSUPPRESSED``
+    ``ScanResult.gate_population``: repository-controlled baseline/waiver/judged files
+    still annotate the emitted ``findings`` but cannot clear the gate, so a malicious PR
+    cannot self-suppress its own new defect. When True the same mandatory gate contract
+    carries the suppressed findings with the ``HONORS_SUPPRESSIONS`` posture — the trusted
+    local / judge-DX behaviour, an explicit operator trust decision suitable only for a
+    trusted checkout, never for enforcement on untrusted PR content. The secure CI ratchet
+    is the operator-supplied, unforgeable ``--new-since`` instead.
 
     ``affected`` (default None) is the ``--affected`` delta scope: a parsed, producer-
     supplied :class:`~wardline.core.delta_scope.AffectedScope`. When None the path is the
@@ -328,7 +328,7 @@ def run_scan(
     When supplied, discovery still walks the whole tree but only the files containing an
     affected entity (caller-closure-expanded) reach the analyzer, and the EMITTED findings
     are narrowed to those entities. The severity gate still evaluates the FULL unsuppressed
-    analyzed population (``gate_population_findings`` is NEVER narrowed by the entity-display filter —
+    analyzed population (``gate_population.findings`` is NEVER narrowed by the entity-display filter —
     INV-4 / THREAT-001), so an attacker-influenceable scope cannot hide a co-located
     finding from the gate. A clean delta subset still cannot certify skipped files, and
     ``gate_decision`` reports that advisory shape as NOT_EVALUATED rather than PASSED. An
@@ -870,8 +870,8 @@ def _gate_reason(result: ScanResult, fail_on: Severity, *, tripped: bool, honors
     # Under --trust-suppressions the gate IS the annotated findings (suppressions
     # honored), so only genuinely-active defects can have tripped it; never misdirect to
     # the suppression flags. Count over the GATE population, not the emitted ``findings``:
-    # a delta scan materialises a concrete (post-suppression, pre-delta-filter) gate
-    # population while ``findings`` is the narrowed display set — counting the display set
+    # a delta scan retains the concrete post-suppression, pre-delta-filter gate population
+    # while ``findings`` is the narrowed display set — counting the display set
     # would understate the trip.
     gate_pop = result.gate_population.findings
     if honors_suppressions:
