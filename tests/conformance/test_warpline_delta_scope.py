@@ -39,7 +39,7 @@ import pytest
 from wardline.core.delta_resolve import build_qualname_index, resolve_affected_scope
 from wardline.core.delta_scope import BOUNDARY_CAVEAT, parse_affected_scope
 from wardline.core.finding import Severity
-from wardline.core.run import gate_decision, run_scan
+from wardline.core.run import GateSuppressionPosture, gate_decision, run_scan
 
 _FIXTURES = Path(__file__).parent / "fixtures" / "warpline_delta"
 _WARPLINE_CONTRACT_FIXTURES = Path(__file__).parent / "fixtures" / "warpline_contract"
@@ -194,7 +194,8 @@ def test_axis6_caller_closure_computes_inter_file_sink(tmp_path: Path) -> None:
     assert result.scope.files_analyzed == 2
     # The caller-side sink finding was computed (present in the gate population — it is not
     # in the DISPLAY because the base affected entity is the source, not the sink; INV-4).
-    assert result.gate_population.findings is not None
+    assert result.gate_population.posture is GateSuppressionPosture.UNSUPPRESSED
+    assert isinstance(result.gate_population.findings, tuple)
     assert any(
         f.qualname == "sink_mod.downstream_sink" and f.rule_id == "PY-WL-101" for f in result.gate_population.findings
     )
@@ -241,7 +242,8 @@ def test_axis7_gate_population_not_narrowed(tmp_path: Path) -> None:
 
     # gamma dropped from the DISPLAY but live in the GATE population.
     assert ("a.gamma", "a.py") not in _py101(delta.findings)
-    assert delta.gate_population.findings is not None
+    assert delta.gate_population.posture is GateSuppressionPosture.UNSUPPRESSED
+    assert isinstance(delta.gate_population.findings, tuple)
     assert ("a.gamma", "a.py") in _py101(delta.gate_population.findings)
 
     # The delta gate cannot green a real ERROR: its verdict matches a full scan's gate over
