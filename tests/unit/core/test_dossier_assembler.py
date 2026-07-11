@@ -275,7 +275,7 @@ def test_under_scanned_entity_is_unknown_not_clean() -> None:
 
     from wardline.core.dossier import _build_trust
     from wardline.core.finding import Finding, Kind, Location, Severity
-    from wardline.core.run import ScanResult, ScanSummary
+    from wardline.core.run import GatePopulation, ScanResult, ScanSummary
     from wardline.scanner.context import AnalysisContext
     from wardline.scanner.index import Entity
 
@@ -305,6 +305,7 @@ def test_under_scanned_entity_is_unknown_not_clean() -> None:
         summary=ScanSummary(total=1, active=0, baselined=0, waived=0, judged=0),
         files_scanned=1,
         context=ctx,
+        gate_population=GatePopulation.honoring((skip,)),
     )
     trust = _build_trust(result, ctx, "m.f")
     assert trust.gate_verdict == "unknown"

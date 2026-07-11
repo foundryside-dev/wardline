@@ -648,7 +648,7 @@ def scan(
     # used by SuppressionState.ACTIVE, ScanSummary.active, the MCP summary key, the
     # agent-summary active_defects, and the wardline:loop prompt. It is NOT Filigree's
     # first-seen "new" (unseen fingerprint) nor the --fail-on gate population
-    # (ScanResult.gate_findings). See docs/reference/finding-lifecycle-vocabulary.md.
+    # (ScanResult.gate_population.findings). See docs/reference/finding-lifecycle-vocabulary.md.
     click.echo(
         f"scanned {result.files_scanned} file(s); {s.total} finding(s) — "
         f"{s.baselined + s.waived + s.judged} suppressed "

@@ -9,7 +9,7 @@ import pytest
 
 from wardline.core.errors import ConfigError
 from wardline.core.finding import Finding, Kind, Location, Severity, SuppressionState
-from wardline.core.run import ScanResult, ScanSummary
+from wardline.core.run import GatePopulation, ScanResult, ScanSummary
 from wardline.lsp import LspServer
 
 
@@ -106,6 +106,7 @@ def test_lsp_diagnostics_flow(tmp_path: Path) -> None:
         summary=ScanSummary(total=1, active=1, baselined=0, waived=0, judged=0, unanalyzed=0),
         files_scanned=1,
         context=None,
+        gate_population=GatePopulation.honoring((finding,)),
     )
 
     req_open = {
@@ -230,6 +231,7 @@ def test_lsp_publishes_under_scan_engine_facts_as_info_diagnostics(tmp_path: Pat
         summary=ScanSummary(total=1, active=0, baselined=0, waived=0, judged=0, unanalyzed=1),
         files_scanned=1,
         context=None,
+        gate_population=GatePopulation.honoring((finding,)),
     )
 
     req_open = {
@@ -267,6 +269,7 @@ def test_lsp_did_change_does_not_rescan_unsaved_buffers(tmp_path: Path) -> None:
         summary=ScanSummary(total=0, active=0, baselined=0, waived=0, judged=0, unanalyzed=0),
         files_scanned=1,
         context=None,
+        gate_population=GatePopulation.honoring(()),
     )
     req_open = {
         "jsonrpc": "2.0",
@@ -305,6 +308,7 @@ def test_lsp_did_save_triggers_rescan(tmp_path: Path) -> None:
         summary=ScanSummary(total=0, active=0, baselined=0, waived=0, judged=0, unanalyzed=0),
         files_scanned=1,
         context=None,
+        gate_population=GatePopulation.honoring(()),
     )
     req_open = {
         "jsonrpc": "2.0",
@@ -416,6 +420,7 @@ def test_lsp_did_close_clears_diagnostics(tmp_path: Path) -> None:
         summary=ScanSummary(total=1, active=1, baselined=0, waived=0, judged=0, unanalyzed=0),
         files_scanned=1,
         context=None,
+        gate_population=GatePopulation.honoring((finding,)),
     )
 
     req_open = {
@@ -499,6 +504,7 @@ def test_lsp_ignores_suppressed_findings(tmp_path: Path) -> None:
         summary=ScanSummary(total=3, active=1, baselined=1, waived=0, judged=0, unanalyzed=0),
         files_scanned=1,
         context=None,
+        gate_population=GatePopulation.honoring((active_finding, suppressed_finding, fact_finding)),
     )
 
     req_open = {

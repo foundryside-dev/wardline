@@ -41,7 +41,7 @@ requested entities while being computed correctly.
 
 Nothing here re-mints a fingerprint (INV-2): :func:`filter_to_affected` is a pure
 drop-filter over a findings list, and it touches only the displayed ``findings`` set —
-never ``gate_findings`` (INV-4 / THREAT-001), which ``run_scan`` keeps as the unfiltered
+never ``gate_population.findings`` (INV-4 / THREAT-001), which ``run_scan`` keeps as the unfiltered
 analyzed population. A clean true delta remains advisory because skipped files were not
 analyzed.
 """
@@ -290,10 +290,10 @@ def filter_to_affected(
     on *other* entities in the same analyzed file are dropped from the displayed output.
 
     PURE drop-filter: it never re-mints a fingerprint (INV-2). It is applied ONLY to the
-    emitted ``findings`` list, NEVER to ``gate_findings`` (INV-4 / THREAT-001); the caller
+    emitted ``findings`` list, NEVER to ``gate_population.findings`` (INV-4 / THREAT-001); the caller
     (``run_scan``) keeps the gate population as the unfiltered analyzed set so an
     attacker-influenceable scope cannot hide co-located findings from the gate. Never
-    called with a ``None`` findings list (the ``gate_findings is None`` secure-default
+    called with a ``None`` findings list (the historical secure-default sentinel
     sentinel is left untouched)."""
     kept: list[Finding] = []
     for finding in findings:

@@ -65,7 +65,7 @@ def _project(tmp_path: Path) -> Path:
 
 
 def _py101(findings: object) -> set[tuple[str | None, str]]:
-    assert isinstance(findings, list)
+    assert isinstance(findings, (list, tuple))
     return {(f.qualname, f.location.path) for f in findings if f.rule_id == "PY-WL-101"}
 
 
@@ -194,8 +194,10 @@ def test_axis6_caller_closure_computes_inter_file_sink(tmp_path: Path) -> None:
     assert result.scope.files_analyzed == 2
     # The caller-side sink finding was computed (present in the gate population — it is not
     # in the DISPLAY because the base affected entity is the source, not the sink; INV-4).
-    assert result.gate_findings is not None
-    assert any(f.qualname == "sink_mod.downstream_sink" and f.rule_id == "PY-WL-101" for f in result.gate_findings)
+    assert result.gate_population.findings is not None
+    assert any(
+        f.qualname == "sink_mod.downstream_sink" and f.rule_id == "PY-WL-101" for f in result.gate_population.findings
+    )
 
 
 def test_axis6_negative_without_closure_the_finding_is_missing(tmp_path: Path) -> None:
@@ -229,7 +231,7 @@ def test_axis6_negative_without_closure_the_finding_is_missing(tmp_path: Path) -
 
 def test_axis7_gate_population_not_narrowed(tmp_path: Path) -> None:
     """The CO-LOCATED non-affected ``gamma`` finding is ABSENT from the displayed findings
-    but PRESENT in ``gate_findings`` — the display filter narrows only the display, never
+    but PRESENT in ``gate population findings`` — the display filter narrows only the display, never
     the gate population, so an attacker-influenceable scope cannot forge a green (INV-4).
     The delta gate verdict is IDENTICAL to the full scan's over the same population."""
     proj = _project(tmp_path)
@@ -239,8 +241,8 @@ def test_axis7_gate_population_not_narrowed(tmp_path: Path) -> None:
 
     # gamma dropped from the DISPLAY but live in the GATE population.
     assert ("a.gamma", "a.py") not in _py101(delta.findings)
-    assert delta.gate_findings is not None
-    assert ("a.gamma", "a.py") in _py101(delta.gate_findings)
+    assert delta.gate_population.findings is not None
+    assert ("a.gamma", "a.py") in _py101(delta.gate_population.findings)
 
     # The delta gate cannot green a real ERROR: its verdict matches a full scan's gate over
     # the same (a.py) population. (b.py is not analyzed in delta; the gate axis here is the

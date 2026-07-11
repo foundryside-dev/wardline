@@ -34,7 +34,7 @@ from wardline.core import config as config_mod
 from wardline.core.attest_key import WARDLINE_ATTEST_KEY_ENV
 from wardline.core.legis import LEGIS_ARTIFACT_KEY_ENV
 from wardline.core.ruleset import ruleset_hash
-from wardline.core.run import ScanResult, ScanSummary
+from wardline.core.run import GatePopulation, ScanResult, ScanSummary
 from wardline.mcp.server import WardlineMCPServer, _attach_legis_artifact, _scan
 from wardline.mcp.tooling import ToolError
 
@@ -344,6 +344,7 @@ def _result_without_effective_config() -> ScanResult:
         summary=ScanSummary(total=0, active=0, baselined=0, waived=0, judged=0),
         files_scanned=0,
         context=None,
+        gate_population=GatePopulation.honoring(()),
     )
 
 

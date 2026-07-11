@@ -1,4 +1,5 @@
 import textwrap
+from dataclasses import FrozenInstanceError
 from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -12,6 +13,8 @@ from wardline.core.judged import JudgedFP, write_judged
 from wardline.core.paths import baseline_path, judged_path, waivers_path
 from wardline.core.run import (
     GateDecision,
+    GatePopulation,
+    GateSuppressionPosture,
     ScanResult,
     ScanSummary,
     baseline_migration_hint,
@@ -43,7 +46,7 @@ def test_run_scan_returns_findings_summary_and_context() -> None:
     # hold for any fixture regardless of finding count.
     assert result.summary.total == len(result.findings)
     # active is the count of non-suppressed DEFECTs in the emitted findings (the gate
-    # evaluates ScanResult.gate_findings, a separate unsuppressed population)
+    # evaluates ScanResult.gate_population.findings, a separate unsuppressed population)
     active = sum(1 for f in result.findings if f.kind is Kind.DEFECT and f.suppressed is SuppressionState.ACTIVE)
     assert result.summary.active == active
     # context is carried for explain_finding to reuse
@@ -233,8 +236,7 @@ def test_trust_suppressions_restores_old_gate_clearing(tmp_path: Path, writer) -
     proj, fp = _leaky_proj(tmp_path)
     writer(proj, fp)
     result = run_scan(proj, trust_suppressions=True)
-    # gate_findings is the None sentinel -> gate falls back to the suppressed findings.
-    assert result.gate_findings is None
+    assert result.gate_population.posture is GateSuppressionPosture.HONORS_SUPPRESSIONS
     assert gate_decision(result, Severity.ERROR).tripped is False
 
 
@@ -430,7 +432,13 @@ def test_gate_decision_evaluated_reflects_trust_suppressions(tmp_path: Path) -> 
 
 def test_gate_decision_no_threshold_is_not_evaluated() -> None:
     # weft-b937e53854: a bare scan is NOT a clean pass — it never ran the gate.
-    result = ScanResult(findings=[], summary=ScanSummary(0, 0, 0, 0, 0), files_scanned=0, context=None)
+    result = ScanResult(
+        findings=[],
+        summary=ScanSummary(0, 0, 0, 0, 0),
+        files_scanned=0,
+        context=None,
+        gate_population=GatePopulation.honoring(()),
+    )
     decision = gate_decision(result, None)
     assert decision.verdict == "NOT_EVALUATED"
     assert decision.tripped is False and decision.exit_class == 0
@@ -448,6 +456,7 @@ def _unanalyzed_result(unanalyzed: int) -> ScanResult:
         summary=ScanSummary(unanalyzed, 0, 0, 0, 0, informational=unanalyzed, unanalyzed=unanalyzed),
         files_scanned=1,
         context=None,
+        gate_population=GatePopulation.honoring(()),
     )
 
 
@@ -591,18 +600,59 @@ def test_migration_hint_silent_without_baseline_file(tmp_path: Path) -> None:
     assert _hint(proj) is None
 
 
-def test_gate_findings_is_unsuppressed_population(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("posture", "honors"),
+    [
+        (GateSuppressionPosture.UNSUPPRESSED, False),
+        (GateSuppressionPosture.HONORS_SUPPRESSIONS, True),
+    ],
+)
+def test_gate_population_closed_posture_matrix(posture: GateSuppressionPosture, honors: bool) -> None:
+    population = GatePopulation(findings=(), posture=posture)
+
+    assert population.honors_suppressions is honors
+
+
+def test_gate_population_rejects_mutable_findings() -> None:
+    with pytest.raises(TypeError, match="findings must be a tuple"):
+        GatePopulation(findings=[], posture=GateSuppressionPosture.UNSUPPRESSED)  # type: ignore[arg-type]
+
+
+def test_gate_population_rejects_untyped_posture() -> None:
+    with pytest.raises(TypeError, match="GateSuppressionPosture"):
+        GatePopulation(findings=(), posture="unsuppressed")  # type: ignore[arg-type]
+
+
+def test_gate_population_is_frozen() -> None:
+    population = GatePopulation.unsuppressed(())
+
+    with pytest.raises(FrozenInstanceError):
+        population.posture = GateSuppressionPosture.HONORS_SUPPRESSIONS  # type: ignore[misc]
+
+
+def test_secure_default_builds_unsuppressed_tagged_population(tmp_path: Path) -> None:
     proj, fp = _leaky_proj(tmp_path)
     _write_baseline(proj, fp)
     result = run_scan(proj)
-    assert result.gate_findings is not None
-    gate_leak = next(f for f in result.gate_findings if f.rule_id == "PY-WL-101")
+
+    assert result.gate_population.posture is GateSuppressionPosture.UNSUPPRESSED
+    gate_leak = next(f for f in result.gate_population.findings if f.rule_id == "PY-WL-101")
     assert gate_leak.suppressed is SuppressionState.ACTIVE  # gate sees it active
 
 
-def test_directly_constructed_scanresult_falls_back_to_findings() -> None:
-    # The None sentinel: a ScanResult built without gate_findings (e.g. in a test) must
-    # gate on its findings, never silently pass because gate_findings defaulted empty.
+def test_trust_suppressions_builds_honoring_tagged_population(tmp_path: Path) -> None:
+    proj, fp = _leaky_proj(tmp_path)
+    _write_baseline(proj, fp)
+
+    result = run_scan(proj, trust_suppressions=True)
+
+    assert result.gate_population.posture is GateSuppressionPosture.HONORS_SUPPRESSIONS
+    gate_leak = next(f for f in result.gate_population.findings if f.rule_id == "PY-WL-101")
+    assert gate_leak.suppressed is SuppressionState.BASELINED
+    assert gate_decision(result, Severity.ERROR).tripped is False
+
+
+def test_directly_constructed_scanresult_requires_explicit_gate_population() -> None:
     leak = Finding(
         rule_id="PY-WL-101",
         message="m",
@@ -617,8 +667,10 @@ def test_directly_constructed_scanresult_falls_back_to_findings() -> None:
         summary=ScanSummary(total=1, active=1, baselined=0, waived=0, judged=0),
         files_scanned=1,
         context=None,
+        gate_population=GatePopulation.honoring((leak,)),
     )
-    assert result.gate_findings is None
+
+    assert result.gate_population.posture is GateSuppressionPosture.HONORS_SUPPRESSIONS
     assert gate_decision(result, Severity.ERROR).tripped is True
 
 
@@ -713,8 +765,8 @@ def test_new_since_scopes_both_populations_and_resists_suppression(tmp_path: Pat
         result = run_scan(tmp_path, new_since="HEAD~1")
 
     # The in-delta caller.f stays ACTIVE in the gate population despite the baseline entry.
-    assert result.gate_findings is not None
-    gate_by_qn = {f.qualname: f for f in result.gate_findings if f.kind is Kind.DEFECT}
+    assert result.gate_population.findings is not None
+    gate_by_qn = {f.qualname: f for f in result.gate_population.findings if f.kind is Kind.DEFECT}
     assert gate_by_qn["caller.f"].suppressed is SuppressionState.ACTIVE
     # The out-of-delta unrelated.h is scoped OUT of the gate (delta: unchanged).
     assert gate_by_qn["unrelated.h"].suppressed is SuppressionState.BASELINED
@@ -1042,7 +1094,13 @@ def test_gate_decision_zero_files_fail_closed_trips_still_fail(tmp_path: Path) -
 def test_gate_decision_bare_scan_zero_files_carries_files_scanned() -> None:
     # The bare-scan branch (no gates configured) keeps its NOT_EVALUATED shape but now
     # carries files-scanned visibility on the decision itself.
-    result = ScanResult(findings=[], summary=ScanSummary(0, 0, 0, 0, 0), files_scanned=0, context=None)
+    result = ScanResult(
+        findings=[],
+        summary=ScanSummary(0, 0, 0, 0, 0),
+        files_scanned=0,
+        context=None,
+        gate_population=GatePopulation.honoring(()),
+    )
     decision = gate_decision(result, None)
     assert decision.verdict == "NOT_EVALUATED"
     assert decision.files_scanned == 0
