@@ -50,6 +50,54 @@ def _model_chain(length: int) -> tuple[_ParsedModule, ...]:
     return tuple(modules)
 
 
+def _elspeth_shaped_modules() -> tuple[_ParsedModule, ...]:
+    modules = [
+        _parsed(
+            f"import pydantic\n\nclass Model{index}(pydantic.BaseModel):\n    pass\n",
+            module=f"elspeth.direct_{index}",
+        )
+        for index in range(206)
+    ]
+    modules.extend(
+        _parsed(
+            "\n".join(
+                (
+                    f"from elspeth.direct_{index - 206} import Model{index - 206}",
+                    "",
+                    f"class Model{index}(Model{index - 206}):",
+                    "    pass",
+                    "",
+                )
+            ),
+            module=f"elspeth.second_{index}",
+        )
+        for index in range(206, 259)
+    )
+    modules.extend(
+        _parsed(
+            "\n".join(
+                (
+                    f"from elspeth.second_{206 + index - 259} import Model{206 + index - 259}",
+                    "",
+                    f"class Model{index}(Model{206 + index - 259}):",
+                    "    pass",
+                    "",
+                )
+            ),
+            module=f"elspeth.third_{index}",
+        )
+        for index in range(259, 263)
+    )
+    modules.extend(_parsed("", module=f"elspeth.empty_{index}") for index in range(330))
+
+    statement_count = sum(len(parsed.tree.body) for parsed in modules)
+    padding_needed = 11_493 - statement_count
+    for index in range(padding_needed):
+        modules[index % len(modules)].tree.body.append(ast.Pass())
+
+    return tuple(modules)
+
+
 def test_model_chain_rejects_whole_round_before_partial_discovery(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -83,6 +131,27 @@ def test_model_chain_converges_without_degradation() -> None:
     assert result.degraded_reason is None
     assert result.model_counts_by_round == (1, 2, 3, 3)
     assert result.round_number == 4
+
+
+def test_elspeth_shaped_graph_converges_deterministically() -> None:
+    files = _elspeth_shaped_modules()
+
+    assert len(files) == 593
+    assert sum(len(parsed.tree.body) for parsed in files) == 11_493
+
+    forward = discovery.discover_project_pydantic_models(files)
+    reverse = discovery.discover_project_pydantic_models(tuple(reversed(files)))
+
+    assert forward.degraded_reason is None
+    assert reverse.degraded_reason is None
+    assert forward.models == reverse.models
+    assert len(forward.models) == 263
+    assert forward.model_counts_by_round == (206, 259, 263, 263)
+    assert forward.round_number == 4
+    assert forward.work_completed == 480_048
+    assert forward.budget.work_budget == 773_504
+    assert reverse.model_counts_by_round == forward.model_counts_by_round
+    assert reverse.work_completed == forward.work_completed
 
 
 def test_repeated_model_state_degrades_to_all_declared_classes(
