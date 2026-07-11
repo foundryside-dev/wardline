@@ -26,6 +26,8 @@ import jsonschema
 import pytest
 
 from wardline.core.judge import JudgeResponse, JudgeVerdict
+from wardline.core.paths import waivers_path
+from wardline.core.waivers import load_project_waivers
 from wardline.mcp.protocol import PROTOCOL_VERSION, SUPPORTED_PROTOCOL_VERSIONS, JsonRpcServer
 from wardline.mcp.server import WardlineMCPServer
 from wardline.mcp.tooling import ToolCapability
@@ -368,7 +370,8 @@ def test_waiver_add_structured_output(tmp_path: Path) -> None:
 
 
 def test_waiver_add_unresolved_input_structured_output(tmp_path: Path) -> None:
-    server = WardlineMCPServer(root=_leaky_project(tmp_path))
+    root = _leaky_project(tmp_path)
+    server = WardlineMCPServer(root=root)
     fingerprint = "b" * 64
 
     out = _validated(
@@ -389,10 +392,13 @@ def test_waiver_add_unresolved_input_structured_output(tmp_path: Path) -> None:
     assert out["unresolved_input"]["reason_class"] == "unresolved_input"
     assert out["unresolved_input"]["cause"]
     assert out["unresolved_input"]["fix"]
+    assert not waivers_path(root).exists()
+    assert load_project_waivers(root) == ()
 
 
 def test_waiver_add_already_exists_structured_output(tmp_path: Path) -> None:
-    server = WardlineMCPServer(root=_leaky_project(tmp_path))
+    root = _leaky_project(tmp_path)
+    server = WardlineMCPServer(root=root)
     fingerprint = "c" * 64
     first = {
         "fingerprint": fingerprint,
@@ -426,6 +432,12 @@ def test_waiver_add_already_exists_structured_output(tmp_path: Path) -> None:
         "binding_kind": "sei",
         "already_exists": True,
     }
+    (persisted,) = load_project_waivers(root)
+    assert persisted.fingerprint == fingerprint
+    assert persisted.reason == "first reason"
+    assert persisted.expires is not None and persisted.expires.isoformat() == "2026-12-31"
+    assert persisted.entity_sei == "loomweave:eid:held"
+    assert persisted.entity_locator == "loomweave:eid:held"
 
 
 def test_fix_structured_output(tmp_path: Path) -> None:
