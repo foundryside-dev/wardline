@@ -980,13 +980,7 @@ def _scan(
     # structured payload is byte-identical to today when no scope was requested (INV-1).
     if result.scope is not None:
         response["scope"] = result.scope.to_dict()
-    _attach_legis_artifact(
-        response,
-        result,
-        path,
-        args,
-        config=result.effective_config,
-    )
+    _attach_legis_artifact(response, result, path, args)
     return response
 
 
@@ -2128,8 +2122,6 @@ def _attach_legis_artifact(
     result: ScanResult,
     path: Path,
     args: dict[str, Any],
-    *,
-    config: config_mod.WardlineConfig | None,
 ) -> None:
     """Opt-in: attach the signed, verbatim-postable legis scan-artifact.
 
@@ -2161,7 +2153,7 @@ def _attach_legis_artifact(
         # (dogfood-4 B6 blew the MCP token cap exactly this way). An explicit
         # legis_artifact:true still wins when the caller asks for both.
         return
-    if config is None:
+    if result.effective_config is None:
         raise ToolError("scan result did not retain its effective configuration")
     key_bytes = key_str.encode("utf-8") if key_str else None
     allow_dirty = _bool_arg(args, "allow_dirty", False)
@@ -2172,7 +2164,13 @@ def _attach_legis_artifact(
         "reason": None,
     }
     try:
-        artifact = build_legis_artifact(result, root=path, config=config, key=key_bytes, allow_dirty=allow_dirty)
+        artifact = build_legis_artifact(
+            result,
+            root=path,
+            config=result.effective_config,
+            key=key_bytes,
+            allow_dirty=allow_dirty,
+        )
     except LegisArtifactError as exc:
         status["reason"] = str(exc)
         response["legis_artifact_status"] = status

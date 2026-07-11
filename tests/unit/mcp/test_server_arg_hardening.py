@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import json
 import sys
+from inspect import signature
 from pathlib import Path
 from types import ModuleType
 
@@ -346,6 +347,10 @@ def _result_without_effective_config() -> ScanResult:
     )
 
 
+def test_legis_artifact_config_provenance_is_intrinsic_to_scan_result() -> None:
+    assert "config" not in signature(_attach_legis_artifact).parameters
+
+
 def test_legis_artifact_missing_effective_config_fails_loudly_when_activated(tmp_path, monkeypatch) -> None:
     monkeypatch.delenv(LEGIS_ARTIFACT_KEY_ENV, raising=False)
 
@@ -355,7 +360,6 @@ def test_legis_artifact_missing_effective_config_fails_loudly_when_activated(tmp
             _result_without_effective_config(),
             tmp_path,
             {"legis_artifact": True},
-            config=None,
         )
 
 
@@ -363,7 +367,7 @@ def test_legis_artifact_missing_effective_config_is_ignored_when_inactive(tmp_pa
     monkeypatch.delenv(LEGIS_ARTIFACT_KEY_ENV, raising=False)
     response: dict = {}
 
-    _attach_legis_artifact(response, _result_without_effective_config(), tmp_path, {}, config=None)
+    _attach_legis_artifact(response, _result_without_effective_config(), tmp_path, {})
 
     assert response == {}
 
