@@ -11,7 +11,7 @@ import pytest
 from wardline.core.config import WardlineConfig
 from wardline.core.finding import Kind
 from wardline.scanner.analyzer import WardlineAnalyzer
-from wardline.scanner.taint.fastapi_sources import discover_fastapi_route_receivers
+from wardline.scanner.taint.fastapi_sources import _annotation_candidates, discover_fastapi_route_receivers
 
 
 def _defect_rules(tmp_path: Path, src: str) -> set[str]:
@@ -282,6 +282,41 @@ def test_annotated_depends_uses_provider_taint(
 
 
 @pytest.mark.parametrize(
+    ("binding", "annotated_name"),
+    [
+        pytest.param("import local_typing", "local_typing.Annotated", id="lookalike-module"),
+        pytest.param(
+            "from typing_extensions import Annotated\nclass Annotated:\n    pass",
+            "Annotated",
+            id="shadowed-symbol",
+        ),
+        pytest.param(
+            "import typing_extensions as te\nclass LocalTyping:\n    class Annotated:\n        pass\nte = LocalTyping",
+            "te.Annotated",
+            id="shadowed-module-alias",
+        ),
+    ],
+)
+def test_annotated_depends_requires_exact_supported_fqn(tmp_path: Path, binding: str, annotated_name: str) -> None:
+    binding = textwrap.indent(binding, "        ")
+    src = f"""
+        import os
+        from fastapi import Depends, FastAPI
+        from wardline.decorators import external_boundary, trusted
+{binding}
+        app = FastAPI()
+        @external_boundary
+        def supplied():
+            return 'value'
+        @app.post('/run')
+        @trusted(level='ASSURED')
+        def run(value: {annotated_name}[str, Depends(supplied)]):
+            os.system(value)
+    """
+    assert "PY-WL-108" not in _defect_rules(tmp_path, src)
+
+
+@pytest.mark.parametrize(
     "binding",
     [
         "app = FastAPI()\napp = Local()",
@@ -346,6 +381,36 @@ def test_common_route_body_annotation_forms_are_sources(tmp_path: Path, annotati
         def run(body: {annotation}):
             os.system(body.command)
     """
+    assert "PY-WL-108" in _defect_rules(tmp_path, src)
+
+
+def test_typing_extensions_annotated_route_body_unwraps_payload_type(tmp_path: Path) -> None:
+    src = """
+        import os
+        from typing_extensions import Annotated
+        from fastapi import Body, FastAPI
+        from pydantic import BaseModel
+        from wardline.decorators import trusted
+        app = FastAPI()
+        class Payload(BaseModel):
+            command: str
+        @app.post('/run')
+        @trusted(level='ASSURED')
+        def run(body: Annotated[Payload, Body()]):
+            os.system(body.command)
+    """
+    tree = ast.parse(textwrap.dedent(src))
+    route = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "run")
+    annotation = route.args.args[0].annotation
+    assert annotation is not None
+    assert _annotation_candidates(
+        annotation,
+        {
+            "Annotated": "typing_extensions.Annotated",
+            "Body": "fastapi.Body",
+            "Payload": "m.Payload",
+        },
+    ) == {"m.Payload"}
     assert "PY-WL-108" in _defect_rules(tmp_path, src)
 
 
