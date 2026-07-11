@@ -9,11 +9,14 @@ Wardline only ever **reads** its own `[wardline]` table and never writes it.
 With no `weft.toml` (or no `[wardline]` table), Wardline boots on built-in
 defaults: it scans `.` with all rules enabled.
 
-!!! info "Missing or malformed `weft.toml` is a silent fallback, never a hard error"
-    If `weft.toml` is **absent**, is **unreadable**, or **fails to parse as
-    TOML**, Wardline silently falls back to its built-in defaults — it never
-    hard-fails on a missing or malformed file. A `weft.toml` with no `[wardline]`
-    table behaves the same way.
+!!! info "The implicit default may fall back; an explicit `--config` fails closed"
+    When Wardline implicitly loads `<scan-root>/weft.toml`, an **absent** file
+    falls back to built-in defaults, while an **unreadable** or malformed TOML
+    file falls back with a warning that the `[wardline]` policy was not applied.
+    A `weft.toml` with no `[wardline]` table also uses defaults because it declares
+    no Wardline policy. By contrast, a file named explicitly with `--config` is an
+    operator requirement: missing, unreadable, malformed, or non-table
+    `[wardline]` input is a hard configuration error rather than a fallback.
 
 !!! warning "But unknown keys and out-of-range values in a *present* `[wardline]` table are hard errors"
     Once a `[wardline]` table parses, it is validated against a JSON Schema

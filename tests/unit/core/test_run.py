@@ -1078,6 +1078,59 @@ def test_run_scan_out_of_root_symlink_yields_finding(tmp_path: Path) -> None:
     assert skipped[0].properties.get("reason") == "out_of_root_symlink"
 
 
+def test_run_scan_pins_in_root_symlink_target_before_adversarial_retarget(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "root"
+    src = root / "src"
+    targets = root / "targets"
+    outside_dir = tmp_path / "outside"
+    src.mkdir(parents=True)
+    targets.mkdir()
+    outside_dir.mkdir()
+    safe = targets / "safe.py"
+    safe.write_text(_LEAKY, encoding="utf-8")
+    outside = outside_dir / "secret.py"
+    outside.write_text("def outside_entity(): return 2\n", encoding="utf-8")
+    link = src / "entry.py"
+    link.symlink_to(safe)
+    (root / "weft.toml").write_text('[wardline]\nsource_roots = ["src"]\n', encoding="utf-8")
+
+    real_resolve = Path.resolve
+    real_read_bytes = Path.read_bytes
+    retargeted = False
+    outside_reads: list[Path] = []
+
+    def retarget_after_validation(path: Path, strict: bool = False) -> Path:
+        nonlocal retargeted
+        resolved = real_resolve(path, strict=strict)
+        if path == link and not retargeted:
+            link.unlink()
+            link.symlink_to(outside)
+            retargeted = True
+        return resolved
+
+    def record_outside_read(path: Path) -> bytes:
+        if real_resolve(path) == real_resolve(outside):
+            outside_reads.append(path)
+        return real_read_bytes(path)
+
+    monkeypatch.setattr(Path, "resolve", retarget_after_validation)
+    monkeypatch.setattr(Path, "read_bytes", record_outside_read)
+
+    result = run_scan(root, source_root_confinement=SourceRootConfinement.PROJECT_ROOT)
+
+    assert retargeted is True
+    assert outside_reads == []
+    assert result.scanned_paths == ("targets/safe.py",)
+    assert result.context is not None
+    assert "targets.safe.leaky" in result.context.entities
+    assert all("outside_entity" not in qualname for qualname in result.context.entities)
+    leak = next(f for f in result.findings if f.rule_id == "PY-WL-101")
+    assert leak.location.path == "targets/safe.py"
+    assert all(f.rule_id != "WLN-ENGINE-TREE-CHANGED-DURING-SCAN" for f in result.findings)
+
+
 # --- N-3 (wardline-8669de3576): nested scan root is surfaced, never silent ---
 
 

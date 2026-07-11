@@ -111,6 +111,7 @@ def discover(
             GitignoreMatcher.from_file(root_gitignore) if root_gitignore.is_file() else GitignoreMatcher.empty()
         )
     found: list[Path] = []
+    found_paths: set[Path] = set()
     for src in config.source_roots:
         base = (root / src).resolve()
         if source_root_confinement.confines_to_project and not base.is_relative_to(root):
@@ -146,18 +147,26 @@ def discover(
             rel_parts = path.relative_to(base).parts if path.is_relative_to(base) else path.parts
             if any(_is_floored_dir(part, skip_dirs) for part in rel_parts):
                 continue
-            if source_root_confinement.confines_to_project and not path.resolve().is_relative_to(root):
-                # A *.py symlink inside a legitimate source_root can point at an
-                # out-of-root target (rglob does not descend directory symlinks,
-                # so only file symlinks leak). Refuse to read out-of-root content
-                # by skipping it — the MCP confinement guarantee (THREAT-001).
-                relposix = path.relative_to(root).as_posix() if path.is_relative_to(root) else path.as_posix()
-                warnings.warn(f"WLN-ENGINE-FILE-SKIPPED: {relposix}", stacklevel=2)
-                continue
+            discovered_path = path
+            if source_root_confinement.confines_to_project:
+                resolved_path = path.resolve()
+                if not resolved_path.is_relative_to(root):
+                    # A *.py symlink inside a legitimate source_root can point at an
+                    # out-of-root target (rglob does not descend directory symlinks,
+                    # so only file symlinks leak). Refuse to read out-of-root content
+                    # by skipping it — the MCP confinement guarantee (THREAT-001).
+                    relposix = path.relative_to(root).as_posix() if path.is_relative_to(root) else path.as_posix()
+                    warnings.warn(f"WLN-ENGINE-FILE-SKIPPED: {relposix}", stacklevel=2)
+                    continue
+                # Hand downstream the exact canonical path that passed confinement.
+                # A later retarget of the mutable symlink cannot redirect analysis.
+                discovered_path = resolved_path
             relposix = path.relative_to(root).as_posix() if path.is_relative_to(root) else path.as_posix()
             if _excluded(relposix, config.exclude):
                 continue
-            found.append(path)
+            if discovered_path not in found_paths:
+                found.append(discovered_path)
+                found_paths.add(discovered_path)
     return found
 
 

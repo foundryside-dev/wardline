@@ -78,6 +78,34 @@ def test_confine_excludes_symlink_escaping_root(tmp_path: Path) -> None:
     assert all(p.name != "evil.py" for p in files)
 
 
+def test_confined_in_root_symlink_returns_validated_canonical_target(tmp_path: Path) -> None:
+    root = tmp_path / "root"
+    src = root / "src"
+    targets = root / "targets"
+    src.mkdir(parents=True)
+    targets.mkdir()
+    target = targets / "service.py"
+    target.write_text("def service(): return 1\n", encoding="utf-8")
+    (src / "alias.py").symlink_to(target)
+
+    files = discover(root, WardlineConfig(source_roots=("src",)))
+
+    assert files == [target.resolve()]
+
+
+def test_confined_symlink_alias_deduplicates_canonical_target(tmp_path: Path) -> None:
+    root = tmp_path / "root"
+    src = root / "src"
+    src.mkdir(parents=True)
+    target = src / "service.py"
+    target.write_text("def service(): return 1\n", encoding="utf-8")
+    (src / "alias.py").symlink_to(target)
+
+    files = discover(root, WardlineConfig(source_roots=("src",)))
+
+    assert files == [target.resolve()]
+
+
 def test_discover_rust_suffix(tmp_path: Path) -> None:
     # The suffix parameter routes discovery to a different language's files: a
     # `.rs` sweep finds `a.rs`, never `a.py`; and the default (no `suffixes`) call
