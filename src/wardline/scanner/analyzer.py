@@ -38,10 +38,9 @@ from wardline.scanner.taint.decorator_provider import (
     vocabulary_star_exports,
 )
 from wardline.scanner.taint.fastapi_sources import (
+    discover_callable_aliases,
     discover_fastapi_route_receivers,
     discover_pydantic_models,
-    route_body_parameters,
-    route_dependency_parameters,
 )
 from wardline.scanner.taint.module_summariser import collect_module_global_raw_seeds, own_scope_global_names
 from wardline.scanner.taint.project_resolver import resolve_project_taints
@@ -350,6 +349,15 @@ class WardlineAnalyzer:
         # @trust_boundary validator) body != return, and using body here would
         # mis-read validated output as raw (over-taint -> PY-WL-101 false positive).
         project_return_taints = dict(result.return_taint_map)
+        for parsed in file_meta:
+            callable_aliases = discover_callable_aliases(
+                parsed.tree,
+                module=parsed.module,
+                is_package=parsed.relpath.rsplit("/", 1)[-1] == "__init__.py",
+            )
+            for alias, target in callable_aliases.items():
+                if target in project_return_taints:
+                    project_return_taints[alias] = project_return_taints[target]
 
         # Nested-def RETURN taints, bucketed by their enclosing entity — injected
         # into the enclosing function's per-entity taint map under the helper's
@@ -614,12 +622,19 @@ class WardlineAnalyzer:
         all_classes = frozenset(c for parsed in file_meta for c in parsed.class_qualnames)
         pydantic_models = frozenset[str]()
         model_states = {pydantic_models}
+        model_work = 0
+        model_work_budget = max(4096, sum(len(parsed.tree.body) for parsed in file_meta) * 32)
+        model_degraded_reason: str | None = None
         max_model_rounds = (
             sum(1 for parsed in file_meta for stmt in parsed.tree.body if isinstance(stmt, ast.ClassDef)) + 1
         )
-        for _ in range(max_model_rounds):
+        for _model_round in range(max_model_rounds):
             next_models: set[str] = set()
             for parsed in file_meta:
+                model_work += len(parsed.tree.body) + len(pydantic_models) + 1
+                if model_work > model_work_budget:
+                    model_degraded_reason = "work_budget_exceeded"
+                    break
                 discovered = discover_pydantic_models(
                     parsed.tree,
                     module=parsed.module,
@@ -628,16 +643,42 @@ class WardlineAnalyzer:
                     is_package=parsed.relpath.rsplit("/", 1)[-1] == "__init__.py",
                 )
                 next_models.update(name for name in discovered if name.rpartition(".")[0] == parsed.module)
+            if model_degraded_reason is not None:
+                pydantic_models = all_classes
+                break
             next_state = frozenset(next_models)
             if next_state == pydantic_models:
                 break
             if next_state in model_states:
                 pydantic_models = all_classes
+                model_degraded_reason = "repeated_state"
                 break
             model_states.add(next_state)
             pydantic_models = next_state
         else:
             pydantic_models = all_classes
+            model_degraded_reason = "round_limit_exceeded"
+        if model_degraded_reason is not None:
+            func_skip_findings.append(
+                Finding(
+                    rule_id="WLN-ENGINE-PYDANTIC-DISCOVERY-LIMIT",
+                    message=(
+                        "Pydantic model discovery degraded to conservative class seeding "
+                        f"({model_degraded_reason}; round={_model_round + 1}; "
+                        f"work={model_work}/{model_work_budget})"
+                    ),
+                    severity=Severity.ERROR,
+                    kind=Kind.DEFECT,
+                    location=Location(path=ENGINE_PATH, line_start=1),
+                    fingerprint=_fp("WLN-ENGINE-PYDANTIC-DISCOVERY-LIMIT", model_degraded_reason),
+                    properties={
+                        "reason": model_degraded_reason,
+                        "round": _model_round + 1,
+                        "work": model_work,
+                        "budget": model_work_budget,
+                    },
+                )
+            )
         route_receivers_by_module = {
             parsed.module: discover_fastapi_route_receivers(
                 parsed.tree,
@@ -764,21 +805,8 @@ class WardlineAnalyzer:
                 writes: dict[str, dict[str, TaintState]] = {}
                 method_tm: dict[str, TaintState] = {}
                 route_snapshot = route_receivers_by_module[module].get(id(ent.node))
-                route_aliases = route_snapshot.aliases if route_snapshot is not None else alias_map
-                route_receivers = route_snapshot.receivers if route_snapshot is not None else frozenset()
-                route_models = route_snapshot.models if route_snapshot is not None else pydantic_models
-                route_body_params = route_body_parameters(
-                    ent.node,
-                    module=module,
-                    aliases=route_aliases,
-                    route_receivers=route_receivers,
-                    pydantic_models=route_models,
-                )
-                dependency_bindings = route_dependency_parameters(
-                    ent.node,
-                    aliases=route_aliases,
-                    route_receivers=route_receivers,
-                )
+                route_body_params = route_snapshot.body_parameters if route_snapshot is not None else frozenset()
+                dependency_bindings = route_snapshot.dependency_bindings if route_snapshot is not None else {}
                 route_dependency_params = {
                     name: project_return_taints.get(
                         provider if provider is not None and "." in provider else f"{module}.{provider or ''}",

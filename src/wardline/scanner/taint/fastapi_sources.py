@@ -3,14 +3,15 @@
 from __future__ import annotations
 
 import ast
-from collections.abc import Mapping
+from collections import ChainMap
+from collections.abc import Mapping, MutableMapping
 from dataclasses import dataclass
 
 _FASTAPI_CONSTRUCTORS = frozenset({"fastapi.FastAPI", "fastapi.routing.APIRouter", "fastapi.APIRouter"})
 _ROUTE_METHODS = frozenset(
     {"get", "post", "put", "patch", "delete", "options", "head", "trace", "api_route", "websocket"}
 )
-_PYDANTIC_BASES = frozenset({"pydantic.BaseModel", "pydantic.main.BaseModel"})
+_PYDANTIC_BASES = frozenset({"pydantic.BaseModel", "pydantic.main.BaseModel", "pydantic.v1.BaseModel"})
 _DEPENDS = frozenset({"fastapi.Depends", "fastapi.params.Depends"})
 _UNKNOWN_ANNOTATION = "<unknown-annotation>"
 _UNKNOWN_BINDING = "<unknown-binding>"
@@ -20,19 +21,8 @@ _DOTTED_NODE_BUDGET = 128
 
 @dataclass(frozen=True, slots=True)
 class RouteBindingSnapshot:
-    aliases: dict[str, str]
-    receivers: frozenset[str]
-    models: frozenset[str]
-
-
-def _record_function_snapshots(
-    node: ast.AST,
-    snapshot: RouteBindingSnapshot,
-    snapshots: dict[int, RouteBindingSnapshot],
-) -> None:
-    for descendant in ast.walk(node):
-        if isinstance(descendant, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            snapshots.setdefault(id(descendant), snapshot)
+    body_parameters: frozenset[str]
+    dependency_bindings: dict[str, str | None]
 
 
 def resolve_dotted(node: ast.expr, aliases: Mapping[str, str]) -> str | None:
@@ -79,21 +69,32 @@ def _import_from_base(node: ast.ImportFrom, module: str, *, is_package: bool) ->
     return ".".join(parts) or None
 
 
-def discover_fastapi_route_receivers(
-    tree: ast.Module,
-    aliases: Mapping[str, str],
+def _is_route_candidate(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+    return any(
+        isinstance(dec, ast.Call) and isinstance(dec.func, ast.Attribute) and dec.func.attr in _ROUTE_METHODS
+        for dec in node.decorator_list
+    )
+
+
+def _has_nested_scope(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+    return any(
+        isinstance(descendant, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and descendant is not node
+        for descendant in ast.walk(node)
+    )
+
+
+def _walk_route_scope(
+    statements: list[ast.stmt],
     *,
     module: str,
-    known_models: frozenset[str],
-    is_package: bool = False,
-) -> dict[int, RouteBindingSnapshot]:
-    """Return source-ordered binding snapshots for each top-level function definition."""
-    del aliases  # the static import map is intentionally replaced by ordered bindings
-    receivers: set[str] = set()
-    bindings: dict[str, str] = {}
-    models = {name for name in known_models if _model_owner(name) != module}
-    snapshots: dict[int, RouteBindingSnapshot] = {}
-    for stmt in tree.body:
+    scope: str,
+    is_package: bool,
+    bindings: MutableMapping[str, str],
+    receivers: set[str],
+    models: set[str],
+    snapshots: dict[int, RouteBindingSnapshot],
+) -> None:
+    for stmt in statements:
         if isinstance(stmt, ast.Import):
             for item in stmt.names:
                 if item.asname is not None:
@@ -111,12 +112,8 @@ def discover_fastapi_route_receivers(
                     bindings[item.asname or item.name] = f"{base}.{item.name}"
             continue
         if isinstance(stmt, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
-            qualname = f"{module}.{stmt.name}"
-            if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                snapshot = RouteBindingSnapshot(dict(bindings), frozenset(receivers), frozenset(models))
-                _record_function_snapshots(stmt, snapshot, snapshots)
-                models.discard(qualname)
-            elif isinstance(stmt, ast.ClassDef):
+            qualname = f"{scope}.{stmt.name}"
+            if isinstance(stmt, ast.ClassDef):
                 bases = {
                     candidate
                     for base in stmt.bases
@@ -126,8 +123,60 @@ def discover_fastapi_route_receivers(
                 models.discard(qualname)
                 if is_model:
                     models.add(qualname)
-                snapshot = RouteBindingSnapshot(dict(bindings), frozenset(receivers), frozenset(models))
-                _record_function_snapshots(stmt, snapshot, snapshots)
+                _walk_route_scope(
+                    stmt.body,
+                    module=module,
+                    scope=qualname,
+                    is_package=is_package,
+                    bindings=ChainMap({}, bindings),
+                    receivers=set(receivers),
+                    models=set(models),
+                    snapshots=snapshots,
+                )
+            else:
+                if _is_route_candidate(stmt):
+                    route_receivers = frozenset(receivers)
+                    snapshots[id(stmt)] = RouteBindingSnapshot(
+                        body_parameters=route_body_parameters(
+                            stmt,
+                            module=module,
+                            aliases=bindings,
+                            route_receivers=route_receivers,
+                            pydantic_models=frozenset(models),
+                        ),
+                        dependency_bindings=route_dependency_parameters(
+                            stmt,
+                            aliases=bindings,
+                            route_receivers=route_receivers,
+                        ),
+                    )
+                if _has_nested_scope(stmt):
+                    child_bindings: MutableMapping[str, str] = ChainMap({}, bindings)
+                    child_receivers = set(receivers)
+                    for arg in [
+                        *stmt.args.posonlyargs,
+                        *stmt.args.args,
+                        *stmt.args.kwonlyargs,
+                    ]:
+                        child_bindings[arg.arg] = f"{_UNKNOWN_BINDING}.{arg.arg}"
+                        child_receivers.discard(arg.arg)
+                    if stmt.args.vararg is not None:
+                        child_bindings[stmt.args.vararg.arg] = f"{_UNKNOWN_BINDING}.{stmt.args.vararg.arg}"
+                        child_receivers.discard(stmt.args.vararg.arg)
+                    if stmt.args.kwarg is not None:
+                        child_bindings[stmt.args.kwarg.arg] = f"{_UNKNOWN_BINDING}.{stmt.args.kwarg.arg}"
+                        child_receivers.discard(stmt.args.kwarg.arg)
+                    _walk_route_scope(
+                        stmt.body,
+                        module=module,
+                        scope=f"{qualname}.<locals>",
+                        is_package=is_package,
+                        bindings=child_bindings,
+                        receivers=child_receivers,
+                        models=set(models),
+                        snapshots=snapshots,
+                    )
+                models.discard(qualname)
             receivers.discard(stmt.name)
             bindings[stmt.name] = qualname
             continue
@@ -147,7 +196,32 @@ def discover_fastapi_route_receivers(
                 bindings[target] = alias_target
             else:
                 bindings[target] = f"{_UNKNOWN_BINDING}.{target}"
-            models.discard(f"{module}.{target}")
+            canonical_target = f"{scope}.{target}"
+            if alias_target != canonical_target:
+                models.discard(canonical_target)
+
+
+def discover_fastapi_route_receivers(
+    tree: ast.Module,
+    aliases: Mapping[str, str],
+    *,
+    module: str,
+    known_models: frozenset[str],
+    is_package: bool = False,
+) -> dict[int, RouteBindingSnapshot]:
+    """Return source-ordered binding snapshots for each top-level function definition."""
+    del aliases  # the static import map is intentionally replaced by ordered bindings
+    snapshots: dict[int, RouteBindingSnapshot] = {}
+    _walk_route_scope(
+        tree.body,
+        module=module,
+        scope=module,
+        is_package=is_package,
+        bindings={},
+        receivers=set(),
+        models={name for name in known_models if _model_owner(name) != module},
+        snapshots=snapshots,
+    )
     return snapshots
 
 
@@ -208,12 +282,59 @@ def discover_pydantic_models(
         value = stmt.value if isinstance(stmt, (ast.Assign, ast.AnnAssign)) else None
         alias_target = resolve_dotted(value, bindings) if isinstance(value, (ast.Name, ast.Attribute)) else None
         for name in assigned:
-            found.discard(f"{module}.{name}")
+            canonical_target = f"{module}.{name}"
+            if alias_target in found:
+                found.add(canonical_target)
+            elif alias_target != canonical_target:
+                found.discard(canonical_target)
             if alias_target is not None:
                 bindings[name] = alias_target
             else:
                 bindings[name] = f"{_UNKNOWN_BINDING}.{name}"
     return frozenset(found)
+
+
+def discover_callable_aliases(
+    tree: ast.Module,
+    *,
+    module: str,
+    is_package: bool = False,
+) -> dict[str, str]:
+    """Return final proven top-level assignment aliases to callable identities."""
+    bindings: dict[str, str] = {}
+    aliases: dict[str, str] = {}
+    for stmt in tree.body:
+        if isinstance(stmt, ast.Import):
+            for item in stmt.names:
+                local = item.asname or item.name.split(".")[0]
+                bindings[local] = item.name if item.asname is not None else local
+            continue
+        if isinstance(stmt, ast.ImportFrom):
+            base = _import_from_base(stmt, module, is_package=is_package)
+            if base is not None:
+                for item in stmt.names:
+                    if item.name != "*":
+                        bindings[item.asname or item.name] = f"{base}.{item.name}"
+            continue
+        if isinstance(stmt, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+            canonical = f"{module}.{stmt.name}"
+            bindings[stmt.name] = canonical
+            aliases.pop(canonical, None)
+            continue
+        assigned = _assigned_names(stmt)
+        if not assigned:
+            continue
+        value = stmt.value if isinstance(stmt, (ast.Assign, ast.AnnAssign)) else None
+        target = resolve_dotted(value, bindings) if isinstance(value, (ast.Name, ast.Attribute)) else None
+        for name in assigned:
+            canonical = f"{module}.{name}"
+            if target is not None:
+                bindings[name] = target
+                aliases[canonical] = target
+            else:
+                bindings[name] = f"{_UNKNOWN_BINDING}.{name}"
+                aliases.pop(canonical, None)
+    return aliases
 
 
 def _is_fastapi_route(node: ast.FunctionDef | ast.AsyncFunctionDef, route_receivers: frozenset[str]) -> bool:
@@ -281,6 +402,16 @@ def _annotation_candidates(node: ast.expr, aliases: Mapping[str, str]) -> set[st
     while worklist and visited < _ANNOTATION_NODE_BUDGET:
         current = worklist.pop()
         visited += 1
+        if isinstance(current, ast.Constant) and isinstance(current.value, str):
+            if not current.value.strip():
+                continue
+            try:
+                parsed = ast.parse(current.value, mode="eval")
+            except (MemoryError, RecursionError, SyntaxError, ValueError):
+                candidates.add(_UNKNOWN_ANNOTATION)
+            else:
+                worklist.append(parsed.body)
+            continue
         if isinstance(current, ast.BinOp) and isinstance(current.op, ast.BitOr):
             worklist.extend((current.left, current.right))
             continue
@@ -296,7 +427,10 @@ def _annotation_candidates(node: ast.expr, aliases: Mapping[str, str]) -> set[st
             continue
         resolved = resolve_dotted(current, aliases)
         if resolved is not None:
-            candidates.add(resolved)
+            if resolved.startswith(f"{_UNKNOWN_BINDING}."):
+                candidates.add(_UNKNOWN_ANNOTATION)
+            else:
+                candidates.add(resolved)
     if worklist:
         candidates.add(_UNKNOWN_ANNOTATION)
     return candidates

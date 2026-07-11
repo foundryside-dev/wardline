@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import textwrap
 from pathlib import Path
 
@@ -10,6 +11,7 @@ import pytest
 from wardline.core.config import WardlineConfig
 from wardline.core.finding import Kind
 from wardline.scanner.analyzer import WardlineAnalyzer
+from wardline.scanner.taint.fastapi_sources import discover_fastapi_route_receivers
 
 
 def _defect_rules(tmp_path: Path, src: str) -> set[str]:
@@ -724,3 +726,229 @@ def test_relative_model_import_is_resolved_in_package_route(tmp_path: Path) -> N
         },
     )
     assert "PY-WL-108" in rules
+
+
+@pytest.mark.parametrize("assignment", ["Payload = Payload", "Alias = Payload; Payload = Alias"])
+def test_model_identity_preserving_assignment_keeps_body_source(tmp_path: Path, assignment: str) -> None:
+    src = f"""
+        import os
+        from fastapi import FastAPI
+        from pydantic import BaseModel
+        from wardline.decorators import trusted
+        app = FastAPI()
+        class Payload(BaseModel): command: str
+        {assignment}
+        @app.post('/')
+        @trusted(level='ASSURED')
+        def run(body: Payload): os.system(body.command)
+    """
+    assert "PY-WL-108" in _defect_rules(tmp_path, src)
+
+
+def test_nested_scope_local_fastapi_receiver_is_recognized(tmp_path: Path) -> None:
+    src = """
+        import os
+        from fastapi import FastAPI
+        from pydantic import BaseModel
+        from wardline.decorators import trusted
+        class Payload(BaseModel): command: str
+        def register():
+            app = FastAPI()
+            @app.post('/')
+            @trusted(level='ASSURED')
+            def run(body: Payload): os.system(body.command)
+            return run
+    """
+    assert "PY-WL-108" in _defect_rules(tmp_path, src)
+
+
+def test_nested_scope_provider_uses_locals_qualified_identity(tmp_path: Path) -> None:
+    src = """
+        import os
+        from fastapi import Depends, FastAPI
+        from wardline.decorators import trusted
+        def register():
+            app = FastAPI()
+            @trusted(level='ASSURED')
+            def supplied(): return 'fixed'
+            @app.post('/')
+            @trusted(level='ASSURED')
+            def run(value: str = Depends(supplied)): os.system(value)
+            return run
+    """
+    assert "PY-WL-108" not in _defect_rules(tmp_path, src)
+
+
+def test_nested_scope_local_shadow_hides_inherited_receiver(tmp_path: Path) -> None:
+    src = """
+        import os
+        from fastapi import FastAPI
+        from pydantic import BaseModel
+        from wardline.decorators import trusted
+        class Local: pass
+        app = FastAPI()
+        class Payload(BaseModel): command: str
+        def register():
+            app = Local()
+            @app.post('/')
+            @trusted(level='ASSURED')
+            def run(body: Payload): os.system(body.command)
+            return run
+    """
+    assert "PY-WL-108" not in _defect_rules(tmp_path, src)
+
+
+def test_class_scope_local_fastapi_receiver_is_recognized(tmp_path: Path) -> None:
+    src = """
+        import os
+        from fastapi import FastAPI
+        from pydantic import BaseModel
+        from wardline.decorators import trusted
+        class Payload(BaseModel): command: str
+        class Routes:
+            app = FastAPI()
+            @app.post('/')
+            @trusted(level='ASSURED')
+            def run(body: Payload): os.system(body.command)
+    """
+    assert "PY-WL-108" in _defect_rules(tmp_path, src)
+
+
+def test_class_scope_local_shadow_hides_inherited_receiver(tmp_path: Path) -> None:
+    src = """
+        import os
+        from fastapi import FastAPI
+        from pydantic import BaseModel
+        from wardline.decorators import trusted
+        class Local: pass
+        app = FastAPI()
+        class Payload(BaseModel): command: str
+        class Routes:
+            app = Local()
+            @app.post('/')
+            @trusted(level='ASSURED')
+            def run(body: Payload): os.system(body.command)
+    """
+    assert "PY-WL-108" not in _defect_rules(tmp_path, src)
+
+
+def test_exported_model_alias_is_recognized_cross_module(tmp_path: Path) -> None:
+    rules = _defect_rules_files(
+        tmp_path,
+        {
+            "models.py": """
+                from pydantic import BaseModel
+                class Payload(BaseModel): command: str
+                PublicPayload = Payload
+            """,
+            "api.py": """
+                import os
+                from fastapi import FastAPI
+                from models import PublicPayload
+                from wardline.decorators import trusted
+                app = FastAPI()
+                @app.post('/')
+                @trusted(level='ASSURED')
+                def run(body: PublicPayload): os.system(body.command)
+            """,
+        },
+    )
+    assert "PY-WL-108" in rules
+
+
+def test_exported_trusted_provider_alias_is_quiet_cross_module(tmp_path: Path) -> None:
+    rules = _defect_rules_files(
+        tmp_path,
+        {
+            "providers.py": """
+                from wardline.decorators import trusted
+                @trusted(level='ASSURED')
+                def supplied(): return 'fixed'
+                public = supplied
+            """,
+            "api.py": """
+                import os
+                from fastapi import Depends, FastAPI
+                from providers import public
+                from wardline.decorators import trusted
+                app = FastAPI()
+                @app.post('/')
+                @trusted(level='ASSURED')
+                def run(value: str = Depends(public)): os.system(value)
+            """,
+        },
+    )
+    assert "PY-WL-108" not in rules
+
+
+def test_unproven_model_alias_annotation_fails_closed(tmp_path: Path) -> None:
+    src = """
+        import os
+        from fastapi import FastAPI
+        from pydantic import BaseModel
+        from wardline.decorators import trusted
+        app = FastAPI()
+        class Payload(BaseModel): command: str
+        def identity(value): return value
+        Alias = identity(Payload)
+        @app.post('/')
+        @trusted(level='ASSURED')
+        def run(body: Alias): os.system(body.command)
+    """
+    assert "PY-WL-108" in _defect_rules(tmp_path, src)
+
+
+@pytest.mark.parametrize("annotation", ['"Payload"', '"list[Payload]"'])
+def test_forward_reference_body_annotations_are_sources(tmp_path: Path, annotation: str) -> None:
+    src = f"""
+        import os
+        from fastapi import FastAPI
+        from pydantic import BaseModel
+        from wardline.decorators import trusted
+        app = FastAPI()
+        class Payload(BaseModel): command: str
+        @app.post('/')
+        @trusted(level='ASSURED')
+        def run(body: {annotation}): os.system(str(body))
+    """
+    assert "PY-WL-108" in _defect_rules(tmp_path, src)
+
+
+def test_pydantic_v1_model_body_is_source(tmp_path: Path) -> None:
+    src = """
+        import os
+        from fastapi import FastAPI
+        from pydantic.v1 import BaseModel
+        from wardline.decorators import trusted
+        app = FastAPI()
+        class Payload(BaseModel): command: str
+        @app.post('/')
+        @trusted(level='ASSURED')
+        def run(body: Payload): os.system(body.command)
+    """
+    assert "PY-WL-108" in _defect_rules(tmp_path, src)
+
+
+def test_route_heavy_discovery_stores_only_derived_route_data() -> None:
+    routes = "\n".join(f"@app.get('/{index}')\ndef route_{index}(value: str): pass" for index in range(1000))
+    tree = ast.parse(f"from fastapi import FastAPI\napp = FastAPI()\n{routes}\n")
+    snapshots = discover_fastapi_route_receivers(
+        tree,
+        {},
+        module="m",
+        known_models=frozenset(),
+    )
+    assert len(snapshots) == 1000
+    assert all(not snapshot.body_parameters and not snapshot.dependency_bindings for snapshot in snapshots.values())
+
+
+def test_large_model_chain_degrades_loudly_with_bounded_work(tmp_path: Path) -> None:
+    files = {
+        "m0.py": "from pydantic import BaseModel\nclass Model0(BaseModel): pass\n",
+        **{
+            f"m{index}.py": (f"from m{index - 1} import Model{index - 1}\nclass Model{index}(Model{index - 1}): pass\n")
+            for index in range(1, 80)
+        },
+    }
+    rules = _defect_rules_files(tmp_path, files)
+    assert "WLN-ENGINE-PYDANTIC-DISCOVERY-LIMIT" in rules
