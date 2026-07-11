@@ -137,6 +137,39 @@ def test_read_source_bytes_rejects_ancestor_swap_at_component_boundary(
     assert swapped is True
 
 
+def test_read_source_bytes_rejects_project_root_ancestor_swap_after_root_resolution(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ancestor = tmp_path / "container"
+    root = ancestor / "project"
+    source = root / "pkg" / "source.py"
+    source.parent.mkdir(parents=True)
+    source.write_bytes(b"safe = True\n")
+    outside_ancestor = tmp_path / "outside-container"
+    outside_source = outside_ancestor / "project" / "pkg" / "source.py"
+    outside_source.parent.mkdir(parents=True)
+    outside_source.write_bytes(b"outside = True\n")
+    parked = tmp_path / "container-safe"
+    real_resolve = Path.resolve
+    swapped = False
+
+    def swap_after_root_resolution(path: Path, strict: bool = False) -> Path:
+        nonlocal swapped
+        resolved = real_resolve(path, strict=strict)
+        if path == root and not swapped:
+            ancestor.rename(parked)
+            ancestor.symlink_to(outside_ancestor, target_is_directory=True)
+            swapped = True
+        return resolved
+
+    monkeypatch.setattr(Path, "resolve", swap_after_root_resolution)
+
+    with pytest.raises((OSError, WardlineError)):
+        _reader()(source, root=root, source_root_confinement=SourceRootConfinement.PROJECT_ROOT)
+
+    assert swapped is True
+
+
 @pytest.mark.parametrize("missing_capability", ["no_nofollow", "no_directory", "no_dir_fd"])
 def test_read_source_bytes_secure_mode_fails_closed_without_openat_capabilities(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, missing_capability: str

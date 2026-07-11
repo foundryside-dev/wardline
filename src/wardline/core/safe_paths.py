@@ -214,32 +214,35 @@ def read_source_bytes(
     file_flags = os.O_RDONLY | os.O_NOFOLLOW
     directory_fds: list[int] = []
     try:
-        root_before = resolved_root.stat(follow_symlinks=False)
-        root_fd = os.open(resolved_root, directory_flags)
-        directory_fds.append(root_fd)
-        root_opened = os.fstat(root_fd)
-        root_after = resolved_root.stat(follow_symlinks=False)
+        anchor = Path(resolved_root.anchor)
+        if not resolved_root.is_absolute() or not anchor.anchor:
+            raise OSError(errno.ENOTSUP, f"project root has no stable absolute anchor: {resolved_root}", root)
+        anchor_before = anchor.stat(follow_symlinks=False)
+        anchor_fd = os.open(anchor, directory_flags)
+        directory_fds.append(anchor_fd)
+        anchor_opened = os.fstat(anchor_fd)
+        anchor_after = anchor.stat(follow_symlinks=False)
         if not (
-            stat.S_ISDIR(root_opened.st_mode)
-            and os.path.samestat(root_before, root_opened)
-            and os.path.samestat(root_opened, root_after)
+            stat.S_ISDIR(anchor_opened.st_mode)
+            and os.path.samestat(anchor_before, anchor_opened)
+            and os.path.samestat(anchor_opened, anchor_after)
         ):
-            raise OSError(errno.ESTALE, f"project root changed while opening: {resolved_root}", resolved_root)
+            raise OSError(errno.ESTALE, f"filesystem anchor changed while opening: {anchor}", anchor)
 
-        parent_fd = root_fd
-        for component in relative.parts[:-1]:
-            before = os.stat(component, dir_fd=parent_fd, follow_symlinks=False)
-            if not stat.S_ISDIR(before.st_mode):
-                raise OSError(errno.ENOTDIR, f"source parent is not a directory: {component}", path)
-            child_fd = os.open(component, directory_flags, dir_fd=parent_fd)
-            directory_fds.append(child_fd)
-            opened = os.fstat(child_fd)
-            after = os.stat(component, dir_fd=parent_fd, follow_symlinks=False)
-            if not (
-                stat.S_ISDIR(opened.st_mode) and os.path.samestat(before, opened) and os.path.samestat(opened, after)
-            ):
-                raise OSError(errno.ESTALE, f"source parent changed while opening: {component}", path)
-            parent_fd = child_fd
+        root_fd = _open_verified_directory_components(
+            anchor_fd,
+            resolved_root.relative_to(anchor).parts,
+            flags=directory_flags,
+            opened_fds=directory_fds,
+            subject=resolved_root,
+        )
+        parent_fd = _open_verified_directory_components(
+            root_fd,
+            relative.parts[:-1],
+            flags=directory_flags,
+            opened_fds=directory_fds,
+            subject=path,
+        )
 
         final = relative.parts[-1]
         before = os.stat(final, dir_fd=parent_fd, follow_symlinks=False)
@@ -262,6 +265,30 @@ def read_source_bytes(
     finally:
         for directory_fd in reversed(directory_fds):
             os.close(directory_fd)
+
+
+def _open_verified_directory_components(
+    parent_fd: int,
+    components: tuple[str, ...],
+    *,
+    flags: int,
+    opened_fds: list[int],
+    subject: Path,
+) -> int:
+    """Traverse directory components under a pinned parent and verify every hop."""
+    current_fd = parent_fd
+    for component in components:
+        before = os.stat(component, dir_fd=current_fd, follow_symlinks=False)
+        if not stat.S_ISDIR(before.st_mode):
+            raise OSError(errno.ENOTDIR, f"path component is not a directory: {component}", subject)
+        child_fd = os.open(component, flags, dir_fd=current_fd)
+        opened_fds.append(child_fd)
+        opened = os.fstat(child_fd)
+        after = os.stat(component, dir_fd=current_fd, follow_symlinks=False)
+        if not (stat.S_ISDIR(opened.st_mode) and os.path.samestat(before, opened) and os.path.samestat(opened, after)):
+            raise OSError(errno.ESTALE, f"path component changed while opening: {component}", subject)
+        current_fd = child_fd
+    return current_fd
 
 
 def _read_legacy_source_bytes(path: Path) -> bytes:
