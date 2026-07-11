@@ -518,44 +518,120 @@ def write_journal(path: Path, journal: Journal, *, root: Path) -> None:
     os.replace(tmp, path)
 
 
+def _journal_string_list(raw: object, *, path: Path, field_name: str) -> list[str]:
+    if not isinstance(raw, list) or not all(isinstance(value, str) for value in raw):
+        raise ConfigError(f"malformed migration journal {path.name}: {field_name} must be a list of strings")
+    return list(raw)
+
+
+def _load_journal_legs(raw: object, *, path: Path) -> list[Leg]:
+    # Backward compatibility: journals written before per-leg progress was
+    # persisted omitted ``legs`` (or wrote an empty list). Resume them from the
+    # canonical first leg rather than rejecting a recoverable old journal.
+    if raw is None or raw == []:
+        return [Leg(name) for name in LEG_NAMES]
+    if not isinstance(raw, list):
+        raise ConfigError(f"malformed migration journal {path.name}: legs must be a list")
+
+    names: list[str] = []
+    legs: list[Leg] = []
+    for index, item in enumerate(raw):
+        if not isinstance(item, dict) or not isinstance(item.get("name"), str):
+            raise ConfigError(f"malformed migration journal {path.name}: legs[{index}] must be a named mapping")
+        name = item["name"]
+        names.append(name)
+        done = item.get("done", False)
+        debt = item.get("debt")
+        if not isinstance(done, bool):
+            raise ConfigError(f"malformed migration journal {path.name}: legs[{index}].done must be a bool")
+        if debt is not None and not isinstance(debt, str):
+            raise ConfigError(f"malformed migration journal {path.name}: legs[{index}].debt must be a string or null")
+        legs.append(
+            Leg(
+                name=name,
+                done=done,
+                carried=_journal_string_list(item.get("carried", []), path=path, field_name=f"legs[{index}].carried"),
+                orphaned=_journal_string_list(
+                    item.get("orphaned", []), path=path, field_name=f"legs[{index}].orphaned"
+                ),
+                debt=debt,
+            )
+        )
+
+    if tuple(names) != LEG_NAMES:
+        raise ConfigError(f"{path.name}: journal legs must be exactly {LEG_NAMES!r} in order; got {tuple(names)!r}")
+    return legs
+
+
+def _load_journal_collisions(raw: object, *, path: Path) -> list[RekeyCollision]:
+    if raw is None:
+        return []
+    if not isinstance(raw, list):
+        raise ConfigError(f"malformed migration journal {path.name}: collisions must be a list")
+    collisions: list[RekeyCollision] = []
+    for index, item in enumerate(raw):
+        if not isinstance(item, dict):
+            raise ConfigError(f"malformed migration journal {path.name}: collisions[{index}] must be a mapping")
+        new_fp = item.get("new_fp")
+        if new_fp is not None and not isinstance(new_fp, str):
+            raise ConfigError(
+                f"malformed migration journal {path.name}: collisions[{index}].new_fp must be a string or null"
+            )
+        collisions.append(
+            RekeyCollision(
+                new_fp=new_fp,
+                old_fps=tuple(
+                    _journal_string_list(item.get("old_fps", []), path=path, field_name=f"collisions[{index}].old_fps")
+                ),
+                new_fps=tuple(
+                    _journal_string_list(item.get("new_fps", []), path=path, field_name=f"collisions[{index}].new_fps")
+                ),
+            )
+        )
+    return collisions
+
+
 def load_journal(path: Path) -> Journal:
     yaml = require_yaml("loading the rekey journal")
-    loaded = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    try:
+        loaded = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except (UnicodeDecodeError, yaml.YAMLError) as exc:
+        raise ConfigError(f"malformed migration journal {path.name}: {exc}") from exc
     if not isinstance(loaded, dict) or "remap" not in loaded:
         raise ConfigError(f"malformed migration journal {path.name}")
-    legs = [
-        Leg(
-            name=str(d["name"]),
-            done=bool(d.get("done", False)),
-            carried=list(d.get("carried") or []),
-            orphaned=list(d.get("orphaned") or []),
-            debt=d.get("debt"),
+    schema_version = loaded.get("schema_version", JOURNAL_SCHEMA_VERSION)
+    if type(schema_version) is not int or schema_version != JOURNAL_SCHEMA_VERSION:
+        raise ConfigError(
+            f"{path.name}: unsupported migration journal schema_version {schema_version!r}; "
+            f"expected {JOURNAL_SCHEMA_VERSION}"
         )
-        for d in loaded.get("legs") or []
-    ]
-    collisions = [
-        RekeyCollision(
-            new_fp=None if c.get("new_fp") is None else str(c["new_fp"]),
-            old_fps=tuple(c.get("old_fps") or []),
-            new_fps=tuple(c.get("new_fps") or []),
-        )
-        for c in loaded.get("collisions") or []
-    ]
-    scheme_from = str(loaded.get("fingerprint_scheme_from", FINGERPRINT_SCHEME_V0))
-    scheme_to = str(loaded.get("fingerprint_scheme_to", FINGERPRINT_SCHEME))
+    raw_remap = loaded["remap"]
+    if not isinstance(raw_remap, dict) or not all(
+        isinstance(old_fp, str) and isinstance(new_fp, str) for old_fp, new_fp in raw_remap.items()
+    ):
+        raise ConfigError(f"malformed migration journal {path.name}: remap must be a string-to-string mapping")
+    legs = _load_journal_legs(loaded.get("legs"), path=path)
+    collisions = _load_journal_collisions(loaded.get("collisions"), path=path)
+    scheme_from = loaded.get("fingerprint_scheme_from", FINGERPRINT_SCHEME_V0)
+    scheme_to = loaded.get("fingerprint_scheme_to", FINGERPRINT_SCHEME)
+    if not isinstance(scheme_from, str) or not isinstance(scheme_to, str):
+        raise ConfigError(f"malformed migration journal {path.name}: fingerprint schemes must be strings")
     if scheme_from != FINGERPRINT_SCHEME_V0 or scheme_to != FINGERPRINT_SCHEME:
         raise ConfigError(
             f"{path.name}: unsupported migration journal schemes from={scheme_from!r}, to={scheme_to!r}; "
             f"this build only resumes {FINGERPRINT_SCHEME_V0!r} -> {FINGERPRINT_SCHEME!r}"
         )
+    snapshot_prescheme = loaded.get("snapshot_prescheme", False)
+    if not isinstance(snapshot_prescheme, bool):
+        raise ConfigError(f"malformed migration journal {path.name}: snapshot_prescheme must be a bool")
     return Journal(
-        remap=dict(loaded["remap"]),
+        remap=dict(raw_remap),
         collisions=collisions,
-        legs=legs or [Leg(n) for n in LEG_NAMES],
-        schema_version=int(loaded.get("schema_version", JOURNAL_SCHEMA_VERSION)),
+        legs=legs,
+        schema_version=schema_version,
         fingerprint_scheme_from=scheme_from,
         fingerprint_scheme_to=scheme_to,
-        snapshot_prescheme=bool(loaded.get("snapshot_prescheme", False)),
+        snapshot_prescheme=snapshot_prescheme,
     )
 
 
