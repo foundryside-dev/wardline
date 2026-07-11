@@ -13,6 +13,7 @@ _ROUTE_METHODS = frozenset(
 )
 _PYDANTIC_BASES = frozenset({"pydantic.BaseModel", "pydantic.main.BaseModel", "pydantic.v1.BaseModel"})
 _DEPENDS = frozenset({"fastapi.Depends", "fastapi.params.Depends"})
+_ANNOTATED = frozenset({"typing.Annotated", "typing_extensions.Annotated"})
 _UNKNOWN_ANNOTATION = "<unknown-annotation>"
 _UNKNOWN_BINDING = "<unknown-binding>"
 _ANNOTATION_NODE_BUDGET = 128
@@ -644,7 +645,7 @@ def route_dependency_parameters(
     parameters = [*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs]
     for arg in parameters:
         annotation = arg.annotation
-        if not isinstance(annotation, ast.Subscript) or resolve_dotted(annotation.value, aliases) != "typing.Annotated":
+        if not isinstance(annotation, ast.Subscript) or resolve_dotted(annotation.value, aliases) not in _ANNOTATED:
             continue
         elements = annotation.slice.elts if isinstance(annotation.slice, ast.Tuple) else [annotation.slice]
         for metadata in elements[1:]:
@@ -677,7 +678,7 @@ def _annotation_candidates(node: ast.expr, aliases: Mapping[str, str]) -> set[st
         if isinstance(current, ast.Subscript):
             outer = resolve_dotted(current.value, aliases)
             elements = current.slice.elts if isinstance(current.slice, ast.Tuple) else [current.slice]
-            if outer in {"typing.Annotated", "typing.Optional"}:
+            if outer in _ANNOTATED or outer == "typing.Optional":
                 worklist.append(elements[0])
             else:
                 if outer is not None:

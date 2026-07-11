@@ -233,13 +233,40 @@ def test_route_depends_uses_actual_untrusted_provider_taint(tmp_path: Path, prov
 
 
 @pytest.mark.parametrize(
+    ("annotated_import", "annotated_name"),
+    [
+        pytest.param("from typing import Annotated", "Annotated", id="typing"),
+        pytest.param(
+            "from typing_extensions import Annotated",
+            "Annotated",
+            id="typing-extensions-direct",
+        ),
+        pytest.param(
+            "from typing_extensions import Annotated as DependencyAnnotated",
+            "DependencyAnnotated",
+            id="typing-extensions-symbol-alias",
+        ),
+        pytest.param(
+            "import typing_extensions as te",
+            "te.Annotated",
+            id="typing-extensions-module-alias",
+        ),
+    ],
+)
+@pytest.mark.parametrize(
     ("provider_decorator", "fires"),
     [("@external_boundary", True), ("@trusted(level='ASSURED')", False)],
 )
-def test_annotated_depends_uses_provider_taint(tmp_path: Path, provider_decorator: str, fires: bool) -> None:
+def test_annotated_depends_uses_provider_taint(
+    tmp_path: Path,
+    annotated_import: str,
+    annotated_name: str,
+    provider_decorator: str,
+    fires: bool,
+) -> None:
     src = f"""
         import os
-        from typing import Annotated
+        {annotated_import}
         from fastapi import Depends, FastAPI
         from wardline.decorators import external_boundary, trusted
         app = FastAPI()
@@ -248,7 +275,7 @@ def test_annotated_depends_uses_provider_taint(tmp_path: Path, provider_decorato
             return 'value'
         @app.post('/run')
         @trusted(level='ASSURED')
-        def run(value: Annotated[str, Depends(supplied)]):
+        def run(value: {annotated_name}[str, Depends(supplied)]):
             os.system(value)
     """
     assert ("PY-WL-108" in _defect_rules(tmp_path, src)) is fires
