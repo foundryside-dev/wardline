@@ -17,6 +17,7 @@ from wardline.core.sarif import build_sarif
 _ROOT = Path(__file__).parents[2]
 _ADR = _ROOT / "docs/decisions/2026-06-05-wardline-finding-identity-frozen-contract.md"
 _SUPPRESSION_GUIDE = _ROOT / "docs/guides/suppression.md"
+_IMPROVEMENTS_NOTE = _ROOT / "docs/notes/improvements.md"
 _SEAM_REGISTRY = _ROOT / "tests/conformance/seam_registry.json"
 _REKEY_SOURCE = _ROOT / "src/wardline/core/rekey.py"
 
@@ -24,6 +25,7 @@ _REKEY_SOURCE = _ROOT / "src/wardline/core/rekey.py"
 def test_authoritative_identity_docs_match_live_scheme_and_formula() -> None:
     adr = _ADR.read_text(encoding="utf-8")
     guide = _SUPPRESSION_GUIDE.read_text(encoding="utf-8")
+    improvements = _IMPROVEMENTS_NOTE.read_text(encoding="utf-8")
     rekey_source = _REKEY_SOURCE.read_text(encoding="utf-8")
 
     assert FINGERPRINT_SCHEME == "wlfp2"
@@ -37,6 +39,8 @@ def test_authoritative_identity_docs_match_live_scheme_and_formula() -> None:
     assert "sha256(rule_id \\0 path \\0 qualname \\0 taint_path)" in adr
     assert "`line_start` is deliberately not hashed" in adr
     assert "line-insensitive" in guide
+    assert "`line_start` is not a fingerprint input" in improvements
+    assert "entity-relative/source-derived discriminators" in improvements
     assert "line_start-sensitive" not in rekey_source
 
 
