@@ -367,6 +367,67 @@ def test_waiver_add_structured_output(tmp_path: Path) -> None:
     assert out["fingerprint"] == "a" * 64
 
 
+def test_waiver_add_unresolved_input_structured_output(tmp_path: Path) -> None:
+    server = WardlineMCPServer(root=_leaky_project(tmp_path))
+    fingerprint = "b" * 64
+
+    out = _validated(
+        server,
+        "waiver_add",
+        {
+            "fingerprint": fingerprint,
+            "reason": "validated upstream",
+            "expires": "2026-12-31",
+            "entity_symbol": "pkg.mod.missing",
+        },
+    )
+
+    assert set(out) == {"fingerprint", "created", "unresolved_input"}
+    assert out["fingerprint"] == fingerprint
+    assert out["created"] is False
+    assert set(out["unresolved_input"]) == {"reason_class", "cause", "fix"}
+    assert out["unresolved_input"]["reason_class"] == "unresolved_input"
+    assert out["unresolved_input"]["cause"]
+    assert out["unresolved_input"]["fix"]
+
+
+def test_waiver_add_already_exists_structured_output(tmp_path: Path) -> None:
+    server = WardlineMCPServer(root=_leaky_project(tmp_path))
+    fingerprint = "c" * 64
+    first = {
+        "fingerprint": fingerprint,
+        "reason": "first reason",
+        "expires": "2026-12-31",
+        "entity_id": "loomweave:eid:held",
+    }
+    _validated(server, "waiver_add", first)
+
+    out = _validated(
+        server,
+        "waiver_add",
+        {"fingerprint": fingerprint, "reason": "replacement", "expires": "2027-01-01"},
+    )
+
+    assert set(out) == {
+        "fingerprint",
+        "reason",
+        "expires",
+        "entity_sei",
+        "entity_locator",
+        "binding_kind",
+        "already_exists",
+    }
+    assert out == {
+        "fingerprint": fingerprint,
+        "reason": "first reason",
+        "expires": "2026-12-31",
+        "entity_sei": "loomweave:eid:held",
+        "entity_locator": "loomweave:eid:held",
+        "binding_kind": "sei",
+        "already_exists": True,
+    }
+
+
 def test_fix_structured_output(tmp_path: Path) -> None:
     proj = tmp_path / "proj"
     proj.mkdir()

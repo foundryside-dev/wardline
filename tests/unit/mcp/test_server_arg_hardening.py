@@ -32,6 +32,7 @@ import pytest
 
 from wardline.core import config as config_mod
 from wardline.core.attest_key import WARDLINE_ATTEST_KEY_ENV
+from wardline.core.filigree_issue import FileResult, IdentityAttachResult
 from wardline.core.legis import LEGIS_ARTIFACT_KEY_ENV
 from wardline.core.ruleset import ruleset_hash
 from wardline.core.run import GatePopulation, ScanResult, ScanSummary
@@ -215,6 +216,95 @@ def test_destructive_boolean_rejected_before_side_effect_without_jsonschema(
     assert resp["result"]["isError"] is True
     assert f"{field} must be a boolean" in resp["result"]["content"][0]["text"]
     assert called is False
+
+
+class _SpyFiler:
+    def __init__(self) -> None:
+        self.file_calls = 0
+
+    def file(self, *args, **kwargs) -> FileResult:
+        self.file_calls += 1
+        return FileResult(reachable=True, issue_id="wardline-filed", created=True)
+
+
+def test_file_finding_rejects_string_attach_before_issue_or_identity_side_effect(tmp_path, monkeypatch) -> None:
+    _block_jsonschema(monkeypatch)
+    filer = _SpyFiler()
+    loomweave_client_calls = 0
+    identity_attach_calls = 0
+
+    def fake_loomweave_client(*args, **kwargs):
+        nonlocal loomweave_client_calls
+        loomweave_client_calls += 1
+        return object()
+
+    def fake_identity_attach(**kwargs):
+        nonlocal identity_attach_calls
+        identity_attach_calls += 1
+        return IdentityAttachResult.skipped("must not run")
+
+    monkeypatch.setattr(WardlineMCPServer, "_filigree_filer", lambda *args, **kwargs: filer)
+    monkeypatch.setattr(WardlineMCPServer, "_loomweave_client", fake_loomweave_client)
+    monkeypatch.setattr(
+        "wardline.core.filigree_issue.attach_loomweave_identity_for_finding",
+        fake_identity_attach,
+    )
+    server = WardlineMCPServer(root=_leaky_project(tmp_path))
+
+    resp = _dispatch(
+        server,
+        "file_finding",
+        {"fingerprint": "a" * 64, "attach_loomweave_identity": "false"},
+    )
+
+    assert resp["result"]["isError"] is True
+    assert "attach_loomweave_identity must be a boolean" in resp["result"]["content"][0]["text"]
+    assert filer.file_calls == 0
+    assert loomweave_client_calls == 0
+    assert identity_attach_calls == 0
+
+
+@pytest.mark.parametrize("attach", [False, True])
+def test_file_finding_accepts_real_attach_booleans_without_jsonschema(tmp_path, monkeypatch, attach) -> None:
+    _block_jsonschema(monkeypatch)
+    filer = _SpyFiler()
+    loomweave_client_calls = 0
+    identity_attach_calls = 0
+
+    def fake_loomweave_client(*args, **kwargs):
+        nonlocal loomweave_client_calls
+        loomweave_client_calls += 1
+        return object()
+
+    def fake_identity_attach(**kwargs):
+        nonlocal identity_attach_calls
+        identity_attach_calls += 1
+        return IdentityAttachResult.success(
+            entity_id="loomweave:eid:attached",
+            content_hash="hash-v1",
+            binding_kind="sei",
+        )
+
+    monkeypatch.setattr(WardlineMCPServer, "_filigree_filer", lambda *args, **kwargs: filer)
+    monkeypatch.setattr(WardlineMCPServer, "_loomweave_client", fake_loomweave_client)
+    monkeypatch.setattr(
+        "wardline.core.filigree_issue.attach_loomweave_identity_for_finding",
+        fake_identity_attach,
+    )
+    server = WardlineMCPServer(root=_leaky_project(tmp_path))
+
+    resp = _dispatch(
+        server,
+        "file_finding",
+        {"fingerprint": "a" * 64, "attach_loomweave_identity": attach},
+    )
+
+    assert resp["result"].get("isError") is not True, resp
+    payload = json.loads(resp["result"]["content"][0]["text"])
+    assert filer.file_calls == 1
+    assert loomweave_client_calls == int(attach)
+    assert identity_attach_calls == int(attach)
+    assert ("identity_attach" in payload) is attach
 
 
 _ASSERT_ONLY = (
