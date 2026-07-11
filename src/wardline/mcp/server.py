@@ -41,7 +41,7 @@ from wardline.core.finding_query import filter_findings
 from wardline.core.judge_run import run_judge
 from wardline.core.paths import baseline_path as baseline_file
 from wardline.core.paths import project_root_for, waivers_path, weft_config_path
-from wardline.core.run import baseline_migration_hint, gate_decision, run_scan
+from wardline.core.run import ScanResult, baseline_migration_hint, gate_decision, run_scan
 from wardline.core.scan_jobs import cancel_scan_job, read_scan_job_status, start_scan_job
 from wardline.core.sei_resolution import resolve_query_filters
 from wardline.core.waivers import add_waiver, load_project_waivers
@@ -985,10 +985,7 @@ def _scan(
         result,
         path,
         args,
-        config_path=config_path,
-        trust_local_packs=trust_local_packs,
-        trusted_packs=trusted_packs,
-        strict_defaults=strict_defaults,
+        config=result.effective_config,
     )
     return response
 
@@ -2128,14 +2125,11 @@ _SCAN_JOB_CANCEL_TOOL: dict[str, Any] = {
 
 def _attach_legis_artifact(
     response: dict[str, Any],
-    result: Any,
+    result: ScanResult,
     path: Path,
     args: dict[str, Any],
     *,
-    config_path: Path | None,
-    trust_local_packs: bool,
-    trusted_packs: tuple[str, ...],
-    strict_defaults: bool,
+    config: config_mod.WardlineConfig | None,
 ) -> None:
     """Opt-in: attach the signed, verbatim-postable legis scan-artifact.
 
@@ -2167,21 +2161,8 @@ def _attach_legis_artifact(
         # (dogfood-4 B6 blew the MCP token cap exactly this way). An explicit
         # legis_artifact:true still wins when the caller asks for both.
         return
-
-    # ``config_path`` is the SAME value ``run_scan`` received (an explicit ``config`` arg
-    # resolves against the SERVER root, per the input schema). Re-resolving the arg here
-    # against the scan sub-path would (a) load a DIFFERENT policy than the one that
-    # produced ``result`` — a signed artifact whose rule_set_version/scan_scope
-    # misattribute provenance on the legis wire — and (b) raise on a root-relative config
-    # that does not exist under (or escapes) the sub-path, turning a completed scan into
-    # isError in violation of this block's fail-soft contract.
-    cfg = config_mod.load(
-        config_path or weft_config_path(path),
-        explicit=config_path is not None,
-        trust_local_packs=trust_local_packs,
-        trusted_packs=trusted_packs,
-        strict_defaults=strict_defaults,
-    )
+    if config is None:
+        raise ToolError("scan result did not retain its effective configuration")
     key_bytes = key_str.encode("utf-8") if key_str else None
     allow_dirty = _bool_arg(args, "allow_dirty", False)
     status: dict[str, Any] = {
@@ -2191,7 +2172,7 @@ def _attach_legis_artifact(
         "reason": None,
     }
     try:
-        artifact = build_legis_artifact(result, root=path, config=cfg, key=key_bytes, allow_dirty=allow_dirty)
+        artifact = build_legis_artifact(result, root=path, config=config, key=key_bytes, allow_dirty=allow_dirty)
     except LegisArtifactError as exc:
         status["reason"] = str(exc)
         response["legis_artifact_status"] = status

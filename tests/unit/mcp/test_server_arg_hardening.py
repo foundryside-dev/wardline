@@ -25,6 +25,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
+from types import ModuleType
 
 import pytest
 
@@ -32,7 +33,9 @@ from wardline.core import config as config_mod
 from wardline.core.attest_key import WARDLINE_ATTEST_KEY_ENV
 from wardline.core.legis import LEGIS_ARTIFACT_KEY_ENV
 from wardline.core.ruleset import ruleset_hash
-from wardline.mcp.server import WardlineMCPServer, _scan
+from wardline.core.run import ScanResult, ScanSummary
+from wardline.mcp.server import WardlineMCPServer, _attach_legis_artifact, _scan
+from wardline.mcp.tooling import ToolError
 
 _LEAKY = (
     "from wardline.decorators import external_boundary, trusted\n"
@@ -264,6 +267,104 @@ def _subpath_project(tmp_path: Path) -> Path:
     (root / "sub" / "svc.py").write_text(_LEAKY, encoding="utf-8")
     (root / "weft.toml").write_text('[wardline]\nexclude = ["zzz_root_marker/**"]\n', encoding="utf-8")
     return root
+
+
+@pytest.mark.parametrize(
+    ("case", "args", "scan_kwargs"),
+    [
+        ("explicit", {"config": "weft.toml", "legis_artifact": True}, {}),
+        ("implicit", {"legis_artifact": True}, {}),
+        (
+            "trusted-pack",
+            {"legis_artifact": True, "trust_packs": ["operator_pack"]},
+            {},
+        ),
+        (
+            "local-pack",
+            {
+                "legis_artifact": True,
+                "trust_packs": ["local_pack"],
+            },
+            {"trust_local_packs": True},
+        ),
+        ("strict-default", {"legis_artifact": True}, {"strict_defaults": True}),
+    ],
+)
+def test_legis_artifact_reuses_exact_scan_config_once(tmp_path, monkeypatch, case, args, scan_kwargs) -> None:
+    from wardline.core import legis as legis_mod
+
+    monkeypatch.delenv(LEGIS_ARTIFACT_KEY_ENV, raising=False)
+    root = _subpath_project(tmp_path)
+    if case == "trusted-pack":
+        pack = ModuleType("operator_pack")
+        pack.config = {}  # type: ignore[attr-defined]
+        monkeypatch.setitem(sys.modules, "operator_pack", pack)
+        (root / "weft.toml").write_text(
+            '[wardline]\npacks = ["operator_pack"]\n',
+            encoding="utf-8",
+        )
+    elif case == "local-pack":
+        (root / "local_pack.py").write_text("config = {}\n", encoding="utf-8")
+        monkeypatch.syspath_prepend(str(root))
+        (root / "weft.toml").write_text(
+            '[wardline]\npacks = ["local_pack"]\n',
+            encoding="utf-8",
+        )
+
+    loads = []
+    built_with = []
+    real_load = config_mod.load
+    real_build = legis_mod.build_legis_artifact
+
+    def recording_load(*load_args, **load_kwargs):
+        config = real_load(*load_args, **load_kwargs)
+        loads.append(config)
+        return config
+
+    def recording_build(result, *, root, config, key, allow_dirty=False):
+        built_with.append(config)
+        return real_build(result, root=root, config=config, key=key, allow_dirty=allow_dirty)
+
+    monkeypatch.setattr(config_mod, "load", recording_load)
+    monkeypatch.setattr(legis_mod, "build_legis_artifact", recording_build)
+
+    out = _scan(args, root, None, None, **scan_kwargs)
+
+    assert "legis_artifact" in out
+    assert len(loads) == 1, case
+    assert built_with == [loads[0]]
+    assert out["legis_artifact"]["rule_set_version"] == ruleset_hash(loads[0])
+
+
+def _result_without_effective_config() -> ScanResult:
+    return ScanResult(
+        findings=[],
+        summary=ScanSummary(total=0, active=0, baselined=0, waived=0, judged=0),
+        files_scanned=0,
+        context=None,
+    )
+
+
+def test_legis_artifact_missing_effective_config_fails_loudly_when_activated(tmp_path, monkeypatch) -> None:
+    monkeypatch.delenv(LEGIS_ARTIFACT_KEY_ENV, raising=False)
+
+    with pytest.raises(ToolError, match="did not retain its effective configuration"):
+        _attach_legis_artifact(
+            {},
+            _result_without_effective_config(),
+            tmp_path,
+            {"legis_artifact": True},
+            config=None,
+        )
+
+
+def test_legis_artifact_missing_effective_config_is_ignored_when_inactive(tmp_path, monkeypatch) -> None:
+    monkeypatch.delenv(LEGIS_ARTIFACT_KEY_ENV, raising=False)
+    response: dict = {}
+
+    _attach_legis_artifact(response, _result_without_effective_config(), tmp_path, {}, config=None)
+
+    assert response == {}
 
 
 def test_legis_artifact_subpath_scan_with_root_relative_config_stays_fail_soft(tmp_path, monkeypatch) -> None:

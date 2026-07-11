@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from wardline.core import config as config_mod
 from wardline.core.errors import ConfigError
 from wardline.core.finding import FINGERPRINT_SCHEME, Finding, Kind, Location, Severity, SuppressionState
 from wardline.core.judged import JudgedFP, write_judged
@@ -47,6 +48,23 @@ def test_run_scan_returns_findings_summary_and_context() -> None:
     assert result.summary.active == active
     # context is carried for explain_finding to reuse
     assert result.context is not None
+
+
+def test_run_scan_retains_effective_config_in_process(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    seen = []
+    real_load = config_mod.load
+
+    def recording_load(*args, **kwargs):
+        cfg = real_load(*args, **kwargs)
+        seen.append(cfg)
+        return cfg
+
+    monkeypatch.setattr(config_mod, "load", recording_load)
+
+    result = run_scan(_empty_proj(tmp_path))
+
+    assert len(seen) == 1
+    assert result.effective_config is seen[0]
 
 
 def test_run_scan_reports_discovery_and_analysis_progress(tmp_path: Path) -> None:

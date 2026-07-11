@@ -168,8 +168,8 @@ class ScanResult:
     # suppressed defect as 'active' and hide the --trust-suppressions escape guidance.
     # ``None`` ⇒ ``findings`` IS the un-narrowed annotated population (full scan,
     # full-fallback, or --new-since, which relabels without filtering) — INV-1: the full
-    # path carries nothing extra.
     annotated_findings: list[Finding] | None = None
+    effective_config: config_mod.WardlineConfig | None = None  # Exact scan config; in-process only, never serialized.
 
     @property
     def honors_suppressions(self) -> bool:
@@ -665,8 +665,7 @@ def run_scan(
     )
     # The delta scope honesty block (spec §5.4), attached only when --affected was supplied.
     # ``gate_authority`` is the machine-readable companion: a delta scan is ADVISORY (only
-    # the affected files were analyzed, so a clean subset is not a full-tree pass), while a
-    # full-fallback is the gate-of-record.
+    # affected files were analyzed, so a clean subset is not a full-tree pass); full-fallback is gate-of-record.
     scope: DeltaScopeReport | None = None
     if scope_mode is not None:
         scope = DeltaScopeReport(
@@ -701,6 +700,7 @@ def run_scan(
         gate_honors_suppressions=gate_honors_suppressions,
         scope=scope,
         annotated_findings=annotated_findings,
+        effective_config=cfg,
     )
 
 
