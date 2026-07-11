@@ -41,12 +41,49 @@ def resolve_dotted(node: ast.expr, aliases: Mapping[str, str]) -> str | None:
     return _UNKNOWN_ANNOTATION
 
 
-def _assigned_names(stmt: ast.stmt) -> set[str]:
-    if isinstance(stmt, ast.Assign):
-        return {target.id for target in stmt.targets if isinstance(target, ast.Name)}
-    if isinstance(stmt, ast.AnnAssign) and isinstance(stmt.target, ast.Name):
-        return {stmt.target.id}
+def _target_names(target: ast.expr) -> set[str]:
+    if isinstance(target, ast.Name):
+        return {target.id}
+    if isinstance(target, ast.Starred):
+        return _target_names(target.value)
+    if isinstance(target, (ast.Tuple, ast.List)):
+        return {name for element in target.elts for name in _target_names(element)}
     return set()
+
+
+def _bind_assignment_target(
+    target: ast.expr,
+    value: ast.expr | None,
+    out: dict[str, ast.expr | None],
+) -> None:
+    if isinstance(target, ast.Name):
+        out[target.id] = value
+        return
+    if isinstance(target, ast.Starred):
+        for name in _target_names(target):
+            out[name] = None
+        return
+    if isinstance(target, (ast.Tuple, ast.List)):
+        if isinstance(value, (ast.Tuple, ast.List)) and len(target.elts) == len(value.elts):
+            for child_target, child_value in zip(target.elts, value.elts, strict=True):
+                _bind_assignment_target(child_target, child_value, out)
+        else:
+            for name in _target_names(target):
+                out[name] = None
+
+
+def _assignment_values(stmt: ast.stmt) -> dict[str, ast.expr | None]:
+    assigned: dict[str, ast.expr | None] = {}
+    if isinstance(stmt, ast.Assign):
+        for target in stmt.targets:
+            _bind_assignment_target(target, stmt.value, assigned)
+    elif isinstance(stmt, ast.AnnAssign):
+        _bind_assignment_target(stmt.target, stmt.value, assigned)
+    return assigned
+
+
+def _assigned_names(stmt: ast.stmt) -> set[str]:
+    return set(_assignment_values(stmt))
 
 
 def _model_owner(name: str) -> str:
@@ -180,14 +217,13 @@ def _walk_route_scope(
             receivers.discard(stmt.name)
             bindings[stmt.name] = qualname
             continue
-        targets = _assigned_names(stmt)
-        if not targets:
+        assignments = _assignment_values(stmt)
+        if not assignments:
             continue
-        value = stmt.value if isinstance(stmt, (ast.Assign, ast.AnnAssign)) else None
-        recognized = isinstance(value, ast.Call) and resolve_dotted(value.func, bindings) in _FASTAPI_CONSTRUCTORS
-        receiver_alias = isinstance(value, ast.Name) and value.id in receivers
-        alias_target = resolve_dotted(value, bindings) if isinstance(value, (ast.Name, ast.Attribute)) else None
-        for target in targets:
+        for target, value in assignments.items():
+            recognized = isinstance(value, ast.Call) and resolve_dotted(value.func, bindings) in _FASTAPI_CONSTRUCTORS
+            receiver_alias = isinstance(value, ast.Name) and value.id in receivers
+            alias_target = resolve_dotted(value, bindings) if isinstance(value, (ast.Name, ast.Attribute)) else None
             if recognized or receiver_alias:
                 receivers.add(target)
             else:
@@ -276,12 +312,11 @@ def discover_pydantic_models(
                 found.discard(qualname)
             bindings[stmt.name] = qualname
             continue
-        assigned = _assigned_names(stmt)
-        if not assigned:
+        assignments = _assignment_values(stmt)
+        if not assignments:
             continue
-        value = stmt.value if isinstance(stmt, (ast.Assign, ast.AnnAssign)) else None
-        alias_target = resolve_dotted(value, bindings) if isinstance(value, (ast.Name, ast.Attribute)) else None
-        for name in assigned:
+        for name, value in assignments.items():
+            alias_target = resolve_dotted(value, bindings) if isinstance(value, (ast.Name, ast.Attribute)) else None
             canonical_target = f"{module}.{name}"
             if alias_target in found:
                 found.add(canonical_target)
@@ -321,12 +356,11 @@ def discover_callable_aliases(
             bindings[stmt.name] = canonical
             aliases.pop(canonical, None)
             continue
-        assigned = _assigned_names(stmt)
-        if not assigned:
+        assignments = _assignment_values(stmt)
+        if not assignments:
             continue
-        value = stmt.value if isinstance(stmt, (ast.Assign, ast.AnnAssign)) else None
-        target = resolve_dotted(value, bindings) if isinstance(value, (ast.Name, ast.Attribute)) else None
-        for name in assigned:
+        for name, value in assignments.items():
+            target = resolve_dotted(value, bindings) if isinstance(value, (ast.Name, ast.Attribute)) else None
             canonical = f"{module}.{name}"
             if target is not None:
                 bindings[name] = target
@@ -342,9 +376,60 @@ def discover_parameter_types(
     *,
     module: str,
     is_package: bool = False,
+    exported_aliases: Mapping[str, str] | None = None,
 ) -> dict[int, dict[str, str]]:
     """Resolve function parameter annotations against source-ordered lexical bindings."""
     resolved: dict[int, dict[str, str]] = {}
+    postponed_annotations = any(
+        isinstance(stmt, ast.ImportFrom)
+        and stmt.module == "__future__"
+        and any(item.name == "annotations" for item in stmt.names)
+        for stmt in tree.body
+    )
+    future_module_bindings: dict[str, str] | None = None
+
+    def canonical_type(name: str) -> str:
+        seen: set[str] = set()
+        while exported_aliases is not None and name in exported_aliases and name not in seen:
+            seen.add(name)
+            name = exported_aliases[name]
+        return name
+
+    def annotation_bindings(bindings: MutableMapping[str, str], scope: str) -> Mapping[str, str]:
+        if future_module_bindings is None:
+            return bindings
+        if scope == module:
+            return future_module_bindings
+
+        def flatten(mapping: MutableMapping[str, str]) -> list[MutableMapping[str, str]]:
+            if isinstance(mapping, ChainMap):
+                return [layer for item in mapping.maps for layer in flatten(item)]
+            return [mapping]
+
+        layers = flatten(bindings)
+        return ChainMap(*layers[:-1], future_module_bindings)
+
+    def merge_bindings(
+        bindings: MutableMapping[str, str],
+        outcomes: list[dict[str, str]],
+    ) -> None:
+        missing = object()
+        for name in {key for outcome in outcomes for key in outcome}:
+            values = [outcome.get(name, missing) for outcome in outcomes]
+            first = values[0]
+            if first is not missing and all(value == first for value in values[1:]):
+                bindings[name] = first  # type: ignore[assignment]
+            else:
+                bindings[name] = f"{_UNKNOWN_BINDING}.{name}"
+
+    def pattern_names(pattern: ast.pattern) -> set[str]:
+        names: set[str] = set()
+        for node in ast.walk(pattern):
+            if isinstance(node, (ast.MatchAs, ast.MatchStar)) and node.name is not None:
+                names.add(node.name)
+            elif isinstance(node, ast.MatchMapping) and node.rest is not None:
+                names.add(node.rest)
+        return names
 
     def walk_scope(
         statements: list[ast.stmt],
@@ -352,6 +437,18 @@ def discover_parameter_types(
         scope: str,
         bindings: MutableMapping[str, str],
     ) -> None:
+        def branch(
+            body: list[ast.stmt],
+            *,
+            initial: Mapping[str, str] | None = None,
+            shadows: set[str] | None = None,
+        ) -> dict[str, str]:
+            branch_bindings = dict(bindings if initial is None else initial)
+            for name in shadows or ():
+                branch_bindings[name] = f"{_UNKNOWN_BINDING}.{name}"
+            walk_scope(body, scope=scope, bindings=branch_bindings)
+            return branch_bindings
+
         for stmt in statements:
             if isinstance(stmt, ast.Import):
                 for item in stmt.names:
@@ -382,9 +479,9 @@ def discover_parameter_types(
                         parameters.append(stmt.args.kwarg)
                     for parameter in parameters:
                         if parameter.annotation is not None:
-                            annotation = resolve_dotted(parameter.annotation, bindings)
+                            annotation = resolve_dotted(parameter.annotation, annotation_bindings(bindings, scope))
                             if annotation is not None:
-                                parameter_types[parameter.arg] = annotation
+                                parameter_types[parameter.arg] = canonical_type(annotation)
                     resolved[id(stmt)] = parameter_types
 
                     child_bindings: MutableMapping[str, str] = ChainMap({}, bindings)
@@ -397,15 +494,68 @@ def discover_parameter_types(
                     )
                 bindings[stmt.name] = qualname
                 continue
-            assigned = _assigned_names(stmt)
-            if not assigned:
+            if isinstance(stmt, ast.If):
+                original = dict(bindings)
+                outcomes = [branch(stmt.body, initial=original)]
+                outcomes.append(branch(stmt.orelse, initial=original) if stmt.orelse else original)
+                merge_bindings(bindings, outcomes)
                 continue
-            value = stmt.value if isinstance(stmt, (ast.Assign, ast.AnnAssign)) else None
-            target = resolve_dotted(value, bindings) if isinstance(value, (ast.Name, ast.Attribute)) else None
-            for name in assigned:
+            if isinstance(stmt, (ast.For, ast.AsyncFor, ast.While)):
+                original = dict(bindings)
+                shadows = _target_names(stmt.target) if isinstance(stmt, (ast.For, ast.AsyncFor)) else set()
+                iterated = branch(stmt.body, initial=original, shadows=shadows)
+                outcomes = [original, iterated]
+                if stmt.orelse:
+                    outcomes.append(branch(stmt.orelse, initial=iterated))
+                merge_bindings(bindings, outcomes)
+                continue
+            if isinstance(stmt, (ast.With, ast.AsyncWith)):
+                shadows = {
+                    name
+                    for item in stmt.items
+                    if item.optional_vars is not None
+                    for name in _target_names(item.optional_vars)
+                }
+                merge_bindings(bindings, [dict(bindings), branch(stmt.body, shadows=shadows)])
+                continue
+            if isinstance(stmt, (ast.Try, ast.TryStar)):
+                original = dict(bindings)
+                normal = branch(stmt.body, initial=original)
+                if stmt.orelse:
+                    normal = branch(stmt.orelse, initial=normal)
+                outcomes = [normal]
+                for handler in stmt.handlers:
+                    shadows = {handler.name} if handler.name is not None else set()
+                    outcomes.append(branch(handler.body, initial=original, shadows=shadows))
+                if not stmt.handlers:
+                    outcomes.append(original)
+                merged: dict[str, str] = {}
+                merge_bindings(merged, outcomes)
+                if stmt.finalbody:
+                    merged = branch(stmt.finalbody, initial=merged)
+                merge_bindings(bindings, [merged])
+                continue
+            if isinstance(stmt, ast.Match):
+                original = dict(bindings)
+                outcomes = [original]
+                outcomes.extend(
+                    branch(case.body, initial=original, shadows=pattern_names(case.pattern)) for case in stmt.cases
+                )
+                merge_bindings(bindings, outcomes)
+                continue
+            assignments = _assignment_values(stmt)
+            if not assignments:
+                continue
+            for name, value in assignments.items():
+                target = resolve_dotted(value, bindings) if isinstance(value, (ast.Name, ast.Attribute)) else None
                 bindings[name] = target if target is not None else f"{_UNKNOWN_BINDING}.{name}"
 
-    walk_scope(tree.body, scope=module, bindings={})
+    module_bindings: dict[str, str] = {}
+    walk_scope(tree.body, scope=module, bindings=module_bindings)
+    if postponed_annotations:
+        future_module_bindings = dict(module_bindings)
+        resolved.clear()
+        walk_scope(tree.body, scope=module, bindings={})
     return resolved
 
 

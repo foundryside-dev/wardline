@@ -536,3 +536,122 @@ def test_conditional_function_keeps_static_request_resolution_fallback(tmp_path:
                 os.system(req.query_params.get('x'))
     """
     assert "PY-WL-108" in _defect_rules(tmp_path, src)
+
+
+def test_conditional_function_after_request_shadow_is_clean(tmp_path: Path) -> None:
+    src = """
+        import os
+        from fastapi import Request
+        from wardline.decorators import trusted
+
+        class Request: ...
+        if True:
+            @trusted(level='ASSURED')
+            def h(req: Request):
+                os.system(req.query_params.get('x'))
+    """
+    rules = _defect_rules(tmp_path, src)
+    assert "WLN-ENGINE-PARSE-ERROR" not in rules
+    assert "WLN-ENGINE-FILE-FAILED" not in rules
+    assert "PY-WL-108" not in rules
+
+
+def test_conditional_request_import_is_recognized(tmp_path: Path) -> None:
+    src = """
+        import os
+        from wardline.decorators import trusted
+
+        if True:
+            from fastapi import Request
+            @trusted(level='ASSURED')
+            def h(req: Request):
+                os.system(req.query_params.get('x'))
+    """
+    rules = _defect_rules(tmp_path, src)
+    assert "WLN-ENGINE-PARSE-ERROR" not in rules
+    assert "WLN-ENGINE-FILE-FAILED" not in rules
+    assert "PY-WL-108" in rules
+
+
+@pytest.mark.parametrize(
+    ("assigned", "should_fire"),
+    [
+        ("WebRequest", True),
+        ("Local", False),
+    ],
+)
+def test_destructuring_assignment_updates_request_binding(
+    tmp_path: Path,
+    assigned: str,
+    should_fire: bool,
+) -> None:
+    src = f"""
+        import os
+        from fastapi import Request as WebRequest
+        from wardline.decorators import trusted
+
+        class Local: ...
+        Request = {"Local" if should_fire else "WebRequest"}
+        Request, other = {assigned}, None
+        @trusted(level='ASSURED')
+        def h(req: Request):
+            os.system(req.query_params.get('x'))
+    """
+    rules = _defect_rules(tmp_path, src)
+    assert "WLN-ENGINE-PARSE-ERROR" not in rules
+    assert ("PY-WL-108" in rules) is should_fire
+
+
+def test_cross_module_request_alias_is_recognized(tmp_path: Path) -> None:
+    reqtypes = tmp_path / "reqtypes.py"
+    reqtypes.write_text(
+        "from fastapi import Request\nPublicRequest = Request\n",
+        encoding="utf-8",
+    )
+    api = tmp_path / "api.py"
+    api.write_text(
+        textwrap.dedent(
+            """
+            import os
+            from reqtypes import PublicRequest
+            from wardline.decorators import trusted
+
+            @trusted(level='ASSURED')
+            def h(req: PublicRequest):
+                os.system(req.query_params.get('x'))
+            """
+        ),
+        encoding="utf-8",
+    )
+    findings = WardlineAnalyzer().analyze([reqtypes, api], WardlineConfig(), root=tmp_path)
+    rules = {finding.rule_id for finding in findings if finding.kind is Kind.DEFECT}
+    assert "WLN-ENGINE-PARSE-ERROR" not in rules
+    assert "PY-WL-108" in rules
+
+
+@pytest.mark.parametrize(
+    ("later_binding", "should_fire"),
+    [
+        ("from fastapi import Request", True),
+        ("class Request: ...", False),
+    ],
+)
+def test_postponed_request_annotation_uses_final_module_binding(
+    tmp_path: Path,
+    later_binding: str,
+    should_fire: bool,
+) -> None:
+    src = f"""
+        from __future__ import annotations
+        import os
+        from wardline.decorators import trusted
+
+        @trusted(level='ASSURED')
+        def h(req: Request):
+            os.system(req.query_params.get('x'))
+
+        {later_binding}
+    """
+    rules = _defect_rules(tmp_path, src)
+    assert "WLN-ENGINE-PARSE-ERROR" not in rules
+    assert ("PY-WL-108" in rules) is should_fire

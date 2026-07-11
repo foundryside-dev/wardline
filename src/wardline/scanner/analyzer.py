@@ -351,15 +351,27 @@ class WardlineAnalyzer:
         # @trust_boundary validator) body != return, and using body here would
         # mis-read validated output as raw (over-taint -> PY-WL-101 false positive).
         project_return_taints = dict(result.return_taint_map)
+        project_binding_aliases: dict[str, str] = {}
         for parsed in file_meta:
-            callable_aliases = discover_callable_aliases(
-                parsed.tree,
-                module=parsed.module,
-                is_package=parsed.relpath.rsplit("/", 1)[-1] == "__init__.py",
+            project_binding_aliases.update(
+                discover_callable_aliases(
+                    parsed.tree,
+                    module=parsed.module,
+                    is_package=parsed.relpath.rsplit("/", 1)[-1] == "__init__.py",
+                )
             )
-            for alias, target in callable_aliases.items():
-                if target in project_return_taints:
-                    project_return_taints[alias] = project_return_taints[target]
+        for _ in range(len(project_binding_aliases) + 1):
+            changed = False
+            for alias, target in tuple(project_binding_aliases.items()):
+                canonical = project_binding_aliases.get(target, target)
+                if canonical != target:
+                    project_binding_aliases[alias] = canonical
+                    changed = True
+            if not changed:
+                break
+        for alias, target in project_binding_aliases.items():
+            if target in project_return_taints:
+                project_return_taints[alias] = project_return_taints[target]
 
         # Nested-def RETURN taints, bucketed by their enclosing entity — injected
         # into the enclosing function's per-entity taint map under the helper's
@@ -698,6 +710,7 @@ class WardlineAnalyzer:
                 parsed.tree,
                 module=parsed.module,
                 is_package=parsed.relpath.rsplit("/", 1)[-1] == "__init__.py",
+                exported_aliases=project_binding_aliases,
             )
             for parsed in file_meta
         }
