@@ -194,16 +194,16 @@ How each concept appears on each surface:
 
 | Concept | CLI summary text | `ScanSummary` field | MCP `summary` key | Agent-summary key | Filigree store |
 | --- | --- | --- | --- | --- | --- |
-| every finding | `N finding(s)` | `total` (`run.py:100`) | `total` (`server.py:945`) | `total_findings` (`agent_summary.py:129`) | one finding per wire entry |
-| live defect | `N active` (`scan.py:661`) | `active` (`run.py:102,681`) | `active` (`server.py:946`) | `active_defects` (`agent_summary.py:130`) | no `suppression_state` key (`finding.py:295`) |
-| suppressed (sum) | `N suppressed` (`scan.py:660`) | `baselined+waived+judged` | the three keys | `suppressed_findings` (`agent_summary.py:131`) | `metadata.wardline.suppression_state` (`finding.py:295`) |
-| baselined | `N baseline` | `baselined` (`run.py:104`) | `baselined` (`server.py:947`) | `baselined` (`agent_summary.py:133`) | `suppression_state: "baselined"` |
-| waived | `N waiver` | `waived` (`run.py:105`) | `waived` (`server.py:948`) | `waived` (`agent_summary.py:134`) | `suppression_state: "waived"` |
-| judged | `N judged` | `judged` (`run.py:106`) | `judged` (`server.py:949`) | `judged` (`agent_summary.py:135`) | `suppression_state: "judged"` |
-| informational (summary) | (the remainder of `total`) | `informational` (`run.py:112`) | `informational` (`server.py:954`) | `informational` (`agent_summary.py:141`) | facts/metrics |
+| every finding | `N finding(s)` | `total` (`run.py:103`) | `total` (`server.py:945`) | `total_findings` (`agent_summary.py:129`) | one finding per wire entry |
+| live defect | `N active` (`scan.py:666`) | `active` (`run.py:104,685`) | `active` (`server.py:946`) | `active_defects` (`agent_summary.py:130`) | no `suppression_state` key (`finding.py:304`) |
+| suppressed (sum) | `N suppressed` (`scan.py:665`) | `baselined+waived+judged` | the three keys | `suppressed_findings` (`agent_summary.py:131`) | `metadata.wardline.suppression_state` (`finding.py:305`) |
+| baselined | `N baseline` | `baselined` (`run.py:106`) | `baselined` (`server.py:947`) | `baselined` (`agent_summary.py:133`) | `suppression_state: "baselined"` |
+| waived | `N waiver` | `waived` (`run.py:107`) | `waived` (`server.py:948`) | `waived` (`agent_summary.py:134`) | `suppression_state: "waived"` |
+| judged | `N judged` | `judged` (`run.py:108`) | `judged` (`server.py:949`) | `judged` (`agent_summary.py:135`) | `suppression_state: "judged"` |
+| informational (summary) | (the remainder of `total`) | `informational` (`run.py:114`) | `informational` (`server.py:954`) | `informational` (`agent_summary.py:141`) | facts/metrics |
 | informational (display) | n/a | n/a | n/a | `informational` display array (`agent_summary.py:172`) — non-defect, non-engine-fact findings (metrics, classifications, suggestions, non-engine facts); excludes `engine_facts` which has its own display slot | facts/metrics |
-| under-scan | `N file(s) could not be analyzed` | `unanalyzed` (`run.py:120`) | `unanalyzed` (`server.py:958`) | `unanalyzed` (`agent_summary.py:142`) | `WLN-ENGINE-*` facts |
-| gate verdict | exit code + `--fail-on` | (`gate_population`, `run.py:167`; `GateDecision`, `run.py:199`, `verdict` `run.py:209`) | `gate` (`server.py:960`), `gate.tripped` (`server.py:961`), `gate.verdict` (`server.py:965`) | `gate.tripped` (`agent_summary.py:145`), `gate.verdict` (`agent_summary.py:148`) | not emitted to Filigree |
+| under-scan | `N file(s) could not be analyzed` | `unanalyzed` (`run.py:122`) | `unanalyzed` (`server.py:958`) | `unanalyzed` (`agent_summary.py:142`) | `WLN-ENGINE-*` facts |
+| gate verdict | exit code + `--fail-on` | (`gate_population`, `run.py:169`; `GateDecision`, `run.py:201`, `verdict` `run.py:211`) | `gate` (`server.py:960`), `gate.tripped` (`server.py:961`), `gate.verdict` (`server.py:965`) | `gate.tripped` (`agent_summary.py:145`), `gate.verdict` (`agent_summary.py:148`) | not emitted to Filigree |
 
 The unsuppressed gate population is built from `Baseline(frozenset())`
 (`src/wardline/core/run.py:594`).
