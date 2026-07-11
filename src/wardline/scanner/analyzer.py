@@ -612,23 +612,42 @@ class WardlineAnalyzer:
 
         # ── L2 pass 1 — per-method var/return taints + per-class attribute summary ──
         all_classes = frozenset(c for parsed in file_meta for c in parsed.class_qualnames)
-        route_receivers_by_module = {
-            parsed.module: discover_fastapi_route_receivers(parsed.tree, parsed.alias_map) for parsed in file_meta
-        }
         pydantic_models = frozenset[str]()
-        changed = True
-        while changed:
-            changed = False
+        model_states = {pydantic_models}
+        max_model_rounds = (
+            sum(1 for parsed in file_meta for stmt in parsed.tree.body if isinstance(stmt, ast.ClassDef)) + 1
+        )
+        for _ in range(max_model_rounds):
+            next_models: set[str] = set()
             for parsed in file_meta:
                 discovered = discover_pydantic_models(
                     parsed.tree,
                     module=parsed.module,
                     aliases=parsed.alias_map,
                     known_models=pydantic_models,
+                    is_package=parsed.relpath.rsplit("/", 1)[-1] == "__init__.py",
                 )
-                if discovered != pydantic_models:
-                    pydantic_models = discovered
-                    changed = True
+                next_models.update(name for name in discovered if name.rpartition(".")[0] == parsed.module)
+            next_state = frozenset(next_models)
+            if next_state == pydantic_models:
+                break
+            if next_state in model_states:
+                pydantic_models = all_classes
+                break
+            model_states.add(next_state)
+            pydantic_models = next_state
+        else:
+            pydantic_models = all_classes
+        route_receivers_by_module = {
+            parsed.module: discover_fastapi_route_receivers(
+                parsed.tree,
+                parsed.alias_map,
+                module=parsed.module,
+                known_models=pydantic_models,
+                is_package=parsed.relpath.rsplit("/", 1)[-1] == "__init__.py",
+            )
+            for parsed in file_meta
+        }
         failed_paths: set[str] = set()
         function_skip_recorded: set[str] = set()
 
@@ -744,17 +763,20 @@ class WardlineAnalyzer:
                 recorded_writes: dict[str, dict[str, TaintState]] = {}
                 writes: dict[str, dict[str, TaintState]] = {}
                 method_tm: dict[str, TaintState] = {}
-                route_receivers = route_receivers_by_module[module]
+                route_snapshot = route_receivers_by_module[module].get(id(ent.node))
+                route_aliases = route_snapshot.aliases if route_snapshot is not None else alias_map
+                route_receivers = route_snapshot.receivers if route_snapshot is not None else frozenset()
+                route_models = route_snapshot.models if route_snapshot is not None else pydantic_models
                 route_body_params = route_body_parameters(
                     ent.node,
                     module=module,
-                    aliases=alias_map,
+                    aliases=route_aliases,
                     route_receivers=route_receivers,
-                    pydantic_models=pydantic_models,
+                    pydantic_models=route_models,
                 )
                 dependency_bindings = route_dependency_parameters(
                     ent.node,
-                    aliases=alias_map,
+                    aliases=route_aliases,
                     route_receivers=route_receivers,
                 )
                 route_dependency_params = {
