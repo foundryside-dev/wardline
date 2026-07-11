@@ -15,9 +15,11 @@ every kind), in identical order.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
 
 from wardline.core.config import WardlineConfig
+from wardline.core.finding import ENGINE_PATH, Finding, Kind
 from wardline.core.taints import TRUST_RANK, TaintState
 from wardline.scanner.analyzer import WardlineAnalyzer
 
@@ -25,8 +27,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 _CORPUS = REPO_ROOT / "tests" / "corpus" / "fixtures"
 
 
-def _full_stream() -> str:
-    """One complete, ordered, serialized analyzer run over the labeled corpus.
+def _corpus_findings() -> Sequence[Finding]:
+    """One complete, ordered analyzer run over the labeled corpus.
 
     Unlike ``golden_harness.produce_stream`` this does NOT filter to STABLE
     maturity: PREVIEW rules (PY-WL-116..126) must be order-deterministic too —
@@ -34,8 +36,11 @@ def _full_stream() -> str:
     """
     files = sorted(_CORPUS.rglob("*.py"))
     analyzer = WardlineAnalyzer()
-    findings = analyzer.analyze(files, WardlineConfig(), root=REPO_ROOT)
-    return "\n".join(f.to_jsonl() for f in findings)
+    return analyzer.analyze(files, WardlineConfig(), root=REPO_ROOT)
+
+
+def _full_stream() -> str:
+    return "\n".join(f.to_jsonl() for f in _corpus_findings())
 
 
 def test_analyzer_output_is_byte_identical_across_runs() -> None:
@@ -43,6 +48,15 @@ def test_analyzer_output_is_byte_identical_across_runs() -> None:
     second = _full_stream()
     assert first, "corpus produced an empty stream — fixture path broken"
     assert first == second, "analyzer output differs between identical runs"
+
+
+def test_builtin_source_defects_have_source_lines() -> None:
+    offenders = [
+        (f.rule_id, f.location.path, f.qualname)
+        for f in _corpus_findings()
+        if f.kind is Kind.DEFECT and f.location.path != ENGINE_PATH and f.location.line_start is None
+    ]
+    assert offenders == []
 
 
 def test_trust_rank_is_injective() -> None:

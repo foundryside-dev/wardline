@@ -604,12 +604,9 @@ def test_directly_constructed_scanresult_falls_back_to_findings() -> None:
     assert gate_decision(result, Severity.ERROR).tripped is True
 
 
-def test_lineless_defect_does_not_trip_gate(tmp_path: Path) -> None:
-    # Regression guard for the bug PR #25 had (gate_findings = list(raw)): a lineless
-    # DEFECT must be downgraded to a non-gating FACT in the gate population, exactly as
-    # apply_suppressions does for the emitted findings — so it never trips the gate.
+def test_lineless_source_defect_trips_gate_via_engine_diagnostic() -> None:
     from wardline.core.baseline import Baseline
-    from wardline.core.finding import ENGINE_PATH  # noqa: F401  (documents the carve-out)
+    from wardline.core.finding import ENGINE_PATH
     from wardline.core.suppression import apply_suppressions, gate_trips
     from wardline.core.waivers import WaiverSet
 
@@ -622,11 +619,13 @@ def test_lineless_defect_does_not_trip_gate(tmp_path: Path) -> None:
         fingerprint="b" * 64,
         suppressed=SuppressionState.ACTIVE,
     )
-    # This is the EXACT empty-suppression transform run_scan applies to build gate_findings.
+
     gate_pop = apply_suppressions([lineless], Baseline(frozenset()), WaiverSet([]), today=datetime.now(UTC).date())
-    downgraded = next(f for f in gate_pop if f.location.path == "svc.py")
-    assert downgraded.kind is Kind.FACT  # DEFECT -> FACT, no longer gating
-    assert gate_trips(gate_pop, Severity.ERROR) is False
+
+    diagnostic = next(f for f in gate_pop if f.rule_id == "WLN-ENGINE-LINELESS-DEFECT")
+    assert diagnostic.location.path == ENGINE_PATH
+    assert diagnostic.kind is Kind.DEFECT
+    assert gate_trips(gate_pop, Severity.ERROR) is True
 
 
 def test_new_since_scopes_both_populations_and_resists_suppression(tmp_path: Path) -> None:
