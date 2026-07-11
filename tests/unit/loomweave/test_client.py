@@ -321,9 +321,17 @@ def test_resolve_default_has_no_auth_rejection():
     assert result.auth_rejected is False
 
 
-def test_unhinted_401_stays_loud():
-    # Without a hint the whole 4xx band (auth included) is a loud LoomweaveError —
-    # the pre-existing posture, re-pinned against the new hinted auth carve-out.
-    t = FakeTransport([Response(status=401, body='{"code":"AUTH"}')])
-    with pytest.raises(LoomweaveError, match="401"):
-        _client(t).resolve(["m.f"])
+@pytest.mark.parametrize("status", [401, 403])
+def test_resolve_unhinted_auth_rejection_is_fail_soft_and_distinct(status: int):
+    # Authentication and authorization failures are independent of the optional
+    # plugin hint. An unhinted consumer must receive the same actionable signal as a
+    # hinted one, never a loud exception or a fabricated unresolved identity.
+    t = FakeTransport([Response(status=status, body='{"code":"AUTH"}')])
+
+    result = _client(t).resolve(["m.f"])
+
+    assert result is not None
+    assert result.resolved == {}
+    assert result.unresolved == []
+    assert result.auth_status == status
+    assert result.auth_rejected is True

@@ -19,6 +19,8 @@ from wardline.core.filigree_issue import (
     promote_url_from_weft,
 )
 from wardline.core.finding import Finding, Kind, Location, Severity
+from wardline.loomweave.client import LoomweaveClient
+from wardline.loomweave.client import Response as LoomweaveResponse
 
 
 def test_promote_wire_fingerprint_matches_ingest_wire() -> None:
@@ -287,20 +289,17 @@ class LegacyLoomweave:
         return SimpleNamespace(current_content_hash="legacy-hash")
 
 
-class LegacyAuthRejectedLoomweave:
+class LegacyAuthTransport:
     def __init__(self, status: int) -> None:
-        self._status = status
-        self.fact_calls: list[str] = []
+        self._responses = [
+            LoomweaveResponse(status=404, body='{"code":"NOT_FOUND"}'),
+            LoomweaveResponse(status=status, body='{"code":"AUTH"}'),
+        ]
+        self.calls: list[tuple[str, str, bytes, object]] = []
 
-    def capabilities(self):
-        return None
-
-    def resolve(self, qualnames, *, plugin=None):
-        return SimpleNamespace(resolved={}, unresolved=[], auth_status=self._status)
-
-    def get_taint_fact(self, qualname):
-        self.fact_calls.append(qualname)
-        return SimpleNamespace(current_content_hash="must-not-be-used")
+    def request(self, method, url, body, headers):
+        self.calls.append((method, url, body, headers))
+        return self._responses.pop(0)
 
 
 def test_attach_loomweave_identity_attaches_resolved_sei(monkeypatch, tmp_path):
@@ -431,7 +430,13 @@ def test_attach_loomweave_identity_can_attach_legacy_locator_with_hash(monkeypat
 
 @pytest.mark.parametrize("status", [401, 403])
 def test_legacy_locator_attachment_names_auth_rejection(status: int) -> None:
-    client = LegacyAuthRejectedLoomweave(status)
+    transport = LegacyAuthTransport(status)
+    client = LoomweaveClient(
+        "http://loomweave.example",
+        secret="federation-token",
+        project="wardline",
+        transport=transport,
+    )
     result = attach_loomweave_identity_for_qualname(
         qualname="pkg.mod.leaky",
         issue_id="wardline-1",
@@ -442,7 +447,9 @@ def test_legacy_locator_attachment_names_auth_rejection(status: int) -> None:
     assert result.attached is False
     assert result.reason is not None and str(status) in result.reason
     assert "not resolve legacy locator" not in result.reason
-    assert client.fact_calls == []
+    assert len(transport.calls) == 2
+    resolve_body = transport.calls[1][2]
+    assert b'"plugin":"python"' in resolve_body
 
 
 def test_attach_loomweave_identity_reports_association_failure(monkeypatch, tmp_path):

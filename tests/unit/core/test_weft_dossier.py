@@ -13,7 +13,8 @@ from pathlib import Path
 import pytest
 
 from wardline.filigree.dossier_client import Response
-from wardline.loomweave.client import LinkageResult, ResolveResult
+from wardline.loomweave.client import LinkageResult, LoomweaveClient, ResolveResult
+from wardline.loomweave.client import Response as LoomweaveResponse
 from wardline.loomweave.identity import ContentStatus, IdentityStatus
 from wardline.weft_dossier import build_weft_dossier
 
@@ -87,6 +88,16 @@ class _FakeFiligreeTransport:
         return Response(status=200, body=self._body)
 
 
+class _QueuedLoomweaveTransport:
+    def __init__(self, responses: list[LoomweaveResponse]) -> None:
+        self._responses = list(responses)
+        self.calls: list[tuple[str, str, bytes, object]] = []
+
+    def request(self, method, url, body, headers):
+        self.calls.append((method, url, body, headers))
+        return self._responses.pop(0)
+
+
 def test_full_wiring_keys_on_sei_and_fills_all_sections(tmp_path: Path) -> None:
     fili_body = json.dumps({"associations": [{"issue_id": "wardline-7", "content_hash_at_attach": "ch"}]})
     d = build_weft_dossier(
@@ -137,10 +148,25 @@ def test_no_loomweave_no_filigree_is_self_only(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize("status", [401, 403])
 def test_dossier_surfaces_loomweave_auth_rejection_in_linkage_and_work_reasons(tmp_path: Path, status: int) -> None:
+    transport = _QueuedLoomweaveTransport(
+        [
+            LoomweaveResponse(
+                status=200,
+                body='{"linkages":{"http":true},"sei":{"supported":true,"version":1}}',
+            ),
+            LoomweaveResponse(status=status, body='{"code":"AUTH"}'),
+        ]
+    )
+    client = LoomweaveClient(
+        "http://loomweave.example",
+        secret="federation-token",
+        project="wardline",
+        transport=transport,
+    )
     d = build_weft_dossier(
         "svc.leaky",
         root=_proj(tmp_path),
-        loomweave_client=_FakeLoomweave(auth_status=status),
+        loomweave_client=client,
         filigree_url="http://filigree.example",
         filigree_transport=_FakeFiligreeTransport('{"associations": []}'),
     )
@@ -148,6 +174,10 @@ def test_dossier_surfaces_loomweave_auth_rejection_in_linkage_and_work_reasons(t
     assert d.trust.gate_verdict == "defect"
     assert str(status) in (d.linkages.reason or "")
     assert str(status) in (d.work.reason or "")
+    resolve_body = json.loads(
+        next(body for _method, url, body, _headers in transport.calls if url.endswith("/resolve"))
+    )
+    assert "plugin" not in resolve_body  # user-supplied dossier entities may be language-ambiguous
 
 
 def test_pre_sei_loomweave_degrades_identity_but_keeps_self(tmp_path: Path) -> None:

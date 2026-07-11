@@ -73,14 +73,15 @@ class UrllibTransport:
 @dataclass(frozen=True, slots=True)
 class ResolveResult:
     """The resolve outcome. ``auth_status`` distinguishes an AUTH REJECTION (401/403 on
-    a hinted request — stale/wrong WEFT_FEDERATION_TOKEN, HMAC mismatch, clock skew)
-    from genuine entity nonexistence: when set, the rejected chunks' qualnames are NOT
-    appended to ``unresolved`` — "fix the token" must never read as "entity does not
-    exist" (the dogfood-#5 / C-7 misdiagnosis class)."""
+    a resolve request — stale/wrong WEFT_FEDERATION_TOKEN, HMAC mismatch, clock skew)
+    from genuine entity nonexistence, whether or not a plugin hint was supplied. When
+    set, the rejected chunks' qualnames are NOT appended to ``unresolved`` — "fix the
+    token" must never read as "entity does not exist" (the dogfood-#5 / C-7
+    misdiagnosis class)."""
 
     resolved: dict[str, str]
     unresolved: list[str]
-    auth_status: int | None = None  # 401/403 when a hinted chunk was auth-rejected
+    auth_status: int | None = None  # 401/403 when a resolve chunk was auth-rejected
 
     @property
     def auth_rejected(self) -> bool:
@@ -266,12 +267,13 @@ class LoomweaveClient:
         unresolved — an older Loomweave whose ``ResolveRequest`` is
         ``deny_unknown_fields`` 400s on the hint field, and identity enrichment must
         degrade, not crash. EXCEPT 401/403: an auth rejection cannot be hint-field
-        version skew (an older deny_unknown_fields Loomweave returns 400, not 401) and
-        must not be misreported as "qualname unresolved" — resolution stops, the
-        rejected qualnames are NOT marked unresolved, and the rejection is surfaced as
-        ``ResolveResult.auth_status`` (plus a logged warning — a signal, never silent).
-        An UNHINTED 4xx stays loud (it cannot be a version skew on this field — it is
-        a real request bug, e.g. ``INVALID_PATH``, and silence would hide it).
+        version skew (an older deny_unknown_fields Loomweave returns 400, not 401), is
+        independent of whether a hint was supplied, and must not be misreported as
+        "qualname unresolved". Resolution stops, the rejected qualnames are NOT marked
+        unresolved, and the rejection is surfaced as ``ResolveResult.auth_status``
+        (plus a logged warning — a signal, never silent). Other UNHINTED 4xx responses
+        stay loud (they cannot be version skew on this field — they are real request
+        bugs, e.g. ``INVALID_PATH``, and silence would hide them).
         Outage/5xx stays ``None`` ("unreachable", ``_send``)."""
         resolved: dict[str, str] = {}
         unresolved: list[str] = []
@@ -287,19 +289,19 @@ class LoomweaveClient:
             resp = self._send("POST", "/api/wardline/resolve", payload)
             if resp is None:
                 return None
+            if resp.status in (401, 403):
+                # Auth rejection, not entity nonexistence. Stop (auth will not
+                # recover mid-batch), keep what resolved so far, and carry the
+                # status so consumers can steer the operator to credentials/scope,
+                # not to a phantom "unresolved entity". Authentication applies to
+                # the route, independent of the optional plugin hint.
+                logger.warning(
+                    "Loomweave rejected resolve with %d (auth); %d qualname(s) left unprobed (NOT reported unresolved)",
+                    resp.status,
+                    len(chunk),
+                )
+                return ResolveResult(resolved=resolved, unresolved=unresolved, auth_status=resp.status)
             if plugin is not None and 400 <= resp.status < 500:
-                if resp.status in (401, 403):
-                    # Auth rejection, not entity nonexistence. Stop (auth will not
-                    # recover mid-batch), keep what resolved so far, and carry the
-                    # status so consumers can steer the operator to the token, not
-                    # to a phantom "unresolved entity".
-                    logger.warning(
-                        "Loomweave rejected the hinted resolve with %d (auth); "
-                        "%d qualname(s) left unprobed (NOT reported unresolved)",
-                        resp.status,
-                        len(chunk),
-                    )
-                    return ResolveResult(resolved=resolved, unresolved=unresolved, auth_status=resp.status)
                 unresolved.extend(str(q) for q in chunk)
                 continue
             data = self._require_ok(resp, "/api/wardline/resolve")
