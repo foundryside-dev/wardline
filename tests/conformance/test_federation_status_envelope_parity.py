@@ -64,6 +64,15 @@ _PARTIAL = EmitResult(
     url="http://x",
     failures=(FailedFinding(reason="rejected", detail="nope", fingerprint="abc"),),
 )
+_MID_DROP = EmitResult(
+    reachable=False,
+    created=2,
+    updated=1,
+    token_sent=True,
+    url="http://x",
+    chunks_landed=1,
+    failures=(FailedFinding(reason="partial", detail="chunk failed at transport layer"),),
+)
 
 
 def _mcp_block(er: EmitResult) -> dict[str, Any]:
@@ -79,6 +88,7 @@ def _mcp_block(er: EmitResult) -> dict[str, Any]:
         "auth_rejected": er.auth_rejected,
         "token_sent": er.token_sent,
         "url": er.url,
+        "chunks_landed": er.chunks_landed,
         "destination": filigree_destination(er.url),
     }
 
@@ -123,6 +133,17 @@ def test_mcp_filigree_status_is_canonical_builder() -> None:
     for er in (_OK, _AUTH, _PARTIAL):
         block = _mcp_block(er)
         assert _eq(server._filigree_emit_status(block), fs.filigree_emit_status_from_block(block))
+
+
+def test_mcp_block_builder_disabled_reason_is_partial_aware() -> None:
+    block = _mcp_block(_MID_DROP)
+
+    status = fs.filigree_emit_status_from_block(block)
+
+    reason = str(status["disabled_reason"])
+    assert "unreachable" not in reason
+    assert "mid-emit" in reason and "1 chunk(s) landed" in reason
+    assert status["chunks_landed"] == 1
 
 
 def test_loomweave_status_is_canonical_builder_across_surfaces() -> None:
@@ -216,7 +237,7 @@ def test_mcp_filigree_block_is_wider_but_shares_the_contract() -> None:
     # subset of the MCP block — pinning that the divergence is additive, never a key rename.
     mcp = server._filigree_emit_status(_mcp_block(_AUTH))
     assert set(mcp) >= _SHARED_FILIGREE_KEYS
-    assert set(mcp) >= {"status", "auth_rejected", "token_sent", "url", "destination"}
+    assert set(mcp) >= {"status", "auth_rejected", "token_sent", "url", "chunks_landed", "destination"}
 
 
 # ---------------------------------------------------------------------------
@@ -286,6 +307,7 @@ _CONFIGURED_EMIT_RESULTS = (
     ("ok", _OK),
     ("auth", _AUTH),
     ("partial", _PARTIAL),
+    ("mid-drop", _MID_DROP),
 )
 
 
@@ -303,8 +325,11 @@ def test_configured_filigree_emit_real_producer_validates_against_schema(
     out = _scan_structured(server_obj, {})
     emit = out["filigree_emit"]
     assert emit["configured"] is True
-    # The transport-detail keys are PRESENT (this is the wide MCP block, not the narrow one).
-    assert set(emit) >= {"status", "auth_rejected", "token_sent", "url", "destination"}
+    # The transport-detail keys are PRESENT on every configured attempt. They stay optional in
+    # the shared schema only because configured:false blocks use the same $def and attempted no IO.
+    assert set(emit) >= {"status", "auth_rejected", "token_sent", "url", "chunks_landed", "destination"}
+    assert out["filigree"]["chunks_landed"] == emit_result.chunks_landed
+    assert emit["chunks_landed"] == emit_result.chunks_landed
     if label == "ok":
         assert emit["reachable"] is True
         assert emit["created"] == 2 and emit["updated"] == 1
@@ -312,11 +337,15 @@ def test_configured_filigree_emit_real_producer_validates_against_schema(
     elif label == "auth":
         assert emit["auth_rejected"] is True
         assert emit["status"] == 401
-    else:  # partial
+    elif label == "partial":
         assert emit["failed"] == 1
         # The failures array on the REAL configured path validated against the `$def` above.
         assert emit["failures"][0]["reason"] == "rejected"
         assert emit["failures"][0]["fingerprint"] == "abc"
+    else:  # mid-drop
+        reason = str(emit["disabled_reason"])
+        assert "unreachable" not in reason
+        assert "mid-emit" in reason and "1 chunk(s) landed" in reason
 
 
 def test_configured_loomweave_write_real_producer_validates_against_schema(
@@ -391,6 +420,7 @@ def test_raw_filigree_def_shares_structure_with_canonical() -> None:
         "token_sent",
         "url",
         "destination",
+        "chunks_landed",
     }
     assert shared <= set(raw_props), f"raw filigree $def lost a field: {shared - set(raw_props)}"
     for field in shared:
@@ -466,6 +496,7 @@ _GOLDEN_FILIGREE_FROM_BLOCK_AUTH: dict[str, Any] = {
     "auth_rejected": True,
     "token_sent": True,
     "url": "http://x/api?project=p",
+    "chunks_landed": 0,
     "destination": {"url": "http://x/api", "project": "p", "project_pinned": True},
 }
 
@@ -495,6 +526,7 @@ _GOLDEN_FILIGREE_FROM_BLOCK_PARTIAL: dict[str, Any] = {
     "auth_rejected": False,
     "token_sent": True,
     "url": "http://x",
+    "chunks_landed": 0,
     "destination": {"url": "http://x", "project": None, "project_pinned": False},
 }
 

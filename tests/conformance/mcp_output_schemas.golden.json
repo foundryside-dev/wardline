@@ -2460,6 +2460,11 @@
             "description": "Absent when not configured.",
             "type": "boolean"
           },
+          "chunks_landed": {
+            "description": "Chunks accepted before the failure; absent when not configured.",
+            "minimum": 0,
+            "type": "integer"
+          },
           "configured": {
             "type": "boolean"
           },
@@ -2995,6 +3000,11 @@
                 "description": "True when the emit was refused with 401/403.",
                 "type": "boolean"
               },
+              "chunks_landed": {
+                "description": "Chunks accepted before the failure (0 on success or first contact).",
+                "minimum": 0,
+                "type": "integer"
+              },
               "created": {
                 "type": "integer"
               },
@@ -3050,6 +3060,7 @@
               "auth_rejected",
               "token_sent",
               "url",
+              "chunks_landed",
               "destination"
             ],
             "type": "object"

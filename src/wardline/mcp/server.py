@@ -132,6 +132,7 @@ def _emit_filigree(
         "auth_rejected": er.auth_rejected,
         "token_sent": er.token_sent,
         "url": redact_url_for_diagnostics(er.url),
+        "chunks_landed": er.chunks_landed,
         # N1 / C-10(a): name where findings went so a wrong-project write is visible.
         "destination": filigree_destination(er.url),
     }
@@ -1131,6 +1132,11 @@ _SCAN_OUTPUT_SCHEMA: dict[str, Any] = {
                             "rejected).",
                         },
                         "url": {"type": ["string", "null"], "description": "The endpoint attempted."},
+                        "chunks_landed": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "description": "Chunks accepted before the failure (0 on success or first contact).",
+                        },
                         "destination": {"$ref": "#/$defs/filigree_destination"},
                     },
                     "required": [
@@ -1144,6 +1150,7 @@ _SCAN_OUTPUT_SCHEMA: dict[str, Any] = {
                         "auth_rejected",
                         "token_sent",
                         "url",
+                        "chunks_landed",
                         "destination",
                     ],
                     "additionalProperties": False,

@@ -11,8 +11,8 @@ This module is the single source of truth. The builders below reproduce each
 surface's CURRENT bytes exactly — same keys, same key order, same null/absent
 semantics — so the consolidation is behavior-preserving. The surfaces legitimately
 DIFFER in context (the MCP scan response carries the discriminated transport detail
-``status/auth_rejected/token_sent/url`` and orders ``disabled_reason`` second; the
-CLI/scan-job blocks omit those keys; the scan_file_findings block omits
+``status/auth_rejected/token_sent/url/chunks_landed`` and orders
+``disabled_reason`` second; the CLI/scan-job blocks omit those keys; the scan_file_findings block omits
 ``destination`` entirely and has no loomweave_write). Those differences are
 preserved via explicit flags, not collapsed — collapsing would change emitted bytes.
 
@@ -51,7 +51,7 @@ def filigree_emit_status(
     ``include_destination`` toggles the trailing ``destination`` echo: True for the
     CLI/scan-job blocks; False for scan_file_findings, whose schema has never carried
     it. The block never carries the discriminated transport detail
-    (``status/auth_rejected/token_sent/url``) — that lives only on the MCP block;
+    (``status/auth_rejected/token_sent/url/chunks_landed``) — that lives only on the MCP block;
     see :func:`filigree_emit_status_from_block`.
     """
     if result is None:
@@ -99,7 +99,7 @@ def filigree_emit_status_from_block(block: dict[str, Any] | None) -> dict[str, A
     """The MCP ``filigree_emit`` status block (built from a pre-computed raw block).
 
     The MCP scan response carries the WIDER shape: the discriminated transport detail
-    (``status/auth_rejected/token_sent/url``) AND a ``disabled_reason`` at position
+    (``status/auth_rejected/token_sent/url/chunks_landed``) AND a ``disabled_reason`` at position
     two (right after ``configured``). The raw ``block`` is the dict produced by the
     MCP ``_emit_filigree`` helper (an emit attempt) or None (no emitter injected).
     The configured-false (block is None) bytes match the CLI/scan-job not-configured
@@ -112,6 +112,7 @@ def filigree_emit_status_from_block(block: dict[str, Any] | None) -> dict[str, A
         status=block.get("status"),
         token_sent=bool(block.get("token_sent")),
         url=block.get("url"),
+        chunks_landed=int(block.get("chunks_landed", 0)),
     )
     return {"configured": True, "disabled_reason": disabled_reason, **block}
 
@@ -217,6 +218,9 @@ def filigree_emit_status_schema(*, include_transport_detail: bool = True) -> dic
         "disabled_reason",
     ]
     if include_transport_detail:
+        # These details are intentionally optional in the shared schema: the same
+        # $def validates configured:false blocks, where no transport attempt occurred.
+        # Configured producer tests pin that every field below is present after an attempt.
         properties["destination"] = {"$ref": "#/$defs/filigree_destination"}
         properties["status"] = {
             "type": ["integer", "null"],
@@ -225,6 +229,11 @@ def filigree_emit_status_schema(*, include_transport_detail: bool = True) -> dic
         properties["auth_rejected"] = {"type": "boolean", "description": "Absent when not configured."}
         properties["token_sent"] = {"type": "boolean", "description": "Absent when not configured."}
         properties["url"] = {"type": ["string", "null"], "description": "Absent when not configured."}
+        properties["chunks_landed"] = {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Chunks accepted before the failure; absent when not configured.",
+        }
         required.append("destination")
     return {
         "type": "object",
