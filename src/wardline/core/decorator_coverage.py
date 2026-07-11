@@ -27,7 +27,7 @@ if TYPE_CHECKING:
 class BindingProvider(Protocol):
     """Optional identity source for one qualname."""
 
-    def binding_for(self, qualname: str) -> BindingResolution: ...
+    def binding_for(self, qualname: str) -> BindingResolution | EntityBinding | None: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -149,13 +149,24 @@ def _decorators_of(entity: Entity) -> list[str]:
     return decorators
 
 
+def _normalize_binding_result(result: object) -> BindingResolution:
+    if isinstance(result, BindingResolution):
+        return result
+    if isinstance(result, EntityBinding):
+        return BindingResolution(result, None, None)
+    if result is None:
+        return BindingResolution(None, "loomweave returned no identity", None)
+    reason = f"loomweave binding provider returned unsupported result: {type(result).__name__}"
+    return BindingResolution(None, reason, None)
+
+
 def _identity_for(provider: BindingProvider | None, qualname: str) -> tuple[IdentityCoverage, BindingResolution]:
     locator = _locator_for(qualname)
     if provider is None:
         resolution = BindingResolution(None, "loomweave not configured", None)
         return IdentityCoverage.unavailable(locator, "loomweave not configured"), resolution
     try:
-        resolution = provider.binding_for(qualname)
+        resolution = _normalize_binding_result(provider.binding_for(qualname))
     except Exception as exc:
         reason = f"loomweave unreachable: {exc}"
         resolution = BindingResolution(None, reason, None)

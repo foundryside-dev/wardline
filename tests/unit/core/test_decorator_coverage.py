@@ -54,6 +54,26 @@ class _UnavailableBindings:
         return self._resolution
 
 
+class _LegacyBinding:
+    def binding_for(self, qualname: str) -> EntityBinding:
+        return EntityBinding(
+            locator=f"python:function:{qualname}",
+            sei=f"loomweave:eid:{qualname}",
+            identity=IdentityStatus.ALIVE,
+            content=ContentStatus.FRESH,
+        )
+
+
+class _LegacyNoBinding:
+    def binding_for(self, qualname: str) -> None:
+        return None
+
+
+class _InvalidBinding:
+    def binding_for(self, qualname: str) -> object:
+        return object()
+
+
 class _Work:
     def work(self, binding: EntityBinding) -> WorkSection:
         if binding.locator.endswith("svc.leaky"):
@@ -115,6 +135,32 @@ def test_decorator_coverage_reports_unavailable_integrations_explicitly(tmp_path
     }
     assert row["work"]["available"] is False
     assert row["work"]["reason"] == "filigree not configured"
+
+
+def test_decorator_coverage_accepts_legacy_entity_binding_provider(tmp_path: Path) -> None:
+    row = build_decorator_coverage(_project(tmp_path), binding_provider=_LegacyBinding()).to_dict()["rows"][0]
+
+    assert row["identity"]["available"] is True
+    assert row["identity"]["sei"] == f"loomweave:eid:{row['qualname']}"
+
+
+def test_decorator_coverage_accepts_legacy_none_provider_fail_soft(tmp_path: Path) -> None:
+    row = build_decorator_coverage(
+        _project(tmp_path), binding_provider=_LegacyNoBinding(), work_provider=_Work()
+    ).to_dict()["rows"][0]
+
+    assert row["identity"]["reason"] == "loomweave returned no identity"
+    assert row["work"]["reason"] == "loomweave returned no identity"
+
+
+def test_decorator_coverage_invalid_provider_result_fails_soft(tmp_path: Path) -> None:
+    row = build_decorator_coverage(
+        _project(tmp_path), binding_provider=_InvalidBinding(), work_provider=_Work()
+    ).to_dict()["rows"][0]
+
+    reason = "loomweave binding provider returned unsupported result: object"
+    assert row["identity"]["reason"] == reason
+    assert row["work"]["reason"] == reason
 
 
 @pytest.mark.parametrize("status", [401, 403])
