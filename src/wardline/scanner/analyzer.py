@@ -39,6 +39,7 @@ from wardline.scanner.taint.decorator_provider import (
 )
 from wardline.scanner.taint.fastapi_sources import (
     discover_callable_aliases,
+    discover_exported_type_candidates,
     discover_fastapi_route_receivers,
     discover_parameter_types,
     discover_pydantic_models,
@@ -352,9 +353,17 @@ class WardlineAnalyzer:
         # mis-read validated output as raw (over-taint -> PY-WL-101 false positive).
         project_return_taints = dict(result.return_taint_map)
         project_binding_aliases: dict[str, str] = {}
+        project_type_candidates: dict[str, frozenset[str]] = {}
         for parsed in file_meta:
             project_binding_aliases.update(
                 discover_callable_aliases(
+                    parsed.tree,
+                    module=parsed.module,
+                    is_package=parsed.relpath.rsplit("/", 1)[-1] == "__init__.py",
+                )
+            )
+            project_type_candidates.update(
+                discover_exported_type_candidates(
                     parsed.tree,
                     module=parsed.module,
                     is_package=parsed.relpath.rsplit("/", 1)[-1] == "__init__.py",
@@ -711,6 +720,7 @@ class WardlineAnalyzer:
                 module=parsed.module,
                 is_package=parsed.relpath.rsplit("/", 1)[-1] == "__init__.py",
                 exported_aliases=project_binding_aliases,
+                exported_type_candidates=project_type_candidates,
             )
             for parsed in file_meta
         }

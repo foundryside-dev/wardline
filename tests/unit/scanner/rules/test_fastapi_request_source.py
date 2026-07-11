@@ -27,6 +27,7 @@ import pytest
 from wardline.core.config import WardlineConfig
 from wardline.core.finding import Kind
 from wardline.scanner.analyzer import WardlineAnalyzer
+from wardline.scanner.taint import fastapi_sources
 from wardline.scanner.taint.fastapi_sources import discover_parameter_types
 
 
@@ -630,6 +631,78 @@ def test_cross_module_request_alias_is_recognized(tmp_path: Path) -> None:
     rules = {finding.rule_id for finding in findings if finding.kind is Kind.DEFECT}
     assert "WLN-ENGINE-PARSE-ERROR" not in rules
     assert "PY-WL-108" in rules
+
+
+def test_conditional_cross_module_request_alias_is_recognized(tmp_path: Path) -> None:
+    reqtypes = tmp_path / "reqtypes.py"
+    reqtypes.write_text(
+        textwrap.dedent(
+            """
+            try:
+                from fastapi import Request
+            except ImportError:
+                from starlette.requests import Request
+            PublicRequest = Request
+            """
+        ),
+        encoding="utf-8",
+    )
+    api = tmp_path / "api.py"
+    api.write_text(
+        textwrap.dedent(
+            """
+            import os
+            from reqtypes import PublicRequest
+            from wardline.decorators import trusted
+
+            @trusted(level='ASSURED')
+            def h(req: PublicRequest):
+                os.system(req.query_params.get('x'))
+            """
+        ),
+        encoding="utf-8",
+    )
+
+    findings = WardlineAnalyzer().analyze([reqtypes, api], WardlineConfig(), root=tmp_path)
+    rules = {finding.rule_id for finding in findings if finding.kind is Kind.DEFECT}
+
+    assert "WLN-ENGINE-PARSE-ERROR" not in rules
+    assert "PY-WL-108" in rules
+
+
+def test_conditional_request_reexport_preserves_both_type_candidates() -> None:
+    tree = ast.parse(
+        """
+try:
+    from fastapi import Request
+except ImportError:
+    from starlette.requests import Request
+PublicRequest = Request
+"""
+    )
+    discover = getattr(fastapi_sources, "discover_exported_type_candidates", None)
+
+    assert callable(discover), "candidate-preserving exported type discovery is not implemented"
+    assert discover(tree, module="reqtypes")["reqtypes.PublicRequest"] == frozenset(
+        {"fastapi.Request", "starlette.requests.Request"}
+    )
+
+
+def test_explicit_shadow_clears_conditional_request_reexport_candidates() -> None:
+    tree = ast.parse(
+        """
+try:
+    from fastapi import Request
+except ImportError:
+    from starlette.requests import Request
+class Local: ...
+PublicRequest = Local
+"""
+    )
+    discover = getattr(fastapi_sources, "discover_exported_type_candidates", None)
+
+    assert callable(discover), "candidate-preserving exported type discovery is not implemented"
+    assert discover(tree, module="reqtypes")["reqtypes.PublicRequest"] == frozenset({"reqtypes.Local"})
 
 
 @pytest.mark.parametrize(

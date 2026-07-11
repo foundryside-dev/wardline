@@ -372,13 +372,14 @@ def discover_callable_aliases(
     return aliases
 
 
-def discover_parameter_types(
+def _discover_parameter_types_and_bindings(
     tree: ast.Module,
     *,
     module: str,
     is_package: bool = False,
     exported_aliases: Mapping[str, str] | None = None,
-) -> dict[int, dict[str, tuple[str, ...]]]:
+    exported_type_candidates: Mapping[str, frozenset[str]] | None = None,
+) -> tuple[dict[int, dict[str, tuple[str, ...]]], dict[str, frozenset[str]]]:
     """Resolve function parameter annotations against source-ordered lexical bindings."""
     type Bindings = MutableMapping[str, frozenset[str]]
     resolved: dict[int, dict[str, tuple[str, ...]]] = {}
@@ -390,12 +391,29 @@ def discover_parameter_types(
     )
     future_module_bindings: dict[str, frozenset[str]] | None = None
 
-    def canonical_type(name: str) -> str:
+    def canonical_types(name: str) -> frozenset[str]:
+        canonical: set[str] = set()
+        pending = [name]
         seen: set[str] = set()
-        while exported_aliases is not None and name in exported_aliases and name not in seen:
-            seen.add(name)
-            name = exported_aliases[name]
-        return name
+        while pending:
+            candidate = pending.pop()
+            if candidate in seen:
+                continue
+            seen.add(candidate)
+            type_candidates = exported_type_candidates.get(candidate) if exported_type_candidates is not None else None
+            if type_candidates is not None:
+                for target in type_candidates:
+                    if target == candidate:
+                        canonical.add(target)
+                    else:
+                        pending.append(target)
+                continue
+            alias_target = exported_aliases.get(candidate) if exported_aliases is not None else None
+            if alias_target is not None and alias_target != candidate:
+                pending.append(alias_target)
+            else:
+                canonical.add(candidate)
+        return frozenset(canonical)
 
     def resolve_candidates(node: ast.expr, bindings: Mapping[str, frozenset[str]]) -> frozenset[str]:
         attributes: list[str] = []
@@ -508,7 +526,13 @@ def discover_parameter_types(
                             )
                             if annotations:
                                 parameter_types[parameter.arg] = tuple(
-                                    sorted({canonical_type(annotation) for annotation in annotations})
+                                    sorted(
+                                        {
+                                            canonical
+                                            for annotation in annotations
+                                            for canonical in canonical_types(annotation)
+                                        }
+                                    )
                                 )
                     resolved[id(stmt)] = parameter_types
 
@@ -594,7 +618,41 @@ def discover_parameter_types(
         future_module_bindings = dict(module_bindings)
         resolved.clear()
         walk_scope(tree.body, scope=module, bindings={})
+    return resolved, module_bindings
+
+
+def discover_parameter_types(
+    tree: ast.Module,
+    *,
+    module: str,
+    is_package: bool = False,
+    exported_aliases: Mapping[str, str] | None = None,
+    exported_type_candidates: Mapping[str, frozenset[str]] | None = None,
+) -> dict[int, dict[str, tuple[str, ...]]]:
+    """Resolve function parameter annotations against source-ordered lexical bindings."""
+    resolved, _ = _discover_parameter_types_and_bindings(
+        tree,
+        module=module,
+        is_package=is_package,
+        exported_aliases=exported_aliases,
+        exported_type_candidates=exported_type_candidates,
+    )
     return resolved
+
+
+def discover_exported_type_candidates(
+    tree: ast.Module,
+    *,
+    module: str,
+    is_package: bool = False,
+) -> dict[str, frozenset[str]]:
+    """Return final candidate identities for each module-level type binding."""
+    _, bindings = _discover_parameter_types_and_bindings(
+        tree,
+        module=module,
+        is_package=is_package,
+    )
+    return {f"{module}.{name}": candidates for name, candidates in bindings.items()}
 
 
 def _is_fastapi_route(node: ast.FunctionDef | ast.AsyncFunctionDef, route_receivers: frozenset[str]) -> bool:
