@@ -175,14 +175,14 @@ def test_scan_fail_on_none_is_documented_enum_error_not_internal_crash(tmp_path,
             "rekey",
             {"apply": False, "resume": "false"},
             "resume",
-            "run_scan",
+            "wardline.core.rekey.resume_rekey",
             id="rekey.resume",
         ),
         pytest.param(
             "rekey",
             {"apply": False, "resume": False, "rollback": "false"},
             "rollback",
-            "run_scan",
+            "wardline.core.rekey.rollback",
             id="rekey.rollback",
         ),
     ],
@@ -200,6 +200,8 @@ def test_destructive_boolean_rejected_before_side_effect_without_jsonschema(
 
     if side_effect == "doctor":
         monkeypatch.setattr("wardline.install.doctor.machine_readable_doctor", forbidden)
+    elif "." in side_effect:
+        monkeypatch.setattr(side_effect, forbidden)
     else:
         monkeypatch.setattr(f"wardline.mcp.server.{side_effect}", forbidden)
     server = WardlineMCPServer(root=_leaky_project(tmp_path))
