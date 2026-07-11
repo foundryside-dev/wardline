@@ -21,6 +21,7 @@ from wardline.core.attest import build_attestation, verify_attestation
 from wardline.core.attest_key import load_attest_key
 from wardline.core.baseline import load_baseline
 from wardline.core.baseline_ops import generate_baseline
+from wardline.core.confinement import SourceRootConfinement
 from wardline.core.delta_scope import ScopeParseError, load_affected_scope, parse_affected_scope
 from wardline.core.errors import WardlineError
 from wardline.core.explain import explain_taint_result, explanation_from_context, explanation_to_dict
@@ -810,7 +811,7 @@ def _scan(
         path,
         config_path=config_path,
         cache_dir=cache_dir,
-        confine_to_root=True,
+        source_root_confinement=SourceRootConfinement.PROJECT_ROOT,
         new_since=new_since,
         affected=affected,
         sei_resolver=sei_resolver,
@@ -2211,7 +2212,7 @@ def _explain_taint(args: dict[str, Any], root: Path, loomweave: Any = None) -> d
         path=match_path,
         line=args.get("line"),
         config_path=_cfg(args, root),
-        confine_to_root=True,
+        source_root_confinement=SourceRootConfinement.PROJECT_ROOT,
         loomweave=loomweave,
         sink_qualname=args.get("sink_qualname"),
         chain=_bool_arg(args, "chain", False),
@@ -2492,7 +2493,7 @@ def _dossier(
         loomweave_client=loomweave,
         filigree_url=filigree_url,
         config_path=_cfg(args, root),
-        confine_to_root=True,
+        source_root_confinement=SourceRootConfinement.PROJECT_ROOT,
     )
     return dossier.to_dict()
 
@@ -2781,7 +2782,11 @@ def _assure(args: dict[str, Any], root: Path) -> dict[str, Any]:
     unknown, plus waiver-debt. Identical to the CLI `assure` JSON by construction (both
     call ``build_posture``). Path/config confined under root like every rooted tool."""
     path = _resolve_under_root(root, args["path"]) if args.get("path") else root
-    posture = build_posture(path, config_path=_cfg(args, root), confine_to_root=True)
+    posture = build_posture(
+        path,
+        config_path=_cfg(args, root),
+        source_root_confinement=SourceRootConfinement.PROJECT_ROOT,
+    )
     return posture.to_dict()
 
 
@@ -2927,7 +2932,7 @@ def _decorator_coverage(
         loomweave_client=loomweave,
         filigree_url=filigree_url,
         config_path=_cfg(args, root),
-        confine_to_root=True,
+        source_root_confinement=SourceRootConfinement.PROJECT_ROOT,
     )
     return report.to_dict()
 
@@ -3163,7 +3168,7 @@ def _attest(args: dict[str, Any], root: Path, loomweave: Any = None) -> dict[str
         key,
         config_path=_cfg(args, root),
         cache_dir=_cache_dir_arg(args, root),
-        confine_to_root=True,
+        source_root_confinement=SourceRootConfinement.PROJECT_ROOT,
         trust_local_packs=_bool_arg(args, "trust_local_packs", False),
         trusted_packs=_trusted_packs_arg(args),
         strict_defaults=_bool_arg(args, "strict_defaults", False),
@@ -3422,7 +3427,7 @@ def _verify_attestation(args: dict[str, Any], root: Path, loomweave: Any = None)
         config_path=_cfg(args, root),
         cache_dir=_cache_dir_arg(args, root),
         loomweave_client=loomweave,
-        confine_to_root=True,
+        source_root_confinement=SourceRootConfinement.PROJECT_ROOT,
         trust_local_packs=_bool_arg(args, "trust_local_packs", False),
         trusted_packs=_trusted_packs_arg(args),
         strict_defaults=_bool_arg(args, "strict_defaults", False),
@@ -3508,7 +3513,7 @@ def _judge(args: dict[str, Any], root: Path) -> dict[str, Any]:
         model=args.get("model"),
         max_findings=args.get("max_findings"),
         write=_bool_arg(args, "write", False),
-        confine_to_root=True,
+        source_root_confinement=SourceRootConfinement.PROJECT_ROOT,
         trust_local_packs=_bool_arg(args, "trust_local_packs", False),
         trusted_packs=tuple(args.get("trust_packs") or []),
         trust_judge_config=_bool_arg(args, "trust_judge_config", False),
@@ -3625,7 +3630,7 @@ def _baseline(args: dict[str, Any], root: Path) -> dict[str, Any]:
             overwrite=overwrite,
             config_path=_cfg(args, root),
             cache_dir=_cache_dir_arg(args, root),
-            confine_to_root=True,
+            source_root_confinement=SourceRootConfinement.PROJECT_ROOT,
             trust_local_packs=_bool_arg(args, "trust_local_packs", False),
             trusted_packs=_trusted_packs_arg(args),
             strict_defaults=_bool_arg(args, "strict_defaults", False),
@@ -4217,7 +4222,7 @@ def _rekey(args: dict[str, Any], root: Path, filigree: Any = None) -> dict[str, 
             path,
             config_path=_cfg(args, root),
             cache_dir=_cache_dir_arg(args, root),
-            confine_to_root=True,
+            source_root_confinement=SourceRootConfinement.PROJECT_ROOT,
             trust_local_packs=_bool_arg(args, "trust_local_packs", False),
             trusted_packs=_trusted_packs_arg(args),
             strict_defaults=_bool_arg(args, "strict_defaults", False),
@@ -4508,7 +4513,11 @@ def _fix(args: dict[str, Any], root: Path) -> dict[str, Any]:
         from wardline.core.config import load
 
         cfg = load(cfg_path or weft_config_path(path), explicit=cfg_path is not None)
-        result = run_scan(path, config_path=cfg_path, confine_to_root=True)
+        result = run_scan(
+            path,
+            config_path=cfg_path,
+            source_root_confinement=SourceRootConfinement.PROJECT_ROOT,
+        )
     except WardlineError as exc:
         raise ToolError(str(exc)) from exc
 

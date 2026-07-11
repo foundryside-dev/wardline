@@ -21,6 +21,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from wardline.core.confinement import SourceRootConfinement
 from wardline.core.finding import Kind, Severity
 from wardline.core.run import run_scan
 
@@ -74,7 +75,7 @@ def test_hostile_corpus_scan_completes_flags_and_continues(tmp_path: Path) -> No
     proj = _hostile_corpus(tmp_path)
 
     # COMPLETES: no RecursionError (or anything else) escapes the scan.
-    result = run_scan(proj, confine_to_root=True)
+    result = run_scan(proj, source_root_confinement=SourceRootConfinement.PROJECT_ROOT)
 
     # FLAGS: every hostile file carries an in-band degrade marker in the result
     # envelope — a finding the consumer can see, never only a log line.
@@ -99,7 +100,7 @@ def test_hostile_corpus_gate_trips_rather_than_reads_green(tmp_path: Path) -> No
     # C-13 + the fail-closed gate: a degraded scan must be able to TRIP an ERROR
     # gate (the skipped files were never analyzed), never silently pass as green.
     proj = _hostile_corpus(tmp_path)
-    result = run_scan(proj, confine_to_root=True)
+    result = run_scan(proj, source_root_confinement=SourceRootConfinement.PROJECT_ROOT)
     degrade_markers = [f for f in result.findings if f.rule_id in _DEGRADE_RULES]
     assert degrade_markers
     assert {f.severity for f in degrade_markers} == {Severity.ERROR}

@@ -10,6 +10,7 @@ from collections.abc import Iterable
 from pathlib import Path
 
 from wardline.core.config import WardlineConfig
+from wardline.core.confinement import SourceRootConfinement
 from wardline.core.errors import ConfigError
 from wardline.core.gitignore import GitignoreMatcher
 
@@ -73,7 +74,7 @@ def discover(
     root: Path,
     config: WardlineConfig,
     *,
-    confine_to_root: bool = False,
+    source_root_confinement: SourceRootConfinement = SourceRootConfinement.PROJECT_ROOT,
     suffixes: frozenset[str] = frozenset({".py"}),
     respect_gitignore: bool = False,
 ) -> list[Path]:
@@ -89,7 +90,13 @@ def discover(
     content, not operator scan policy, and Git still allows tracked files below
     ignored paths. Trusted callers that need Git-like pruning may opt in with
     ``respect_gitignore=True``.
+
+    ``PROJECT_ROOT`` rejects configured roots that escape ``root`` and skips
+    discovered source-file symlinks whose targets escape it. The explicit
+    ``LEGACY_ALLOW_ESCAPE`` compatibility policy retains the old unconfined behavior.
     """
+    if not isinstance(source_root_confinement, SourceRootConfinement):
+        raise TypeError("source_root_confinement must be a SourceRootConfinement")
     root = root.resolve()
     # `target` is cargo build output only at the project root. Nested directories with
     # that name can be legitimate source modules and must not be treated as floor dirs.
@@ -106,7 +113,7 @@ def discover(
     found: list[Path] = []
     for src in config.source_roots:
         base = (root / src).resolve()
-        if confine_to_root and not base.is_relative_to(root):
+        if source_root_confinement.confines_to_project and not base.is_relative_to(root):
             # A poisoned in-root weft.toml whose source_roots escape the root
             # would otherwise read out-of-root source. Reject (do NOT silently
             # skip — a silent skip under-scans and gives a false all-clear).
@@ -139,7 +146,7 @@ def discover(
             rel_parts = path.relative_to(base).parts if path.is_relative_to(base) else path.parts
             if any(_is_floored_dir(part, skip_dirs) for part in rel_parts):
                 continue
-            if confine_to_root and not path.resolve().is_relative_to(root):
+            if source_root_confinement.confines_to_project and not path.resolve().is_relative_to(root):
                 # A *.py symlink inside a legitimate source_root can point at an
                 # out-of-root target (rglob does not descend directory symlinks,
                 # so only file symlinks leak). Refuse to read out-of-root content
@@ -189,20 +196,28 @@ def _gitignored_dir(child: Path, root: Path, ignore: GitignoreMatcher) -> bool:
     return ignore.match(child.relative_to(root).as_posix(), is_dir=True)
 
 
-def missing_source_roots(root: Path, config: WardlineConfig, *, confine_to_root: bool = False) -> list[str]:
+def missing_source_roots(
+    root: Path,
+    config: WardlineConfig,
+    *,
+    source_root_confinement: SourceRootConfinement = SourceRootConfinement.PROJECT_ROOT,
+) -> list[str]:
     """Return the configured ``source_roots`` that do not exist on disk.
 
     ``discover`` skips a non-existent root with a ``warnings.warn`` (invisible to a
     structured consumer like the MCP agent). ``run_scan`` calls this sibling to turn
     each missing root into a finding so the silent under-scan is surfaced. An
-    ESCAPING root (under ``confine_to_root``) is excluded here — that is ``discover``'s
-    loud ``ConfigError``, a different case.
+    An escaping root under ``PROJECT_ROOT`` is excluded here — that is
+    ``discover``'s loud ``ConfigError``, a different case. The explicit
+    ``LEGACY_ALLOW_ESCAPE`` policy retains the old unconfined behavior.
     """
+    if not isinstance(source_root_confinement, SourceRootConfinement):
+        raise TypeError("source_root_confinement must be a SourceRootConfinement")
     root = root.resolve()
     missing: list[str] = []
     for src in config.source_roots:
         base = (root / src).resolve()
-        if confine_to_root and not base.is_relative_to(root):
+        if source_root_confinement.confines_to_project and not base.is_relative_to(root):
             continue  # escape is discover()'s ConfigError, not a missing root
         if not base.exists():
             missing.append(src)

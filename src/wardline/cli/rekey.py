@@ -13,6 +13,7 @@ from pathlib import Path
 import click
 
 from wardline.core.config import resolve_filigree_url
+from wardline.core.confinement import SourceRootConfinement
 from wardline.core.errors import WardlineError
 from wardline.core.filigree_emit import FiligreeEmitter
 from wardline.core.rekey import ORPHAN_CAUSE as _ORPHAN_CAUSE
@@ -176,7 +177,7 @@ def rekey(
                 trust_local_packs=trust_local_packs,
                 trusted_packs=trusted_packs,
                 strict_defaults=strict_defaults,
-                confine_to_root=True,
+                source_root_confinement=SourceRootConfinement.PROJECT_ROOT,
                 # Migration scans the project WITHOUT loading the stores it is about to
                 # rekey — they are still old-scheme and would SCHEME_MISMATCH.
                 skip_suppression=True,

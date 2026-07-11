@@ -37,6 +37,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
 
+from wardline.core.confinement import SourceRootConfinement
 from wardline.core.errors import DossierError
 from wardline.core.finding import INCOMPLETE_ANALYSIS_RULE_IDS, Kind, SuppressionState
 from wardline.core.identity import ContentStatus, EntityBinding, IdentityStatus
@@ -770,7 +771,7 @@ def build_dossier(
     *,
     root: Path,
     config_path: Path | None = None,
-    confine_to_root: bool = True,
+    source_root_confinement: SourceRootConfinement = SourceRootConfinement.PROJECT_ROOT,
     binding: EntityBinding | None = None,
     binding_unavailable_reason: str | None = None,
     linkage_provider: LinkageProvider | None = None,
@@ -788,7 +789,7 @@ def build_dossier(
     Raises :class:`DossierError` when ``entity`` is not in the scanned set — a
     tool-execution fault the agent must act on (re-scan / fix the qualname).
     """
-    result = run_scan(root, config_path=config_path, confine_to_root=confine_to_root)
+    result = run_scan(root, config_path=config_path, source_root_confinement=source_root_confinement)
     context = result.context
     if context is None or entity not in context.entities:
         raise DossierError(_entity_not_found_message(entity, root, context))

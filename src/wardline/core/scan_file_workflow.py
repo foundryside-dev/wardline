@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from wardline.core.confinement import SourceRootConfinement
 from wardline.core.errors import WardlineError
 from wardline.core.explain import TaintExplanation, explanation_from_context
 from wardline.core.federation_status import filigree_emit_status
@@ -116,7 +117,7 @@ def scan_file_findings(
         root,
         config_path=config_path,
         cache_dir=cache_dir,
-        confine_to_root=True,
+        source_root_confinement=SourceRootConfinement.PROJECT_ROOT,
         trust_local_packs=trust_local_packs,
         trusted_packs=trusted_packs,
         strict_defaults=strict_defaults,

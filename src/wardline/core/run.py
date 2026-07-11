@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from wardline.core import config as config_mod
+from wardline.core import confinement as confinement_mod
 from wardline.core.baseline import Baseline, load_baseline
 from wardline.core.delta import get_affected_entities, get_changed_files_since
 from wardline.core.delta_resolve import (
@@ -291,7 +292,7 @@ def run_scan(
     *,
     config_path: Path | None = None,
     cache_dir: Path | None = None,
-    confine_to_root: bool = True,
+    source_root_confinement: confinement_mod.SourceRootConfinement = confinement_mod.SourceRootConfinement.PROJECT_ROOT,
     new_since: str | None = None,
     affected: AffectedScope | None = None,
     sei_resolver: SeiResolver | None = None,
@@ -308,9 +309,11 @@ def run_scan(
     Raises ``WardlineError`` subclasses on bad config / unreadable paths; the
     caller (CLI or MCP server) maps those to its own error channel.
 
-    ``confine_to_root`` (default True) makes ``discover`` reject any
-    ``source_root`` that resolves outside ``root``. Callers that intentionally
-    scan outside the project root must opt out explicitly.
+    ``source_root_confinement`` applies only to config-derived source roots and
+    discovered source-file symlinks. ``PROJECT_ROOT`` is the secure default;
+    callers that intentionally retain legacy out-of-root discovery must select
+    ``LEGACY_ALLOW_ESCAPE`` explicitly. Direct MCP request paths are independently
+    confined before this core function is called.
 
     ``trust_suppressions`` (default False) is the SECURITY default. When False the
     ``--fail-on`` gate evaluates a separately-built ``UNSUPPRESSED``
@@ -384,7 +387,12 @@ def run_scan(
 
     with warnings.catch_warnings(record=True) as w:
         warnings.simplefilter("always")
-        files = discover(root, cfg, confine_to_root=confine_to_root, suffixes=suffixes)
+        files = discover(
+            root,
+            cfg,
+            source_root_confinement=source_root_confinement,
+            suffixes=suffixes,
+        )
         captured_warnings = list(w)
     # Concurrent-writer watch baseline: taken at discovery, BEFORE any callback or
     # analysis read, so every later mutation of the inventory is inside the window.
@@ -507,7 +515,11 @@ def run_scan(
     # A non-existent (non-escaping) source_root is otherwise only a stderr warning
     # from discover — invisible to the MCP agent. Surface it as a finding that
     # reaches both the CLI summary and the MCP result, and counts toward unanalyzed.
-    for src in missing_source_roots(root, cfg, confine_to_root=confine_to_root):
+    for src in missing_source_roots(
+        root,
+        cfg,
+        source_root_confinement=source_root_confinement,
+    ):
         raw.append(
             Finding(
                 rule_id="WLN-ENGINE-SOURCE-ROOT-MISSING",

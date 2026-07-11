@@ -74,6 +74,11 @@ exclude = ["**/migrations/**", "tests"]
 
 When `source_roots` is omitted it defaults to `["."]` (the scan path).
 
+Configured roots are untrusted path values. Wardline's secure default resolves each root
+and every discovered source-file symlink under the scan root. A config file located inside
+the project can still contain an escaping root, so config-path validation and source-root
+discovery validation are independent checks.
+
 ### `store_dir`
 
 Wardline writes its machine state — `baseline.yaml`, `judged.yaml`, and

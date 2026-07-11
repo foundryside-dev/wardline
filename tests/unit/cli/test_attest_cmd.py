@@ -24,6 +24,7 @@ from click.testing import CliRunner
 
 from wardline.cli.main import cli
 from wardline.core.attest_key import load_attest_key, mint_attest_key
+from wardline.core.confinement import SourceRootConfinement
 
 # A decorated module so the engine produces boundaries (mirrors test_assure_cmd.py).
 _MODULE = (
@@ -229,7 +230,11 @@ def test_verify_reproduce_refuses_escaping_source_roots_by_default(
 
     from wardline.core.attest import build_attestation
 
-    bundle = build_attestation(project, key, confine_to_root=False)
+    bundle = build_attestation(
+        project,
+        key,
+        source_root_confinement=SourceRootConfinement.LEGACY_ALLOW_ESCAPE,
+    )
     bundle_path = tmp_path / "legacy-attest.json"
     bundle_path.write_text(json.dumps(bundle), encoding="utf-8")
 

@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from wardline.core import config as config_mod
+from wardline.core.confinement import SourceRootConfinement
 from wardline.core.errors import ConfigError
 from wardline.core.finding import FINGERPRINT_SCHEME, Finding, Kind, Location, Severity, SuppressionState
 from wardline.core.judged import JudgedFP, write_judged
@@ -932,8 +933,8 @@ def test_run_scan_out_of_root_symlink_yields_finding(tmp_path: Path) -> None:
     # A *.py symlink inside a legitimate source_root pointing outside the root.
     (src / "evil.py").symlink_to(secret)
 
-    # run_scan with confine_to_root=True should skip evil.py and add a finding.
-    result = run_scan(root, confine_to_root=True)
+    # The secure source-root policy skips evil.py and adds a finding.
+    result = run_scan(root, source_root_confinement=SourceRootConfinement.PROJECT_ROOT)
     skipped = [f for f in result.findings if f.rule_id == "WLN-ENGINE-FILE-SKIPPED"]
     assert len(skipped) == 1
     assert skipped[0].location.path == "src/evil.py"

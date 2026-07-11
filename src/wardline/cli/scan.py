@@ -12,6 +12,7 @@ import click
 from wardline.core.artifacts import write_scan_artifact
 from wardline.core.config import load as load_config
 from wardline.core.config import resolve_filigree_url, resolve_loomweave_url
+from wardline.core.confinement import SourceRootConfinement
 from wardline.core.delta_scope import (
     _MAX_PAYLOAD_BYTES,
     AffectedScope,
@@ -324,6 +325,11 @@ def scan(
         # scope is requested and a loomweave URL resolves; any loomweave error -> None
         # (fail-soft, recorded as "loomweave unavailable" in the scope block).
         sei_resolver = _build_sei_resolver(loomweave_url, path) if affected is not None else None
+        source_root_confinement = (
+            SourceRootConfinement.LEGACY_ALLOW_ESCAPE
+            if allow_source_root_escape
+            else SourceRootConfinement.PROJECT_ROOT
+        )
         result = run_scan(
             path,
             config_path=config_path,
@@ -334,7 +340,7 @@ def scan(
             trust_local_packs=trust_local_packs,
             trusted_packs=trusted_packs,
             strict_defaults=strict_defaults,
-            confine_to_root=not allow_source_root_escape,
+            source_root_confinement=source_root_confinement,
             trust_suppressions=trust_suppressions,
             lang=lang,
         )
@@ -366,7 +372,7 @@ def scan(
                         trust_local_packs=trust_local_packs,
                         trusted_packs=trusted_packs,
                         strict_defaults=strict_defaults,
-                        confine_to_root=not allow_source_root_escape,
+                        source_root_confinement=source_root_confinement,
                         trust_suppressions=trust_suppressions,
                         lang=lang,
                     )

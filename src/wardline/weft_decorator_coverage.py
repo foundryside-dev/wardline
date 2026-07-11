@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from wardline.core.confinement import SourceRootConfinement
 from wardline.core.decorator_coverage import BindingProvider, DecoratorCoverageReport, build_decorator_coverage
 from wardline.filigree.config import load_filigree_token
 from wardline.filigree.dossier_client import FiligreeWorkProvider
@@ -32,7 +33,7 @@ def build_weft_decorator_coverage(
     filigree_url: str | None = None,
     filigree_transport: FiligreeTransport | None = None,
     config_path: Path | None = None,
-    confine_to_root: bool = True,
+    source_root_confinement: SourceRootConfinement = SourceRootConfinement.PROJECT_ROOT,
 ) -> DecoratorCoverageReport:
     binding_provider: BindingProvider | None = None
     if loomweave_client is not None:
@@ -45,7 +46,7 @@ def build_weft_decorator_coverage(
     return build_decorator_coverage(
         root,
         config_path=config_path,
-        confine_to_root=confine_to_root,
+        source_root_confinement=source_root_confinement,
         binding_provider=binding_provider,
         work_provider=work_provider,
     )

@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
 
+from wardline.core.confinement import SourceRootConfinement
 from wardline.core.dossier import WorkProvider, WorkSection, classify_entity_trust
 from wardline.core.finding import Kind, SuppressionState
 from wardline.core.identity import ContentStatus, EntityBinding, IdentityStatus
@@ -244,11 +245,11 @@ def build_decorator_coverage(
     root: Path,
     *,
     config_path: Path | None = None,
-    confine_to_root: bool = True,
+    source_root_confinement: SourceRootConfinement = SourceRootConfinement.PROJECT_ROOT,
     binding_provider: BindingProvider | None = None,
     work_provider: WorkProvider | None = None,
 ) -> DecoratorCoverageReport:
-    result = run_scan(root, config_path=config_path, confine_to_root=confine_to_root)
+    result = run_scan(root, config_path=config_path, source_root_confinement=source_root_confinement)
     if result.context is None:
         return DecoratorCoverageReport(rows=[])
     return decorator_coverage_from_scan(

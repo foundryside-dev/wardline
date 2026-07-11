@@ -18,6 +18,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Protocol
 
+from wardline.core.confinement import SourceRootConfinement
 from wardline.core.dossier import (
     DOSSIER_TOKEN_BUDGET,
     EntityDossier,
@@ -66,7 +67,7 @@ def build_weft_dossier(
     filigree_url: str | None = None,
     filigree_transport: FiligreeTransport | None = None,
     config_path: Path | None = None,
-    confine_to_root: bool = True,
+    source_root_confinement: SourceRootConfinement = SourceRootConfinement.PROJECT_ROOT,
     budget: int = DOSSIER_TOKEN_BUDGET,
 ) -> EntityDossier:
     """Assemble the one-call Weft dossier for ``entity`` against live sources.
@@ -119,7 +120,7 @@ def build_weft_dossier(
         entity,
         root=root,
         config_path=config_path,
-        confine_to_root=confine_to_root,
+        source_root_confinement=source_root_confinement,
         binding=binding,
         binding_unavailable_reason=binding_reason,
         linkage_provider=linkage_provider,

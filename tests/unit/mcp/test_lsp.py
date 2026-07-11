@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 import pytest
 
+from wardline.core.confinement import SourceRootConfinement
 from wardline.core.errors import ConfigError
 from wardline.core.finding import Finding, Kind, Location, Severity, SuppressionState
 from wardline.core.run import GatePopulation, ScanResult, ScanSummary
@@ -126,7 +127,10 @@ def test_lsp_diagnostics_flow(tmp_path: Path) -> None:
 
     with patch("wardline.lsp.run_scan", return_value=scan_res) as mock_run:
         server.run()
-        mock_run.assert_called_once_with(tmp_path, confine_to_root=True)
+        mock_run.assert_called_once_with(
+            tmp_path,
+            source_root_confinement=SourceRootConfinement.PROJECT_ROOT,
+        )
 
     output = stdout.getvalue()
     assert "textDocument/publishDiagnostics" in output
@@ -297,7 +301,10 @@ def test_lsp_did_change_does_not_rescan_unsaved_buffers(tmp_path: Path) -> None:
     with patch("wardline.lsp.run_scan", return_value=scan_res) as mock_run:
         server.run()
 
-    mock_run.assert_called_once_with(tmp_path, confine_to_root=True)
+    mock_run.assert_called_once_with(
+        tmp_path,
+        source_root_confinement=SourceRootConfinement.PROJECT_ROOT,
+    )
 
 
 def test_lsp_did_save_triggers_rescan(tmp_path: Path) -> None:

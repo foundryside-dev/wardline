@@ -52,6 +52,7 @@ from wardline._version import __version__
 from wardline.core import config as config_mod
 from wardline.core.assure import _empty_posture, posture_from_scan
 from wardline.core.attest_key import key_id
+from wardline.core.confinement import SourceRootConfinement
 from wardline.core.dossier import classify_entity_trust
 from wardline.core.errors import AttestError
 from wardline.core.paths import weft_config_path
@@ -188,7 +189,7 @@ def _build_payload(
     *,
     config_path: Path | None,
     cache_dir: Path | None = None,
-    confine_to_root: bool = True,
+    source_root_confinement: SourceRootConfinement = SourceRootConfinement.PROJECT_ROOT,
     trust_local_packs: bool = False,
     trusted_packs: tuple[str, ...] = (),
     strict_defaults: bool = False,
@@ -216,7 +217,7 @@ def _build_payload(
         root,
         config_path=config_path,
         cache_dir=cache_dir,
-        confine_to_root=confine_to_root,
+        source_root_confinement=source_root_confinement,
         trust_local_packs=trust_local_packs,
         trusted_packs=trusted_packs,
         strict_defaults=strict_defaults,
@@ -263,7 +264,7 @@ def build_attestation(
     *,
     config_path: Path | None = None,
     cache_dir: Path | None = None,
-    confine_to_root: bool = True,
+    source_root_confinement: SourceRootConfinement = SourceRootConfinement.PROJECT_ROOT,
     trust_local_packs: bool = False,
     trusted_packs: tuple[str, ...] = (),
     strict_defaults: bool = False,
@@ -291,7 +292,7 @@ def build_attestation(
         root,
         config_path=config_path,
         cache_dir=cache_dir,
-        confine_to_root=confine_to_root,
+        source_root_confinement=source_root_confinement,
         trust_local_packs=trust_local_packs,
         trusted_packs=trusted_packs,
         strict_defaults=strict_defaults,
@@ -322,7 +323,7 @@ def verify_attestation(
     config_path: Path | None = None,
     cache_dir: Path | None = None,
     loomweave_client: Any = None,
-    confine_to_root: bool = True,
+    source_root_confinement: SourceRootConfinement = SourceRootConfinement.PROJECT_ROOT,
     trust_local_packs: bool = False,
     trusted_packs: tuple[str, ...] = (),
     strict_defaults: bool = False,
@@ -387,7 +388,7 @@ def verify_attestation(
         root,
         config_path=config_path,
         cache_dir=cache_dir,
-        confine_to_root=confine_to_root,
+        source_root_confinement=source_root_confinement,
         trust_local_packs=trust_local_packs,
         trusted_packs=trusted_packs,
         strict_defaults=strict_defaults,

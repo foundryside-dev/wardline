@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from wardline.core.confinement import SourceRootConfinement
 from wardline.core.errors import LoomweaveError
 from wardline.core.run import run_scan
 from wardline.core.taints import RAW_ZONE
@@ -216,7 +217,7 @@ def _explain_local(
     path: str | None = None,
     line: int | None = None,
     config_path: Path | None = None,
-    confine_to_root: bool = True,
+    source_root_confinement: SourceRootConfinement = SourceRootConfinement.PROJECT_ROOT,
 ) -> TaintExplanation | None:
     """Return the taint explanation for one finding, or None if it is not in the
     current scan (the caller's code changed since the scan that produced the
@@ -232,7 +233,7 @@ def _explain_local(
                 path = (root / p).resolve().relative_to(root.resolve()).as_posix()
         except ValueError:
             pass
-    result = run_scan(root, config_path=config_path, confine_to_root=confine_to_root)
+    result = run_scan(root, config_path=config_path, source_root_confinement=source_root_confinement)
     finding = _match(result.findings, fingerprint=fingerprint, path=path, line=line)
     if finding is None:
         return None
@@ -461,7 +462,7 @@ def explain_finding(
     path: str | None = None,
     line: int | None = None,
     config_path: Path | None = None,
-    confine_to_root: bool = True,
+    source_root_confinement: SourceRootConfinement = SourceRootConfinement.PROJECT_ROOT,
     loomweave: Any | None = None,
     sink_qualname: str | None = None,
 ) -> TaintExplanation | None:
@@ -519,7 +520,7 @@ def explain_finding(
         path=path,
         line=line,
         config_path=config_path,
-        confine_to_root=confine_to_root,
+        source_root_confinement=source_root_confinement,
     )
 
 
@@ -685,7 +686,7 @@ def explain_taint_result(
     path: str | None = None,
     line: int | None = None,
     config_path: Path | None = None,
-    confine_to_root: bool = True,
+    source_root_confinement: SourceRootConfinement = SourceRootConfinement.PROJECT_ROOT,
     loomweave: Any | None = None,
     sink_qualname: str | None = None,
     chain: bool = False,
@@ -705,7 +706,7 @@ def explain_taint_result(
         path=path,
         line=line,
         config_path=config_path,
-        confine_to_root=confine_to_root,
+        source_root_confinement=source_root_confinement,
         loomweave=loomweave,
         sink_qualname=sink_qualname,
     )
