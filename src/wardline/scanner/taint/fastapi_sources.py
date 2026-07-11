@@ -377,16 +377,17 @@ def discover_parameter_types(
     module: str,
     is_package: bool = False,
     exported_aliases: Mapping[str, str] | None = None,
-) -> dict[int, dict[str, str]]:
+) -> dict[int, dict[str, tuple[str, ...]]]:
     """Resolve function parameter annotations against source-ordered lexical bindings."""
-    resolved: dict[int, dict[str, str]] = {}
+    type Bindings = MutableMapping[str, frozenset[str]]
+    resolved: dict[int, dict[str, tuple[str, ...]]] = {}
     postponed_annotations = any(
         isinstance(stmt, ast.ImportFrom)
         and stmt.module == "__future__"
         and any(item.name == "annotations" for item in stmt.names)
         for stmt in tree.body
     )
-    future_module_bindings: dict[str, str] | None = None
+    future_module_bindings: dict[str, frozenset[str]] | None = None
 
     def canonical_type(name: str) -> str:
         seen: set[str] = set()
@@ -395,13 +396,28 @@ def discover_parameter_types(
             name = exported_aliases[name]
         return name
 
-    def annotation_bindings(bindings: MutableMapping[str, str], scope: str) -> Mapping[str, str]:
+    def resolve_candidates(node: ast.expr, bindings: Mapping[str, frozenset[str]]) -> frozenset[str]:
+        attributes: list[str] = []
+        current = node
+        for _ in range(_DOTTED_NODE_BUDGET):
+            if isinstance(current, ast.Attribute):
+                attributes.append(current.attr)
+                current = current.value
+                continue
+            if not isinstance(current, ast.Name):
+                return frozenset()
+            roots = bindings.get(current.id, frozenset({current.id}))
+            suffix = ".".join(reversed(attributes))
+            return frozenset(f"{root}.{suffix}" if suffix else root for root in roots)
+        return frozenset()
+
+    def annotation_bindings(bindings: Bindings, scope: str) -> Mapping[str, frozenset[str]]:
         if future_module_bindings is None:
             return bindings
         if scope == module:
             return future_module_bindings
 
-        def flatten(mapping: MutableMapping[str, str]) -> list[MutableMapping[str, str]]:
+        def flatten(mapping: Bindings) -> list[Bindings]:
             if isinstance(mapping, ChainMap):
                 return [layer for item in mapping.maps for layer in flatten(item)]
             return [mapping]
@@ -409,18 +425,11 @@ def discover_parameter_types(
         layers = flatten(bindings)
         return ChainMap(*layers[:-1], future_module_bindings)
 
-    def merge_bindings(
-        bindings: MutableMapping[str, str],
-        outcomes: list[dict[str, str]],
-    ) -> None:
-        missing = object()
+    def merge_bindings(bindings: Bindings, outcomes: list[dict[str, frozenset[str]]]) -> None:
         for name in {key for outcome in outcomes for key in outcome}:
-            values = [outcome.get(name, missing) for outcome in outcomes]
-            first = values[0]
-            if first is not missing and all(value == first for value in values[1:]):
-                bindings[name] = first  # type: ignore[assignment]
-            else:
-                bindings[name] = f"{_UNKNOWN_BINDING}.{name}"
+            bindings[name] = frozenset().union(
+                *(outcome.get(name, bindings.get(name, frozenset())) for outcome in outcomes)
+            )
 
     def pattern_names(pattern: ast.pattern) -> set[str]:
         names: set[str] = set()
@@ -435,39 +444,41 @@ def discover_parameter_types(
         statements: list[ast.stmt],
         *,
         scope: str,
-        bindings: MutableMapping[str, str],
+        bindings: Bindings,
     ) -> None:
         def branch(
             body: list[ast.stmt],
             *,
-            initial: Mapping[str, str] | None = None,
+            initial: Bindings | None = None,
             shadows: set[str] | None = None,
-        ) -> dict[str, str]:
-            branch_bindings = dict(bindings if initial is None else initial)
+        ) -> dict[str, frozenset[str]]:
+            parent = bindings if initial is None else initial
+            branch_bindings: Bindings = ChainMap({}, parent)
             for name in shadows or ():
-                branch_bindings[name] = f"{_UNKNOWN_BINDING}.{name}"
+                branch_bindings[name] = frozenset()
             walk_scope(body, scope=scope, bindings=branch_bindings)
-            return branch_bindings
+            assert isinstance(branch_bindings, ChainMap)
+            return dict(branch_bindings.maps[0])
 
         for stmt in statements:
             if isinstance(stmt, ast.Import):
                 for item in stmt.names:
                     local = item.asname or item.name.split(".")[0]
-                    bindings[local] = item.name if item.asname is not None else local
+                    bindings[local] = frozenset({item.name if item.asname is not None else local})
                 continue
             if isinstance(stmt, ast.ImportFrom):
                 base = _import_from_base(stmt, module, is_package=is_package)
                 if base is not None:
                     for item in stmt.names:
                         if item.name != "*":
-                            bindings[item.asname or item.name] = f"{base}.{item.name}"
+                            bindings[item.asname or item.name] = frozenset({f"{base}.{item.name}"})
                 continue
             if isinstance(stmt, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
                 qualname = f"{scope}.{stmt.name}"
                 if isinstance(stmt, ast.ClassDef):
                     walk_scope(stmt.body, scope=qualname, bindings=ChainMap({}, bindings))
                 else:
-                    parameter_types: dict[str, str] = {}
+                    parameter_types: dict[str, tuple[str, ...]] = {}
                     parameters = [
                         *stmt.args.posonlyargs,
                         *stmt.args.args,
@@ -479,34 +490,38 @@ def discover_parameter_types(
                         parameters.append(stmt.args.kwarg)
                     for parameter in parameters:
                         if parameter.annotation is not None:
-                            annotation = resolve_dotted(parameter.annotation, annotation_bindings(bindings, scope))
-                            if annotation is not None:
-                                parameter_types[parameter.arg] = canonical_type(annotation)
+                            annotations = resolve_candidates(
+                                parameter.annotation,
+                                annotation_bindings(bindings, scope),
+                            )
+                            if annotations:
+                                parameter_types[parameter.arg] = tuple(
+                                    sorted({canonical_type(annotation) for annotation in annotations})
+                                )
                     resolved[id(stmt)] = parameter_types
 
-                    child_bindings: MutableMapping[str, str] = ChainMap({}, bindings)
+                    child_bindings: Bindings = ChainMap({}, bindings)
                     for parameter in parameters:
-                        child_bindings[parameter.arg] = f"{_UNKNOWN_BINDING}.{parameter.arg}"
+                        child_bindings[parameter.arg] = frozenset()
                     walk_scope(
                         stmt.body,
                         scope=f"{qualname}.<locals>",
                         bindings=child_bindings,
                     )
-                bindings[stmt.name] = qualname
+                bindings[stmt.name] = frozenset({qualname})
                 continue
             if isinstance(stmt, ast.If):
-                original = dict(bindings)
-                outcomes = [branch(stmt.body, initial=original)]
-                outcomes.append(branch(stmt.orelse, initial=original) if stmt.orelse else original)
+                outcomes = [branch(stmt.body)]
+                outcomes.append(branch(stmt.orelse) if stmt.orelse else {})
                 merge_bindings(bindings, outcomes)
                 continue
             if isinstance(stmt, (ast.For, ast.AsyncFor, ast.While)):
-                original = dict(bindings)
                 shadows = _target_names(stmt.target) if isinstance(stmt, (ast.For, ast.AsyncFor)) else set()
-                iterated = branch(stmt.body, initial=original, shadows=shadows)
-                outcomes = [original, iterated]
+                iterated = branch(stmt.body, shadows=shadows)
+                outcomes = [{}, iterated]
                 if stmt.orelse:
-                    outcomes.append(branch(stmt.orelse, initial=iterated))
+                    else_delta = branch(stmt.orelse, initial=ChainMap(iterated, bindings))
+                    outcomes.append({**iterated, **else_delta})
                 merge_bindings(bindings, outcomes)
                 continue
             if isinstance(stmt, (ast.With, ast.AsyncWith)):
@@ -516,41 +531,40 @@ def discover_parameter_types(
                     if item.optional_vars is not None
                     for name in _target_names(item.optional_vars)
                 }
-                merge_bindings(bindings, [dict(bindings), branch(stmt.body, shadows=shadows)])
+                bindings.update(branch(stmt.body, shadows=shadows))
                 continue
             if isinstance(stmt, (ast.Try, ast.TryStar)):
-                original = dict(bindings)
-                normal = branch(stmt.body, initial=original)
+                normal = branch(stmt.body)
                 if stmt.orelse:
-                    normal = branch(stmt.orelse, initial=normal)
+                    else_delta = branch(stmt.orelse, initial=ChainMap(normal, bindings))
+                    normal = {**normal, **else_delta}
                 outcomes = [normal]
                 for handler in stmt.handlers:
                     shadows = {handler.name} if handler.name is not None else set()
-                    outcomes.append(branch(handler.body, initial=original, shadows=shadows))
+                    outcomes.append(branch(handler.body, shadows=shadows))
                 if not stmt.handlers:
-                    outcomes.append(original)
-                merged: dict[str, str] = {}
-                merge_bindings(merged, outcomes)
+                    outcomes.append({})
+                merged: dict[str, frozenset[str]] = {}
+                merge_bindings(ChainMap(merged, bindings), outcomes)
                 if stmt.finalbody:
-                    merged = branch(stmt.finalbody, initial=merged)
-                merge_bindings(bindings, [merged])
+                    final_delta = branch(stmt.finalbody, initial=ChainMap(merged, bindings))
+                    merged.update(final_delta)
+                bindings.update(merged)
                 continue
             if isinstance(stmt, ast.Match):
-                original = dict(bindings)
-                outcomes = [original]
-                outcomes.extend(
-                    branch(case.body, initial=original, shadows=pattern_names(case.pattern)) for case in stmt.cases
-                )
-                merge_bindings(bindings, outcomes)
+                match_outcomes: list[dict[str, frozenset[str]]] = [{}]
+                match_outcomes.extend(branch(case.body, shadows=pattern_names(case.pattern)) for case in stmt.cases)
+                merge_bindings(bindings, match_outcomes)
                 continue
             assignments = _assignment_values(stmt)
             if not assignments:
                 continue
             for name, value in assignments.items():
-                target = resolve_dotted(value, bindings) if isinstance(value, (ast.Name, ast.Attribute)) else None
-                bindings[name] = target if target is not None else f"{_UNKNOWN_BINDING}.{name}"
+                bindings[name] = (
+                    resolve_candidates(value, bindings) if isinstance(value, (ast.Name, ast.Attribute)) else frozenset()
+                )
 
-    module_bindings: dict[str, str] = {}
+    module_bindings: dict[str, frozenset[str]] = {}
     walk_scope(tree.body, scope=module, bindings=module_bindings)
     if postponed_annotations:
         future_module_bindings = dict(module_bindings)

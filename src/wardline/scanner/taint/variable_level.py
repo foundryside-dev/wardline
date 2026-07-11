@@ -358,7 +358,7 @@ class VariableTaintContext:
     provenance_clash: bool | None = None
     route_body_params: frozenset[str] = frozenset()
     route_dependency_params: dict[str, TaintState] = field(default_factory=dict)
-    parameter_type_fqns: dict[str, str] | None = None
+    parameter_type_fqns: dict[str, tuple[str, ...]] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -705,7 +705,7 @@ def compute_variable_taints(
     *,
     provenance_clash: bool | None = None,
     out_var_types: dict[str, list[str]] | None = None,
-    parameter_type_fqns: dict[str, str] | None = None,
+    parameter_type_fqns: dict[str, tuple[str, ...]] | None = None,
 ) -> dict[str, TaintState]:
     """Compute per-variable taint for a function body.
 
@@ -804,7 +804,7 @@ def _seed_parameters(
     taint_map: dict[str, TaintState] | None = None,
     route_body_params: frozenset[str] = frozenset(),
     route_dependency_params: dict[str, TaintState] | None = None,
-    parameter_type_fqns: dict[str, str] | None = None,
+    parameter_type_fqns: dict[str, tuple[str, ...]] | None = None,
 ) -> None:
     args = func_node.args
     var_types = _CURRENT_VAR_TYPES.get()
@@ -841,13 +841,13 @@ def _seed_parameters(
         var_taints[arg.arg] = seed_val
 
         if arg.annotation and var_types is not None:
-            fqn = (
-                parameter_type_fqns.get(arg.arg)
-                if parameter_type_fqns is not None
-                else _resolve_expr_fqn(arg.annotation, alias_map)
-            )
-            if fqn:
-                var_types[arg.arg] = [fqn]
+            if parameter_type_fqns is not None:
+                fqns = parameter_type_fqns.get(arg.arg, ())
+            else:
+                fqn = _resolve_expr_fqn(arg.annotation, alias_map)
+                fqns = (fqn,) if fqn is not None else ()
+            if fqns:
+                var_types[arg.arg] = list(fqns)
 
     for arg in (*args.posonlyargs, *args.args, *args.kwonlyargs):
         handle_arg(arg)

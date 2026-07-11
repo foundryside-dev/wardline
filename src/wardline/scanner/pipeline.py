@@ -299,7 +299,7 @@ class L2FunctionInput:
     module_prefix: str | None = None
     route_body_params: frozenset[str] = frozenset()
     route_dependency_params: dict[str, TaintState] = field(default_factory=dict)
-    parameter_type_fqns: dict[str, str] | None = None
+    parameter_type_fqns: dict[str, tuple[str, ...]] | None = None
 
 
 @dataclass(frozen=True, slots=True)

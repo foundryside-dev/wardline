@@ -71,7 +71,7 @@ _L2Record = tuple[
     bool,
     frozenset[str],
     dict[str, TaintState],
-    dict[str, str] | None,
+    dict[str, tuple[str, ...]] | None,
 ]
 # The L2 fixed-point memo key. ``seed`` and ``method_tm`` are FIXED per entity across
 # iterations (computed once in pass 1), so the key carries only the iteration-VARYING
@@ -566,7 +566,7 @@ class WardlineAnalyzer:
             global_seeds: dict[str, TaintState] | None = None,
             route_body_params: frozenset[str] = frozenset(),
             route_dependency_params: dict[str, TaintState] | None = None,
-            parameter_type_fqns: dict[str, str] | None = None,
+            parameter_type_fqns: dict[str, tuple[str, ...]] | None = None,
         ) -> tuple[
             dict[int, dict[str, TaintState]],
             dict[int, dict[int | str | None, TaintState]],

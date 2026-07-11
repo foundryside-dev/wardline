@@ -17,7 +17,9 @@ SOURCE visible (an undecorated handler fires nothing, by design).
 
 from __future__ import annotations
 
+import ast
 import textwrap
+import time
 from pathlib import Path
 
 import pytest
@@ -25,6 +27,7 @@ import pytest
 from wardline.core.config import WardlineConfig
 from wardline.core.finding import Kind
 from wardline.scanner.analyzer import WardlineAnalyzer
+from wardline.scanner.taint.fastapi_sources import discover_parameter_types
 
 
 def _defect_rules(tmp_path: Path, src: str) -> set[str]:
@@ -655,3 +658,56 @@ def test_postponed_request_annotation_uses_final_module_binding(
     rules = _defect_rules(tmp_path, src)
     assert "WLN-ENGINE-PARSE-ERROR" not in rules
     assert ("PY-WL-108" in rules) is should_fire
+
+
+def test_try_branches_preserve_all_genuine_request_candidates(tmp_path: Path) -> None:
+    src = """
+        import os
+        from wardline.decorators import trusted
+
+        try:
+            from fastapi import Request
+        except ImportError:
+            from starlette.requests import Request
+
+        @trusted(level='ASSURED')
+        def h(req: Request):
+            os.system(req.query_params.get('x'))
+    """
+    rules = _defect_rules(tmp_path, src)
+    assert "WLN-ENGINE-PARSE-ERROR" not in rules
+    assert "WLN-ENGINE-FILE-FAILED" not in rules
+    assert "PY-WL-108" in rules
+
+
+def test_with_body_import_is_normal_continuation_binding(tmp_path: Path) -> None:
+    src = """
+        import os
+        from contextlib import nullcontext
+        from wardline.decorators import trusted
+
+        with nullcontext():
+            from fastapi import Request
+
+        @trusted(level='ASSURED')
+        def h(req: Request):
+            os.system(req.query_params.get('x'))
+    """
+    rules = _defect_rules(tmp_path, src)
+    assert "WLN-ENGINE-PARSE-ERROR" not in rules
+    assert "WLN-ENGINE-FILE-FAILED" not in rules
+    assert "PY-WL-108" in rules
+
+
+def test_compound_binding_discovery_scales_linearly() -> None:
+    branches = "\n".join(f"if flag_{index}:\n    alias_{index} = Request" for index in range(2000))
+    tree = ast.parse(f"from fastapi import Request\n{branches}\ndef h(req: Request): pass\n")
+
+    started = time.perf_counter()
+    discovered = discover_parameter_types(tree, module="m")
+    elapsed = time.perf_counter() - started
+
+    function = tree.body[-1]
+    assert isinstance(function, ast.FunctionDef)
+    assert discovered[id(function)]["req"] == ("fastapi.Request",)
+    assert elapsed < 1.5
