@@ -61,8 +61,10 @@ POST /api/wardline/resolve
    cross-version diagnosability.
 2. **Wardline second (tracked, see ticket below):** thread the producing
    plugin from the finding's `lang` through `LoomweaveClient.resolve()` at both
-   call sites, and treat a resolve 4xx as fail-soft `unresolved` (an old server
-   must degrade the dossier/association, not crash it).
+   call sites. Treat only the old server's diagnosable unknown-`plugin` rejection
+   (HTTP 400, `INVALID_PATH`, error naming the field) as fail-soft `unresolved`;
+   other 4xx responses remain loud so rate limits and genuine validation errors
+   are not misreported as missing identities.
 3. **Conformance:** three fixture rows ride the resolver's conformance surface
    and Wardline's vendored oracle when the field ships — hinted-hit,
    hinted-miss (qualname owned by the *other* plugin only), and

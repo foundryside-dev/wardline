@@ -1276,6 +1276,26 @@ def test_scan_loomweave_write_success(tmp_path, monkeypatch) -> None:
     assert "wrote 2 taint fact(s) to http://x/api/taint" in result.output
 
 
+def test_scan_loomweave_zero_facts_is_neutral_no_attempt(tmp_path) -> None:
+    from wardline.loomweave.write import NO_FACTS_REASON
+
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    _write(proj, "README.md", "docs only\n")
+    out = tmp_path / "f.jsonl"
+
+    result = CliRunner().invoke(
+        scan,
+        [str(proj), "--output", str(out), "--loomweave-url", "http://loomweave.example/api"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert NO_FACTS_REASON in result.output
+    assert "warning: Loomweave" not in result.output
+    assert "taint store not written" not in result.output
+    assert "http://loomweave.example" not in result.output  # no claim that the peer was reached
+
+
 def test_scan_loomweave_soft_outage_does_not_change_exit(tmp_path, monkeypatch) -> None:
     from wardline.loomweave.client import WriteResult
 

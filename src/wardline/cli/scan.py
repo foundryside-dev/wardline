@@ -487,7 +487,7 @@ def scan(
             from wardline.core.errors import LoomweaveError
             from wardline.loomweave.client import LoomweaveClient, WriteResult
             from wardline.loomweave.config import load_loomweave_token, resolve_project_name
-            from wardline.loomweave.write import write_facts_to_loomweave
+            from wardline.loomweave.write import NO_FACTS_REASON, write_facts_to_loomweave
 
             try:
                 client = LoomweaveClient(
@@ -613,7 +613,12 @@ def scan(
         logged_loomweave_url = _redact_url_for_log(loomweave_url)
         if not loomweave_result.reachable:
             reason = loomweave_result.disabled_reason or "unreachable"
-            if loomweave_result.written:
+            if reason == NO_FACTS_REASON:
+                # No transport call occurred, so this is neither an outage warning nor
+                # evidence that the configured peer was reachable. Report the neutral
+                # orchestration outcome without naming the destination URL.
+                click.echo(f"Loomweave taint-fact write: {reason}.")
+            elif loomweave_result.written:
                 # Mid-batch soft failure (outage/403 on a later chunk): earlier chunks
                 # ARE committed (per-entity replace; `written` counts only chunks that
                 # landed before the failure — the write_taint_facts contract), so the

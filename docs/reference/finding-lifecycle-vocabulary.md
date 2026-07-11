@@ -61,7 +61,7 @@ The Filigree metadata only carries the key when the state is not `active`
 
 **"suppressed"** survives only as the umbrella *word* for "any state other than
 `active`": `baselined` + `waived` + `judged`. The CLI prints this sum as the
-`suppressed` count (`src/wardline/cli/scan.py:660`).
+`suppressed` count (`src/wardline/cli/scan.py:665`).
 
 ## `active` is the one word for "non-suppressed defect"
 
@@ -72,7 +72,7 @@ consistently, on every surface:
 | --- | --- | --- |
 | Enum | `src/wardline/core/finding.py:72` | `SuppressionState.ACTIVE = "active"` |
 | Summary field | `src/wardline/core/run.py:104`, built at `src/wardline/core/run.py:685` | `ScanSummary.active` |
-| CLI summary line | `src/wardline/cli/scan.py:661` | `… {s.active} active` |
+| CLI summary line | `src/wardline/cli/scan.py:666` | `… {s.active} active` |
 | MCP scan response | `src/wardline/mcp/server.py:945` | `summary.active` |
 | Agent-summary JSON | `src/wardline/core/agent_summary.py:130` | `summary.active_defects` |
 | `wardline:loop` prompt | `src/wardline/mcp/prompts.py:13` | "Read `summary.active`" |
@@ -167,7 +167,7 @@ The MCP `scan` gate block exposes `gate.tripped` (`src/wardline/mcp/server.py:96
 armed gate passes (so a hook-captured log self-diagnoses — a harness-side hook
 failure is distinguishable from a wardline failure, wardline-eef3d30c7d), or a
 `gate: NOT_EVALUATED — …` line for a bare scan
-(`src/wardline/cli/scan.py:720`).
+(`src/wardline/cli/scan.py:725`).
 
 `--new-since` scopes **both** populations identically: any `active` defect
 outside the delta is re-marked `baselined` in both the emitted and gate lists
@@ -183,7 +183,7 @@ still legitimately means three different things depending on the surface:
 | --- | --- | --- |
 | Filigree store | An **unseen fingerprint** — first time this finding identity is seen for a `(file, scan_source)`. | **Filigree-owned** lifecycle (`src/wardline/core/filigree_emit.py:68-76`) |
 | `wardline scan --new-since <ref>` | **Delta-scope**: the gate fires only on defects in files/entities changed since a git ref; everything else is re-marked `baselined`. | `src/wardline/core/run.py:625`; help text `src/wardline/cli/scan.py` (`--new-since`) |
-| (historical) CLI summary | Formerly relabelled the `active` count as "N new". **Corrected to "N active"**. | `src/wardline/cli/scan.py:661` |
+| (historical) CLI summary | Formerly relabelled the `active` count as "N new". **Corrected to "N active"**. | `src/wardline/cli/scan.py:666` |
 
 The first-seen Filigree sense and the delta-scope `--new-since` sense are
 genuinely distinct concepts; neither is "active".

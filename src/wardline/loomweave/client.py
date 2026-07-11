@@ -157,6 +157,25 @@ def _error_code(body: str) -> str | None:
     return parsed.get("code") if isinstance(parsed, dict) else None
 
 
+def _is_legacy_plugin_field_rejection(resp: Response) -> bool:
+    """Whether an old deny-unknown-fields server rejected only the new hint.
+
+    Loomweave's JSON rejection contract is HTTP 400 with ``INVALID_PATH`` and an
+    ``error`` string naming serde's unknown ``plugin`` field. Match that complete
+    shape so validation errors and other 4xx responses remain loud.
+    """
+    if resp.status != 400:
+        return False
+    try:
+        parsed = json.loads(resp.body)
+    except json.JSONDecodeError:
+        return False
+    if not isinstance(parsed, dict) or parsed.get("code") != "INVALID_PATH":
+        return False
+    error = parsed.get("error")
+    return isinstance(error, str) and "unknown field `plugin`" in error
+
+
 def _linkage_total(raw: object, fallback: int) -> int:
     if isinstance(raw, bool):
         return fallback
@@ -263,10 +282,11 @@ class LoomweaveClient:
         another plugin stays unresolved. Omitted = the unhinted cross-plugin behavior
         (ambiguous degrades to unresolved server-side), legal forever.
 
-        Fail-soft posture: a 4xx on a HINTED request downgrades the chunk to
-        unresolved — an older Loomweave whose ``ResolveRequest`` is
-        ``deny_unknown_fields`` 400s on the hint field, and identity enrichment must
-        degrade, not crash. EXCEPT 401/403: an auth rejection cannot be hint-field
+        Fail-soft posture: the exact HTTP 400 ``INVALID_PATH`` envelope from an older
+        Loomweave whose ``ResolveRequest`` is ``deny_unknown_fields`` and names the
+        unknown ``plugin`` field downgrades a hinted chunk to unresolved; identity
+        enrichment must degrade across that rollout boundary, not crash. Other 4xx
+        responses stay loud, except 401/403: an auth rejection cannot be hint-field
         version skew (an older deny_unknown_fields Loomweave returns 400, not 401), is
         independent of whether a hint was supplied, and must not be misreported as
         "qualname unresolved". Resolution stops, the rejected qualnames are NOT marked
@@ -277,6 +297,7 @@ class LoomweaveClient:
         Outage/5xx stays ``None`` ("unreachable", ``_send``)."""
         resolved: dict[str, str] = {}
         unresolved: list[str] = []
+        probed = 0
 
         def make_payload(chunk: list[Any]) -> dict[str, Any]:
             payload: dict[str, Any] = {"project": self._project, "qualnames": list(chunk)}
@@ -298,11 +319,12 @@ class LoomweaveClient:
                 logger.warning(
                     "Loomweave rejected resolve with %d (auth); %d qualname(s) left unprobed (NOT reported unresolved)",
                     resp.status,
-                    len(chunk),
+                    len(qualnames) - probed,
                 )
                 return ResolveResult(resolved=resolved, unresolved=unresolved, auth_status=resp.status)
-            if plugin is not None and 400 <= resp.status < 500:
+            if plugin is not None and _is_legacy_plugin_field_rejection(resp):
                 unresolved.extend(str(q) for q in chunk)
+                probed += len(chunk)
                 continue
             data = self._require_ok(resp, "/api/wardline/resolve")
             r = data.get("resolved")
@@ -311,6 +333,7 @@ class LoomweaveClient:
             u = data.get("unresolved")
             if isinstance(u, list):
                 unresolved.extend(str(x) for x in u)
+            probed += len(chunk)
         return ResolveResult(resolved=resolved, unresolved=unresolved)
 
     def write_taint_facts(self, facts: list[dict[str, Any]]) -> WriteResult:
