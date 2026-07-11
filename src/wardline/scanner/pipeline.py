@@ -9,8 +9,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
+from wardline.core.confinement import SourceRootConfinement
 from wardline.core.finding import Finding, Kind, Location, Severity
 from wardline.core.qualname import module_dotted_name
+from wardline.core.safe_paths import read_source_bytes
 from wardline.core.taints import TaintState
 from wardline.scanner.ast_primitives import build_import_alias_map
 from wardline.scanner.index import Entity, discover_class_qualnames, discover_file_entities
@@ -52,6 +54,7 @@ class ParseProjectInput:
     config: WardlineConfig
     star_exports: dict[str, dict[str, str]]
     summary_cache: SummaryCache | None = None
+    source_root_confinement: SourceRootConfinement = SourceRootConfinement.PROJECT_ROOT
 
 
 @dataclass(frozen=True, slots=True)
@@ -127,7 +130,11 @@ def run_parse_project_stage(stage_input: ParseProjectInput) -> ParseProjectOutpu
             continue
 
         try:
-            source_bytes = path.read_bytes()
+            source_bytes = read_source_bytes(
+                path,
+                root=root,
+                source_root_confinement=stage_input.source_root_confinement,
+            )
             source = source_bytes.decode("utf-8")
             source_sha256 = hashlib.sha256(source_bytes).hexdigest()
 

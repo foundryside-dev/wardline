@@ -458,7 +458,14 @@ def run_scan(
             )
         else:
             progress_callback({"phase": "analyzing", "files_discovered": len(files)})
-    raw = list(analyzer.analyze(analyze_files, cfg, root=root))
+    raw = list(
+        analyzer.analyze(
+            analyze_files,
+            cfg,
+            root=root,
+            source_root_confinement=source_root_confinement,
+        )
+    )
     if progress_callback is not None:
         progress_callback(
             {

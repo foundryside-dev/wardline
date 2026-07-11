@@ -23,7 +23,9 @@ from __future__ import annotations
 import hashlib
 from typing import TYPE_CHECKING
 
+from wardline.core.confinement import SourceRootConfinement
 from wardline.core.finding import ENGINE_PATH, Finding, Kind, Location, Severity
+from wardline.core.safe_paths import read_source_bytes
 from wardline.core.taints import TaintState
 from wardline.rust import qualname as q
 from wardline.rust.context import RustAnalysisContext, RustTriggerContext
@@ -81,7 +83,14 @@ class RustAnalyzer:
         per-file ``analyze`` pass — for introspection, not consumed by ``run_scan``."""
         return self._last_rust_context
 
-    def analyze(self, files: Sequence[Path], config: WardlineConfig, *, root: Path) -> Sequence[Finding]:
+    def analyze(
+        self,
+        files: Sequence[Path],
+        config: WardlineConfig,
+        *,
+        root: Path,
+        source_root_confinement: SourceRootConfinement = SourceRootConfinement.PROJECT_ROOT,
+    ) -> Sequence[Finding]:
         """Engine ``Analyzer`` protocol: scan each ``.rs`` file under ``root``.
 
         ``config`` is accepted for protocol parity but unused in slice-1 (the Rust rules
@@ -100,7 +109,11 @@ class RustAnalyzer:
         read_errors: dict[Path, str] = {}
         for file in files:
             try:
-                sources[file] = file.read_text(encoding="utf-8")
+                sources[file] = read_source_bytes(
+                    file,
+                    root=resolved_root,
+                    source_root_confinement=source_root_confinement,
+                ).decode("utf-8")
             except (OSError, UnicodeDecodeError) as exc:
                 read_errors[file] = str(exc)
         overlays, overlay_errors = _build_overlays(sources, resolved_root, crate_roots)
@@ -217,6 +230,8 @@ class RustAnalyzer:
 
 
 def _relpath(file: Path, resolved_root: Path) -> str:
+    if file.is_relative_to(resolved_root):
+        return file.relative_to(resolved_root).as_posix()
     resolved = file.resolve()
     if resolved.is_relative_to(resolved_root):
         return resolved.relative_to(resolved_root).as_posix()

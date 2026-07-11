@@ -1131,6 +1131,50 @@ def test_run_scan_pins_in_root_symlink_target_before_adversarial_retarget(
     assert all(f.rule_id != "WLN-ENGINE-TREE-CHANGED-DURING-SCAN" for f in result.findings)
 
 
+def test_run_scan_rejects_canonical_target_replaced_after_discovery(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import wardline.core.run as run_mod
+
+    root = tmp_path / "root"
+    src = root / "src"
+    outside_dir = tmp_path / "outside"
+    src.mkdir(parents=True)
+    outside_dir.mkdir()
+    source = src / "safe.py"
+    source.write_text(_LEAKY, encoding="utf-8")
+    outside = outside_dir / "secret.py"
+    outside.write_text("def outside_entity(): return 2\n", encoding="utf-8")
+    (root / "weft.toml").write_text('[wardline]\nsource_roots = ["src"]\n', encoding="utf-8")
+
+    real_snapshot = run_mod._stat_snapshot
+    real_read_bytes = Path.read_bytes
+    outside_reads: list[Path] = []
+
+    def replace_target_then_snapshot(files):  # noqa: ANN001
+        source.unlink()
+        source.symlink_to(outside)
+        return real_snapshot(files)
+
+    def record_outside_read(path: Path) -> bytes:
+        if path.resolve() == outside.resolve():
+            outside_reads.append(path)
+        return real_read_bytes(path)
+
+    monkeypatch.setattr(run_mod, "_stat_snapshot", replace_target_then_snapshot)
+    monkeypatch.setattr(Path, "read_bytes", record_outside_read)
+
+    result = run_scan(root, source_root_confinement=SourceRootConfinement.PROJECT_ROOT)
+
+    assert outside_reads == []
+    assert result.context is not None
+    assert all("outside_entity" not in qualname for qualname in result.context.entities)
+    parse_error = next(f for f in result.findings if f.rule_id == "WLN-ENGINE-PARSE-ERROR")
+    assert parse_error.location.path == "src/safe.py"
+    assert parse_error.suppressed is SuppressionState.ACTIVE
+    assert gate_decision(result, Severity.ERROR).tripped is True
+
+
 # --- N-3 (wardline-8669de3576): nested scan root is surfaced, never silent ---
 
 

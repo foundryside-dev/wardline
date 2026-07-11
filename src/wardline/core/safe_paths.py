@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import errno
 import os
 import stat
 from pathlib import Path
 
+from wardline.core.confinement import SourceRootConfinement
 from wardline.core.errors import WardlineError
 
 
@@ -171,3 +173,46 @@ def read_bytes_no_follow(path: Path) -> bytes | None:
             return handle.read()
     except OSError:
         return None
+
+
+def read_source_bytes(
+    path: Path,
+    *,
+    root: Path,
+    source_root_confinement: SourceRootConfinement,
+) -> bytes:
+    """Read one regular source file from a descriptor pinned to its validated inode.
+
+    Secure scans require the strict resolution to remain under ``root``. Legacy scans
+    intentionally permit regular outside paths, but both policies reject a final
+    symlink and pathname swaps around ``open``. The descriptor is read only after the
+    pre-open, opened, and post-open identities agree, so a later pathname replacement
+    cannot redirect the bytes consumed by an analyzer.
+    """
+    try:
+        resolved_root = root.resolve(strict=True)
+        resolved_path = path.resolve(strict=True)
+    except RuntimeError as exc:
+        raise OSError(errno.ELOOP, f"source path resolution failed: {path}", path) from exc
+    if source_root_confinement.confines_to_project and not resolved_path.is_relative_to(resolved_root):
+        raise OSError(errno.EPERM, f"source path resolves outside project root: {path}", path)
+
+    before = path.stat(follow_symlinks=False)
+    if not stat.S_ISREG(before.st_mode):
+        raise OSError(errno.EINVAL, f"source path is not a regular file: {path}", path)
+
+    flags = os.O_RDONLY
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    fd = os.open(path, flags)
+    try:
+        opened = os.fstat(fd)
+        after = path.stat(follow_symlinks=False)
+        if not (os.path.samestat(before, opened) and os.path.samestat(opened, after)):
+            raise OSError(errno.ESTALE, f"source path changed while opening: {path}", path)
+        with os.fdopen(fd, "rb") as handle:
+            fd = -1
+            return handle.read()
+    finally:
+        if fd >= 0:
+            os.close(fd)

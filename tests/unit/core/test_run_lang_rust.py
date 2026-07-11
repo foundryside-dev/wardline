@@ -7,10 +7,13 @@ fires on an ``RS-WL-108`` ERROR, and a malformed ``.rs`` counts toward ``unanaly
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 pytest.importorskip("tree_sitter", reason="wardline[rust] extra not installed")
 
+from wardline.core.confinement import SourceRootConfinement  # noqa: E402
 from wardline.core.finding import Severity  # noqa: E402
 from wardline.core.run import gate_decision, run_scan  # noqa: E402
 
@@ -40,6 +43,58 @@ def test_run_scan_rust_clean_tree_passes(tmp_path) -> None:
     result = run_scan(tmp_path, lang="rust")
     assert [f for f in result.findings if f.rule_id.startswith("RS-WL-")] == []
     assert gate_decision(result, Severity.ERROR).tripped is False
+
+
+def test_run_scan_rust_rejects_canonical_target_replaced_after_discovery(tmp_path, monkeypatch) -> None:
+    import wardline.core.run as run_mod
+
+    source = tmp_path / "safe.rs"
+    source.write_text(_TRUSTED + 'fn safe() { Command::new("ls").output(); }\n', encoding="utf-8")
+    outside_dir = tmp_path.parent / f"{tmp_path.name}-outside"
+    outside_dir.mkdir()
+    outside = outside_dir / "secret.rs"
+    outside.write_text(_INJECTION, encoding="utf-8")
+    real_snapshot = run_mod._stat_snapshot
+    real_read_text = Path.read_text
+    outside_reads: list[Path] = []
+
+    def replace_target_then_snapshot(files):  # noqa: ANN001
+        source.unlink()
+        source.symlink_to(outside)
+        return real_snapshot(files)
+
+    def record_outside_read(path: Path, *args, **kwargs) -> str:
+        if path.resolve() == outside.resolve():
+            outside_reads.append(path)
+        return real_read_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(run_mod, "_stat_snapshot", replace_target_then_snapshot)
+    monkeypatch.setattr(Path, "read_text", record_outside_read)
+
+    result = run_scan(tmp_path, lang="rust", source_root_confinement=SourceRootConfinement.PROJECT_ROOT)
+
+    assert outside_reads == []
+    assert not any(f.rule_id.startswith("RS-WL-") for f in result.findings)
+    parse_error = next(f for f in result.findings if f.rule_id == "WLN-ENGINE-PARSE-ERROR")
+    assert parse_error.location.path == "safe.rs"
+    assert gate_decision(result, Severity.ERROR).tripped is True
+
+
+def test_run_scan_rust_legacy_mode_reads_regular_outside_source_root(tmp_path) -> None:
+    root = tmp_path / "root"
+    outside = tmp_path / "outside"
+    root.mkdir()
+    outside.mkdir()
+    (outside / "m.rs").write_text(_INJECTION, encoding="utf-8")
+    (root / "weft.toml").write_text('[wardline]\nsource_roots = ["../outside"]\n', encoding="utf-8")
+
+    result = run_scan(
+        root,
+        lang="rust",
+        source_root_confinement=SourceRootConfinement.LEGACY_ALLOW_ESCAPE,
+    )
+
+    assert any(f.rule_id == "RS-WL-108" for f in result.findings)
 
 
 def test_run_scan_rust_invalid_trusted_marker_trips_gate(tmp_path) -> None:

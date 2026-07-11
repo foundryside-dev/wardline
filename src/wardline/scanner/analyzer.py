@@ -16,6 +16,8 @@ import hashlib
 from collections.abc import Iterator
 from typing import TYPE_CHECKING
 
+from wardline.core.config import WardlineConfig
+from wardline.core.confinement import SourceRootConfinement
 from wardline.core.finding import ENGINE_PATH, Finding, Kind, Location, Severity
 from wardline.core.taints import _PROVENANCE_CLASH, RAW_ZONE, TaintState, combine
 from wardline.scanner.context import AnalysisContext, RuleRegistry
@@ -50,7 +52,6 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
     from pathlib import Path
 
-    from wardline.core.config import WardlineConfig
     from wardline.scanner.taint.summary_cache import SummaryCache
 
 
@@ -253,14 +254,33 @@ class WardlineAnalyzer:
         self._cache = summary_cache
         self.last_context: AnalysisContext | None = None
 
-    def analyze(self, files: Sequence[Path], config: WardlineConfig, *, root: Path) -> Sequence[Finding]:
+    def analyze(
+        self,
+        files: Sequence[Path],
+        config: WardlineConfig,
+        *,
+        root: Path,
+        source_root_confinement: SourceRootConfinement = SourceRootConfinement.PROJECT_ROOT,
+    ) -> Sequence[Finding]:
         token_clash = _PROVENANCE_CLASH.set(config.provenance_clash)
         try:
-            return self._analyze_inner(files, config, root=root)
+            return self._analyze_inner(
+                files,
+                config,
+                root=root,
+                source_root_confinement=source_root_confinement,
+            )
         finally:
             _PROVENANCE_CLASH.reset(token_clash)
 
-    def _analyze_inner(self, files: Sequence[Path], config: WardlineConfig, *, root: Path) -> Sequence[Finding]:
+    def _analyze_inner(
+        self,
+        files: Sequence[Path],
+        config: WardlineConfig,
+        *,
+        root: Path,
+        source_root_confinement: SourceRootConfinement,
+    ) -> Sequence[Finding]:
         # Statically-known star-import exports (the trust vocabulary, T1.2). A REGISTRY-
         # derived constant for the whole scan — compute once and reuse at both seam points.
         star_exports = vocabulary_star_exports()
@@ -284,6 +304,7 @@ class WardlineAnalyzer:
                 config=config,
                 star_exports=star_exports,
                 summary_cache=self._cache,
+                source_root_confinement=source_root_confinement,
             )
         )
         modules = parse_stage.modules
