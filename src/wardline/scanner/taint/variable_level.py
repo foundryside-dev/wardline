@@ -173,17 +173,50 @@ class _RequestMembers:
 # model — NOT whole-param tainting, so ``req.app``/``req.state``/``req.url``/``req.scope``/
 # ``req.client`` stay clean). The match is on the RESOLVED type via the alias map, never
 # the parameter name. FastAPI's ``Request`` subclasses Starlette's (identical accessor
-# surface), so both keys share one member set; both are still needed because the alias
+# surface), so all keys share one member set; each is still needed because the alias
 # map records the import spelling actually used. Mechanism is general — a new framework is
-# one dict row; seeding stays scoped to these two FQNs deliberately (precision over recall).
+# one dict row; seeding stays scoped to these three FQNs deliberately (precision over recall).
 _STARLETTE_REQUEST_MEMBERS = _RequestMembers(
     properties=frozenset({"query_params", "path_params", "headers", "cookies"}),
     methods=frozenset({"json", "body", "form", "stream"}),
 )
 _REQUEST_SOURCE_TYPES: dict[str, _RequestMembers] = {
     "fastapi.Request": _STARLETTE_REQUEST_MEMBERS,
+    "fastapi.requests.Request": _STARLETTE_REQUEST_MEMBERS,
     "starlette.requests.Request": _STARLETTE_REQUEST_MEMBERS,
 }
+_REQUEST_NESTED_ATTRIBUTE_SOURCES: frozenset[tuple[str, str]] = frozenset({("url", "query")})
+_REQUEST_NESTED_SUBSCRIPT_SOURCES: frozenset[tuple[str, str]] = frozenset({("scope", "query_string")})
+
+
+def _request_receiver_fqns(name: str) -> tuple[str, ...]:
+    var_types = _CURRENT_VAR_TYPES.get()
+    if var_types is None:
+        return ()
+    return tuple(fqn for fqn in var_types.get(name, ()) if fqn in _REQUEST_SOURCE_TYPES)
+
+
+def _constant_string(node: ast.expr) -> str | None:
+    return node.value if isinstance(node, ast.Constant) and isinstance(node.value, str) else None
+
+
+def _is_exact_nested_request_source(node: ast.expr) -> bool:
+    if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Attribute):
+        base = node.value
+        return (
+            isinstance(base.value, ast.Name)
+            and bool(_request_receiver_fqns(base.value.id))
+            and (base.attr, node.attr) in _REQUEST_NESTED_ATTRIBUTE_SOURCES
+        )
+    if isinstance(node, ast.Subscript) and isinstance(node.value, ast.Attribute):
+        base = node.value
+        return (
+            isinstance(base.value, ast.Name)
+            and bool(_request_receiver_fqns(base.value.id))
+            and (base.attr, _constant_string(node.slice)) in _REQUEST_NESTED_SUBSCRIPT_SOURCES
+        )
+    return False
+
 
 _CURRENT_ALIAS_MAP: contextvars.ContextVar[dict[str, str] | None] = contextvars.ContextVar(
     "_CURRENT_ALIAS_MAP", default=None
@@ -893,11 +926,15 @@ def _resolve_expr(
     if isinstance(node, ast.UnaryOp):
         return _resolve_expr(node.operand, function_taint, taint_map, var_taints)
     if isinstance(node, ast.Subscript):
+        if _is_exact_nested_request_source(node):
+            return TaintState.EXTERNAL_RAW
         # Resolve the slice for walrus side-effects (discarded); the subscript
         # result carries its container's taint.
         _resolve_expr(node.slice, function_taint, taint_map, var_taints)
         return _resolve_expr(node.value, function_taint, taint_map, var_taints)
     if isinstance(node, ast.Attribute):
+        if _is_exact_nested_request_source(node):
+            return TaintState.EXTERNAL_RAW
         # A ``self.<attr>``/``cls.<attr>`` read whose attribute has a project-computed
         # cross-method summary (injected by the analyzer under that dotted key) reads
         # the summary — closing the function-level fail-open where raw written to an

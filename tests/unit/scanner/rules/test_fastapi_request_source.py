@@ -37,6 +37,33 @@ def _defect_rules(tmp_path: Path, src: str) -> set[str]:
 # --- MUST FIRE: curated request-data members reaching a command sink (PY-WL-108) -------
 
 _MUST_FIRE = {
+    "fastapi_requests_reexport": """
+        import os
+        from wardline.decorators import trusted
+        from fastapi.requests import Request
+
+        @trusted(level='ASSURED')
+        def h(req: Request):
+            os.system(req.query_params.get('x'))
+    """,
+    "url_query": """
+        import os
+        from wardline.decorators import trusted
+        from fastapi import Request
+
+        @trusted(level='ASSURED')
+        def h(req: Request):
+            os.system(req.url.query)
+    """,
+    "scope_query_string": """
+        import os
+        from wardline.decorators import trusted
+        from fastapi import Request
+
+        @trusted(level='ASSURED')
+        def h(req: Request):
+            os.system(req.scope['query_string'])
+    """,
     "query_params_get": """
         import os
         from wardline.decorators import trusted
@@ -198,6 +225,59 @@ def test_undecorated_handler_returning_request_source_is_quiet(tmp_path: Path) -
 @pytest.mark.parametrize("name", sorted(_MUST_FIRE))
 def test_fastapi_request_source_fires(tmp_path: Path, name: str) -> None:
     assert "PY-WL-108" in _defect_rules(tmp_path, _MUST_FIRE[name]), name
+
+
+_EXISTING_BEHAVIOR_MUST_FIRE = {
+    "async_stream_iteration": """
+        import os
+        from wardline.decorators import trusted
+        from fastapi import Request
+
+        @trusted(level='ASSURED')
+        async def h(req: Request):
+            async for chunk in req.stream():
+                os.system(chunk)
+    """,
+    "multi_items": """
+        import os
+        from wardline.decorators import trusted
+        from fastapi import Request
+
+        @trusted(level='ASSURED')
+        def h(req: Request):
+            os.system(str(req.query_params.multi_items()))
+    """,
+    "getlist": """
+        import os
+        from wardline.decorators import trusted
+        from fastapi import Request
+
+        @trusted(level='ASSURED')
+        def h(req: Request):
+            os.system(str(req.query_params.getlist('x')))
+    """,
+}
+
+
+@pytest.mark.parametrize("name", sorted(_EXISTING_BEHAVIOR_MUST_FIRE))
+def test_existing_request_container_and_stream_flows_stay_visible(tmp_path: Path, name: str) -> None:
+    assert "PY-WL-108" in _defect_rules(tmp_path, _EXISTING_BEHAVIOR_MUST_FIRE[name]), name
+
+
+def test_depends_default_retains_conservative_raw_seed(tmp_path: Path) -> None:
+    src = """
+        import os
+        from fastapi import Depends
+        from wardline.decorators import trusted
+
+        def validated_value() -> str:
+            return 'fixed'
+
+        @trusted(level='ASSURED')
+        def h(value: str = Depends(validated_value)):
+            os.system(value)
+    """
+    assert "PY-WL-108" in _defect_rules(tmp_path, src)
 
 
 # --- MUST NOT FIRE: framework objects, name-only, whole-param, freedom zone ------------
