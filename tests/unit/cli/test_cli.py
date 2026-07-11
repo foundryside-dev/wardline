@@ -624,6 +624,28 @@ def test_scan_armed_gate_pass_prints_verdict_and_population(tmp_path: Path) -> N
     assert "gate: evaluated unsuppressed" in result.output
 
 
+def test_scan_armed_gate_over_empty_configured_root_is_not_evaluated(tmp_path: Path) -> None:
+    project = tmp_path / "proj"
+    source_root = project / "src"
+    source_root.mkdir(parents=True)
+    (project / "weft.toml").write_text(
+        '[wardline]\nsource_roots = ["src"]\n',
+        encoding="utf-8",
+    )
+    out = tmp_path / "o.jsonl"
+
+    result = CliRunner().invoke(
+        cli,
+        ["scan", str(project), "--fail-on", "ERROR", "--output", str(out), "--local-only"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "scanned 0 file(s)" in result.output
+    assert "gate: NOT_EVALUATED" in result.output
+    assert "no_files_scanned" in result.output
+    assert "gate: PASSED" not in result.output
+
+
 def test_scan_armed_gate_pass_verdict_names_both_knobs(tmp_path: Path) -> None:
     # With both sub-gates armed and passing, the verdict names both knobs — same
     # attribution grammar as the FAILED line.
