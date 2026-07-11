@@ -89,7 +89,13 @@ def test_repeated_model_state_degrades_to_all_declared_classes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     parsed = _parsed("class A:\n    pass\n\nclass B:\n    pass\n", module="m")
-    states = iter((frozenset({"m.A"}), frozenset({"m.B"}), frozenset({"m.A"})))
+    states = iter(
+        (
+            frozenset({"m.A", "m.B"}),
+            frozenset({"m.A"}),
+            frozenset({"m.A", "m.B"}),
+        )
+    )
 
     monkeypatch.setattr(discovery, "discover_pydantic_models", lambda *args, **kwargs: next(states), raising=False)
 
@@ -97,7 +103,8 @@ def test_repeated_model_state_degrades_to_all_declared_classes(
 
     assert result.degraded_reason == "repeated_state"
     assert result.models == frozenset({"m.A", "m.B"})
-    assert result.model_counts_by_round == (1, 1, 1)
+    assert result.model_counts_by_round == (2, 1, 2)
+    assert result.known_model_count == 2
     assert result.round_number == 3
 
 

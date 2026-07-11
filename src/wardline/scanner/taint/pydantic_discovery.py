@@ -158,7 +158,7 @@ def discover_project_pydantic_models(
                 budget=budget,
                 next_round_cost=None,
                 required_total=None,
-                known_model_count=len(models),
+                known_model_count=len(next_state),
                 model_counts_by_round=tuple(counts),
             )
         states.add(next_state)
