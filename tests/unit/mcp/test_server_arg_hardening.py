@@ -26,6 +26,8 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
+
 from wardline.core import config as config_mod
 from wardline.core.attest_key import WARDLINE_ATTEST_KEY_ENV
 from wardline.core.legis import LEGIS_ARTIFACT_KEY_ENV
@@ -147,6 +149,105 @@ def test_scan_fail_on_none_is_documented_enum_error_not_internal_crash(tmp_path,
     text = resp["result"]["content"][0]["text"]
     assert "fail_on must be one of CRITICAL/ERROR/WARN/INFO" in text
     assert "internal error" not in text
+
+
+@pytest.mark.parametrize(
+    ("tool", "arguments", "field", "side_effect"),
+    [
+        pytest.param("judge", {"write": "false"}, "write", "run_judge", id="judge.write"),
+        pytest.param(
+            "baseline",
+            {"overwrite": "false"},
+            "overwrite",
+            "generate_baseline",
+            id="baseline.overwrite",
+        ),
+        pytest.param(
+            "scan_job_start",
+            {"local_only": "false"},
+            "local_only",
+            "start_scan_job",
+            id="scan-job.local-only",
+        ),
+        pytest.param("doctor", {"repair": "false"}, "repair", "doctor", id="doctor.repair"),
+        pytest.param("rekey", {"apply": "false"}, "apply", "run_scan", id="rekey.apply"),
+        pytest.param(
+            "rekey",
+            {"apply": False, "resume": "false"},
+            "resume",
+            "run_scan",
+            id="rekey.resume",
+        ),
+        pytest.param(
+            "rekey",
+            {"apply": False, "resume": False, "rollback": "false"},
+            "rollback",
+            "run_scan",
+            id="rekey.rollback",
+        ),
+    ],
+)
+def test_destructive_boolean_rejected_before_side_effect_without_jsonschema(
+    tmp_path, monkeypatch, tool, arguments, field, side_effect
+) -> None:
+    _block_jsonschema(monkeypatch)
+    called = False
+
+    def forbidden(*args, **kwargs):
+        nonlocal called
+        called = True
+        raise AssertionError("side effect ran before boolean validation")
+
+    if side_effect == "doctor":
+        monkeypatch.setattr("wardline.install.doctor.machine_readable_doctor", forbidden)
+    else:
+        monkeypatch.setattr(f"wardline.mcp.server.{side_effect}", forbidden)
+    server = WardlineMCPServer(root=_leaky_project(tmp_path))
+
+    resp = _dispatch(server, tool, arguments)
+
+    assert resp["result"]["isError"] is True
+    assert f"{field} must be a boolean" in resp["result"]["content"][0]["text"]
+    assert called is False
+
+
+_ASSERT_ONLY = (
+    "from wardline.decorators import trust_boundary\n"
+    "@trust_boundary(to_level='ASSURED')\n"
+    "def boundary(value):\n"
+    "    assert isinstance(value, str)\n"
+    "    return value\n"
+)
+
+
+@pytest.mark.parametrize(
+    ("arguments", "field"),
+    [
+        pytest.param({"apply": "false"}, "apply", id="fix.apply"),
+        pytest.param({"apply": True, "dry_run": "false"}, "dry_run", id="fix.dry-run"),
+    ],
+)
+def test_fix_boolean_rejected_before_autofix_without_jsonschema(tmp_path, monkeypatch, arguments, field) -> None:
+    _block_jsonschema(monkeypatch)
+    root = tmp_path / "project"
+    root.mkdir()
+    source = root / "boundary.py"
+    source.write_text(_ASSERT_ONLY, encoding="utf-8")
+    before = source.read_bytes()
+    called = False
+
+    def forbidden(*args, **kwargs):
+        nonlocal called
+        called = True
+        raise AssertionError("autofix ran before boolean validation")
+
+    monkeypatch.setattr("wardline.core.autofix.run_autofix", forbidden)
+    resp = _dispatch(WardlineMCPServer(root=root), "fix", arguments)
+
+    assert resp["result"]["isError"] is True
+    assert f"{field} must be a boolean" in resp["result"]["content"][0]["text"]
+    assert called is False
+    assert source.read_bytes() == before
 
 
 # ---------------------------------------------------------------------------
