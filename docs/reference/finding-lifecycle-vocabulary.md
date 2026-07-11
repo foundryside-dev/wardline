@@ -71,7 +71,7 @@ consistently, on every surface:
 | Surface | Where | Term |
 | --- | --- | --- |
 | Enum | `src/wardline/core/finding.py:72` | `SuppressionState.ACTIVE = "active"` |
-| Summary field | `src/wardline/core/run.py:101`, built at `src/wardline/core/run.py:646` | `ScanSummary.active` |
+| Summary field | `src/wardline/core/run.py:102`, built at `src/wardline/core/run.py:661` | `ScanSummary.active` |
 | CLI summary line | `src/wardline/cli/scan.py:661` | `… {s.active} active` |
 | MCP scan response | `src/wardline/mcp/server.py:945` | `summary.active` |
 | Agent-summary JSON | `src/wardline/core/agent_summary.py:130` | `summary.active_defects` |
