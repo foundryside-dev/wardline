@@ -39,16 +39,19 @@ def test_large_project_budget_is_limited_by_absolute_cap() -> None:
 
 
 def test_round_is_rejected_when_required_total_exceeds_budget() -> None:
-    budget = PydanticDiscoveryBudget(
-        file_count=80,
-        statement_count=160,
-        work_budget=15_360,
-        absolute_cap_applied=False,
-    )
+    budget = PydanticDiscoveryBudget.from_counts(file_count=80, statement_count=160)
 
+    assert budget.work_budget == 15_360
     assert budget.round_cost(known_model_count=17) == 1_600
     assert budget.required_total(completed_work=14_960, known_model_count=17) == 16_560
     assert budget.admits_round(completed_work=14_960, known_model_count=17) is False
+
+
+def test_round_is_admitted_when_required_total_equals_budget() -> None:
+    budget = PydanticDiscoveryBudget.from_counts(file_count=80, statement_count=160)
+
+    assert budget.required_total(completed_work=13_760, known_model_count=17) == budget.work_budget
+    assert budget.admits_round(completed_work=13_760, known_model_count=17) is True
 
 
 @pytest.mark.parametrize(
@@ -58,6 +61,11 @@ def test_round_is_rejected_when_required_total_exceeds_budget() -> None:
 def test_from_counts_rejects_negative_structural_counts(file_count: int, statement_count: int) -> None:
     with pytest.raises(ValueError, match="must be non-negative"):
         PydanticDiscoveryBudget.from_counts(file_count=file_count, statement_count=statement_count)
+
+
+def test_direct_construction_rejects_negative_structural_counts() -> None:
+    with pytest.raises(ValueError, match="must be non-negative"):
+        PydanticDiscoveryBudget(file_count=-1, statement_count=0)
 
 
 def test_round_cost_rejects_negative_known_model_count() -> None:

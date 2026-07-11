@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Self
 
 _MINIMUM_WORK_BUDGET = 4_096
@@ -16,23 +16,26 @@ class PydanticDiscoveryBudget:
 
     file_count: int
     statement_count: int
-    work_budget: int
-    absolute_cap_applied: bool
+    work_budget: int = field(init=False)
+    absolute_cap_applied: bool = field(init=False)
+
+    def __post_init__(self) -> None:
+        """Validate structural counts and derive the immutable budget fields."""
+        if self.file_count < 0 or self.statement_count < 0:
+            raise ValueError("file_count and statement_count must be non-negative")
+
+        scaled = (self.file_count + self.statement_count) * _WORK_PER_STRUCTURAL_UNIT
+        object.__setattr__(
+            self,
+            "work_budget",
+            min(_ABSOLUTE_WORK_BUDGET_CAP, max(_MINIMUM_WORK_BUDGET, scaled)),
+        )
+        object.__setattr__(self, "absolute_cap_applied", scaled > _ABSOLUTE_WORK_BUDGET_CAP)
 
     @classmethod
     def from_counts(cls, *, file_count: int, statement_count: int) -> Self:
         """Build a budget scaled from project structure counts."""
-        if file_count < 0 or statement_count < 0:
-            raise ValueError("file_count and statement_count must be non-negative")
-
-        scaled = (file_count + statement_count) * _WORK_PER_STRUCTURAL_UNIT
-        work_budget = min(_ABSOLUTE_WORK_BUDGET_CAP, max(_MINIMUM_WORK_BUDGET, scaled))
-        return cls(
-            file_count=file_count,
-            statement_count=statement_count,
-            work_budget=work_budget,
-            absolute_cap_applied=scaled > _ABSOLUTE_WORK_BUDGET_CAP,
-        )
+        return cls(file_count=file_count, statement_count=statement_count)
 
     def round_cost(self, known_model_count: int) -> int:
         """Return the work required for one discovery round."""
