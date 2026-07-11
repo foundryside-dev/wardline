@@ -1175,6 +1175,66 @@ def test_run_scan_rejects_canonical_target_replaced_after_discovery(
     assert gate_decision(result, Severity.ERROR).tripped is True
 
 
+def test_run_scan_rejects_source_parent_replaced_after_discovery(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import os
+
+    import wardline.core.run as run_mod
+
+    root = tmp_path / "root"
+    parent = root / "src" / "pkg"
+    outside = tmp_path / "outside"
+    parent.mkdir(parents=True)
+    outside.mkdir()
+    source = parent / "safe.py"
+    source.write_text(_LEAKY, encoding="utf-8")
+    (outside / "safe.py").write_text("def outside_entity(): return 2\n", encoding="utf-8")
+    (root / "weft.toml").write_text('[wardline]\nsource_roots = ["src"]\n', encoding="utf-8")
+    parked = root / "src" / "pkg-safe"
+    real_snapshot = run_mod._stat_snapshot
+    real_resolve = Path.resolve
+    real_open = os.open
+    armed = False
+    swapped = False
+
+    def swap_parent() -> None:
+        nonlocal swapped
+        parent.rename(parked)
+        parent.symlink_to(outside, target_is_directory=True)
+        swapped = True
+
+    def arm_after_snapshot(files):  # noqa: ANN001
+        nonlocal armed
+        snapshot = real_snapshot(files)
+        armed = True
+        return snapshot
+
+    def hooked_resolve(path: Path, strict: bool = False) -> Path:
+        resolved = real_resolve(path, strict=strict)
+        if armed and path == source and not swapped:
+            swap_parent()
+        return resolved
+
+    def hooked_open(path, flags, mode=0o777, *, dir_fd=None):  # noqa: ANN001
+        if armed and path == "pkg" and not swapped:
+            swap_parent()
+        return real_open(path, flags, mode, dir_fd=dir_fd)
+
+    monkeypatch.setattr(run_mod, "_stat_snapshot", arm_after_snapshot)
+    monkeypatch.setattr(Path, "resolve", hooked_resolve)
+    monkeypatch.setattr(os, "open", hooked_open)
+
+    result = run_scan(root, source_root_confinement=SourceRootConfinement.PROJECT_ROOT)
+
+    assert swapped is True
+    assert result.context is not None
+    assert all("outside_entity" not in qualname for qualname in result.context.entities)
+    parse_error = next(f for f in result.findings if f.rule_id == "WLN-ENGINE-PARSE-ERROR")
+    assert parse_error.location.path == "src/pkg/safe.py"
+    assert gate_decision(result, Severity.ERROR).tripped is True
+
+
 # --- N-3 (wardline-8669de3576): nested scan root is surfaced, never silent ---
 
 

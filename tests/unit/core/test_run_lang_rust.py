@@ -97,6 +97,61 @@ def test_run_scan_rust_legacy_mode_reads_regular_outside_source_root(tmp_path) -
     assert any(f.rule_id == "RS-WL-108" for f in result.findings)
 
 
+def test_run_scan_rust_rejects_source_parent_replaced_after_discovery(tmp_path, monkeypatch) -> None:
+    import os
+
+    import wardline.core.run as run_mod
+
+    parent = tmp_path / "src" / "pkg"
+    outside = tmp_path.parent / f"{tmp_path.name}-outside-parent"
+    parent.mkdir(parents=True)
+    outside.mkdir()
+    source = parent / "safe.rs"
+    source.write_text(_TRUSTED + 'fn safe() { Command::new("ls").output(); }\n', encoding="utf-8")
+    (outside / "safe.rs").write_text(_INJECTION, encoding="utf-8")
+    parked = tmp_path / "src" / "pkg-safe"
+    real_snapshot = run_mod._stat_snapshot
+    real_resolve = Path.resolve
+    real_open = os.open
+    armed = False
+    swapped = False
+
+    def swap_parent() -> None:
+        nonlocal swapped
+        parent.rename(parked)
+        parent.symlink_to(outside, target_is_directory=True)
+        swapped = True
+
+    def arm_after_snapshot(files):  # noqa: ANN001
+        nonlocal armed
+        snapshot = real_snapshot(files)
+        armed = True
+        return snapshot
+
+    def hooked_resolve(path: Path, strict: bool = False) -> Path:
+        resolved = real_resolve(path, strict=strict)
+        if armed and path == source and not swapped:
+            swap_parent()
+        return resolved
+
+    def hooked_open(path, flags, mode=0o777, *, dir_fd=None):  # noqa: ANN001
+        if armed and path == "pkg" and not swapped:
+            swap_parent()
+        return real_open(path, flags, mode, dir_fd=dir_fd)
+
+    monkeypatch.setattr(run_mod, "_stat_snapshot", arm_after_snapshot)
+    monkeypatch.setattr(Path, "resolve", hooked_resolve)
+    monkeypatch.setattr(os, "open", hooked_open)
+
+    result = run_scan(tmp_path, lang="rust", source_root_confinement=SourceRootConfinement.PROJECT_ROOT)
+
+    assert swapped is True
+    assert not any(f.rule_id.startswith("RS-WL-") for f in result.findings)
+    parse_error = next(f for f in result.findings if f.rule_id == "WLN-ENGINE-PARSE-ERROR")
+    assert parse_error.location.path == "src/pkg/safe.rs"
+    assert gate_decision(result, Severity.ERROR).tripped is True
+
+
 def test_run_scan_rust_invalid_trusted_marker_trips_gate(tmp_path) -> None:
     (tmp_path / "m.rs").write_text(
         "/// @trusted(level=ASSUREDD)\n"
