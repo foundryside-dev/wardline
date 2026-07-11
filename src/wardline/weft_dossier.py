@@ -77,6 +77,7 @@ def build_weft_dossier(
     honest ``unavailable`` sections; the self/trust posture is always computed for real.
     """
     binding: EntityBinding | None = None
+    binding_reason: str | None = None
     linkage_provider: LinkageProvider | None = None
     work_provider: WorkProvider | None = None
 
@@ -104,7 +105,9 @@ def build_weft_dossier(
     elif loomweave_client is not None:
         capabilities = loomweave_client.capabilities()
         resolver = SeiResolver(loomweave_client, SeiCapability.from_capabilities(capabilities))
-        binding = resolve_entity_binding(loomweave_client, resolver, entity)
+        resolution = resolve_entity_binding(loomweave_client, resolver, entity)
+        binding = resolution.binding
+        binding_reason = resolution.unavailable_reason
         linkage_provider = LoomweaveLinkageProvider(loomweave_client, linkages_http=_linkages_http(capabilities))
 
     if filigree_url is not None:
@@ -118,6 +121,7 @@ def build_weft_dossier(
         config_path=config_path,
         confine_to_root=confine_to_root,
         binding=binding,
+        binding_unavailable_reason=binding_reason,
         linkage_provider=linkage_provider,
         work_provider=work_provider,
         budget=budget,

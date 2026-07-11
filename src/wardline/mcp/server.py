@@ -3338,6 +3338,23 @@ _ATTEST_OUTPUT_SCHEMA: dict[str, Any] = {
                     "description": "'loomweave' iff a client was supplied AND at least one SEI resolved; else "
                     "'unavailable'.",
                 },
+                "sei_diagnostics": {
+                    "type": "array",
+                    "description": "Per-boundary Loomweave identity-resolution diagnostics, sorted by qualname.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "qualname": {"type": "string"},
+                            "reason": {"type": "string"},
+                            "auth_status": {
+                                "type": ["integer", "null"],
+                                "enum": [401, 403, None],
+                            },
+                        },
+                        "required": ["qualname", "reason", "auth_status"],
+                        "additionalProperties": False,
+                    },
+                },
             },
             "required": [
                 "wardline_version",
@@ -3348,6 +3365,7 @@ _ATTEST_OUTPUT_SCHEMA: dict[str, Any] = {
                 "posture",
                 "boundaries",
                 "sei_source",
+                "sei_diagnostics",
             ],
             "additionalProperties": False,
         },

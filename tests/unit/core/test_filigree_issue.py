@@ -287,6 +287,22 @@ class LegacyLoomweave:
         return SimpleNamespace(current_content_hash="legacy-hash")
 
 
+class LegacyAuthRejectedLoomweave:
+    def __init__(self, status: int) -> None:
+        self._status = status
+        self.fact_calls: list[str] = []
+
+    def capabilities(self):
+        return None
+
+    def resolve(self, qualnames, *, plugin=None):
+        return SimpleNamespace(resolved={}, unresolved=[], auth_status=self._status)
+
+    def get_taint_fact(self, qualname):
+        self.fact_calls.append(qualname)
+        return SimpleNamespace(current_content_hash="must-not-be-used")
+
+
 def test_attach_loomweave_identity_attaches_resolved_sei(monkeypatch, tmp_path):
     from wardline.core import filigree_issue as mod
 
@@ -411,6 +427,22 @@ def test_attach_loomweave_identity_can_attach_legacy_locator_with_hash(monkeypat
     )
     assert transport.calls[0]["body"]["entity_id"] == "python:function:pkg.mod.leaky"
     assert transport.calls[0]["body"]["content_hash"] == "legacy-hash"
+
+
+@pytest.mark.parametrize("status", [401, 403])
+def test_legacy_locator_attachment_names_auth_rejection(status: int) -> None:
+    client = LegacyAuthRejectedLoomweave(status)
+    result = attach_loomweave_identity_for_qualname(
+        qualname="pkg.mod.leaky",
+        issue_id="wardline-1",
+        filer=FiligreeIssueFiler("http://f/api/weft/scan-results", transport=RecordingTransport()),
+        loomweave_client=client,
+    )
+
+    assert result.attached is False
+    assert result.reason is not None and str(status) in result.reason
+    assert "not resolve legacy locator" not in result.reason
+    assert client.fact_calls == []
 
 
 def test_attach_loomweave_identity_reports_association_failure(monkeypatch, tmp_path):

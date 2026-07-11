@@ -35,11 +35,20 @@ def _proj(tmp_path: Path) -> Path:
 class _FakeLoomweave:
     """A Loomweave that serves SEI + linkages over HTTP."""
 
-    def __init__(self, *, sei="loomweave:eid:abc", content_hash="ch", linkages_http=True, sei_supported=True):
+    def __init__(
+        self,
+        *,
+        sei="loomweave:eid:abc",
+        content_hash="ch",
+        linkages_http=True,
+        sei_supported=True,
+        auth_status=None,
+    ):
         self._sei = sei
         self._content_hash = content_hash
         self._linkages_http = linkages_http
         self._sei_supported = sei_supported
+        self._auth_status = auth_status
 
     def capabilities(self):
         return {
@@ -49,7 +58,8 @@ class _FakeLoomweave:
 
     def resolve(self, qualnames, *, plugin=None):
         self.plugin_hints = [*getattr(self, "plugin_hints", []), plugin]
-        return ResolveResult(resolved={q: f"python:function:{q}" for q in qualnames}, unresolved=[])
+        resolved = {} if self._auth_status is not None else {q: f"python:function:{q}" for q in qualnames}
+        return ResolveResult(resolved=resolved, unresolved=[], auth_status=self._auth_status)
 
     def resolve_identity(self, locator):
         return {"sei": self._sei, "current_locator": locator, "content_hash": self._content_hash, "alive": True}
@@ -123,6 +133,21 @@ def test_no_loomweave_no_filigree_is_self_only(tmp_path: Path) -> None:
     assert d.linkages.available is False
     assert d.work.available is False
     assert d.trust.gate_verdict == "defect"  # self posture still real
+
+
+@pytest.mark.parametrize("status", [401, 403])
+def test_dossier_surfaces_loomweave_auth_rejection_in_linkage_and_work_reasons(tmp_path: Path, status: int) -> None:
+    d = build_weft_dossier(
+        "svc.leaky",
+        root=_proj(tmp_path),
+        loomweave_client=_FakeLoomweave(auth_status=status),
+        filigree_url="http://filigree.example",
+        filigree_transport=_FakeFiligreeTransport('{"associations": []}'),
+    )
+
+    assert d.trust.gate_verdict == "defect"
+    assert str(status) in (d.linkages.reason or "")
+    assert str(status) in (d.work.reason or "")
 
 
 def test_pre_sei_loomweave_degrades_identity_but_keeps_self(tmp_path: Path) -> None:

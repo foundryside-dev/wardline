@@ -516,6 +516,15 @@ class _RaisingLoomweave(_FakeLoomweave):
         raise RuntimeError("loomweave unreachable")
 
 
+class _AuthRejectedLoomweave(_FakeLoomweave):
+    def __init__(self, status: int) -> None:
+        super().__init__(hit="")
+        self._status = status
+
+    def resolve(self, qualnames: list[str], *, plugin: str | None = None) -> ResolveResult:
+        return ResolveResult(resolved={}, unresolved=[], auth_status=self._status)
+
+
 def test_sei_keyed_bundle_fills_resolved_boundary_only(tmp_path: Path) -> None:
     tree = _annotated_tree(tmp_path)
     client = _FakeLoomweave(hit="m.leak")
@@ -546,6 +555,21 @@ def test_sei_enrichment_is_fail_soft(tmp_path: Path) -> None:
     assert payload["sei_source"] == "unavailable"
     assert all(b["sei"] is None for b in payload["boundaries"])
     assert verify_attestation(bundle, _KEY)["signature_valid"] is True
+
+
+@pytest.mark.parametrize("status", [401, 403])
+def test_attestation_records_auth_rejection_per_boundary(tmp_path: Path, status: int) -> None:
+    payload = build_attestation(
+        _annotated_tree(tmp_path),
+        _KEY,
+        loomweave_client=_AuthRejectedLoomweave(status),
+        today=_PINNED,
+    )["payload"]
+
+    assert payload["sei_source"] == "unavailable"
+    assert payload["sei_diagnostics"]
+    assert all(item["auth_status"] == status for item in payload["sei_diagnostics"])
+    assert all(str(status) in item["reason"] for item in payload["sei_diagnostics"])
 
 
 def test_no_loomweave_client_is_unavailable(tmp_path: Path) -> None:

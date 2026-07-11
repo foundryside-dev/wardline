@@ -658,7 +658,11 @@ def _build_trust(result: ScanResult, context: AnalysisContext, qualname: str) ->
     )
 
 
-def _linkages_from(provider: LinkageProvider | None, binding: EntityBinding | None) -> LinkagesSection:
+def _linkages_from(
+    provider: LinkageProvider | None,
+    binding: EntityBinding | None,
+    binding_unavailable_reason: str | None = None,
+) -> LinkagesSection:
     """Read the Loomweave linkages section fail-soft. No provider → not-configured; no
     binding → cannot key a cross-tool lookup; a raise → unreachable; a ``None`` return
     → no-opinion. The dossier never fails wholesale on an optional source (§8.1).
@@ -667,7 +671,7 @@ def _linkages_from(provider: LinkageProvider | None, binding: EntityBinding | No
     if provider is None:
         return LinkagesSection.unavailable("loomweave linkages not configured")
     if binding is None:
-        return LinkagesSection.unavailable("no entity binding: cannot resolve linkages")
+        return LinkagesSection.unavailable(binding_unavailable_reason or "no entity binding: cannot resolve linkages")
     try:
         section = provider.linkages(binding)
     except Exception as exc:  # fail-soft: an optional source is never load-bearing
@@ -675,13 +679,17 @@ def _linkages_from(provider: LinkageProvider | None, binding: EntityBinding | No
     return section if section is not None else LinkagesSection.unavailable("source returned no data")
 
 
-def _work_from(provider: WorkProvider | None, binding: EntityBinding | None) -> WorkSection:
+def _work_from(
+    provider: WorkProvider | None,
+    binding: EntityBinding | None,
+    binding_unavailable_reason: str | None = None,
+) -> WorkSection:
     """Read the Filigree open-work section fail-soft. Same None/no-binding/raise/None
     → ``unavailable`` contract as :func:`_linkages_from`."""
     if provider is None:
         return WorkSection.unavailable("filigree not configured")
     if binding is None:
-        return WorkSection.unavailable("no entity binding: cannot resolve work")
+        return WorkSection.unavailable(binding_unavailable_reason or "no entity binding: cannot resolve work")
     try:
         section = provider.work(binding)
     except Exception as exc:  # fail-soft: an optional source is never load-bearing
@@ -764,6 +772,7 @@ def build_dossier(
     config_path: Path | None = None,
     confine_to_root: bool = True,
     binding: EntityBinding | None = None,
+    binding_unavailable_reason: str | None = None,
     linkage_provider: LinkageProvider | None = None,
     work_provider: WorkProvider | None = None,
     budget: int = DOSSIER_TOKEN_BUDGET,
@@ -788,8 +797,8 @@ def build_dossier(
     identity = _build_identity(target, binding)
     shape = ShapeSection(signature=_signature_of(target.node), decorators=_decorators_of(target.node))
     trust = _build_trust(result, context, entity)
-    linkages = _linkages_from(linkage_provider, binding)
-    work = _work_from(work_provider, binding)
+    linkages = _linkages_from(linkage_provider, binding, binding_unavailable_reason)
+    work = _work_from(work_provider, binding, binding_unavailable_reason)
     synthesis = _synthesize(identity, trust, linkages, work)
     dossier = EntityDossier(
         identity=identity,

@@ -375,6 +375,38 @@
             "description": "Deterministic 'sha256:<hex>' over the effective scan policy.",
             "type": "string"
           },
+          "sei_diagnostics": {
+            "description": "Per-boundary Loomweave identity-resolution diagnostics, sorted by qualname.",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "auth_status": {
+                  "enum": [
+                    401,
+                    403,
+                    null
+                  ],
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "qualname": {
+                  "type": "string"
+                },
+                "reason": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "qualname",
+                "reason",
+                "auth_status"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
           "sei_source": {
             "description": "'loomweave' iff a client was supplied AND at least one SEI resolved; else 'unavailable'.",
             "enum": [
@@ -396,7 +428,8 @@
           "ruleset_hash",
           "posture",
           "boundaries",
-          "sei_source"
+          "sei_source",
+          "sei_diagnostics"
         ],
         "type": "object"
       },
