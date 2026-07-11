@@ -9,6 +9,7 @@ import pytest
 yaml = pytest.importorskip("yaml")
 
 from wardline.core import paths  # noqa: E402
+from wardline.core.errors import ConfigError  # noqa: E402
 from wardline.core.finding import Finding, Kind, Location, Severity  # noqa: E402
 from wardline.core.fingerprint_v0 import compute_finding_fingerprint_v0  # noqa: E402
 from wardline.core.rekey import probe, snapshot_dir  # noqa: E402
@@ -210,3 +211,18 @@ def test_probe_flags_a_scheme_less_prescheme_store(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     assert probe(root, [_finding()]).prescheme is True
+
+
+def test_probe_rejects_an_unknown_store_scheme_without_writing(tmp_path: Path) -> None:
+    root = tmp_path
+    state = paths.weft_state_dir(root)
+    state.mkdir(parents=True)
+    _write_store(state, "baseline.yaml", scheme="wlfp999", fingerprints=["a" * 64])
+    before = (state / "baseline.yaml").read_bytes()
+
+    with pytest.raises(ConfigError, match="unsupported fingerprint scheme 'wlfp999'"):
+        probe(root, [_finding()])
+
+    assert (state / "baseline.yaml").read_bytes() == before
+    assert not paths.migration_journal_path(root).exists()
+    assert not snapshot_dir(root).exists()

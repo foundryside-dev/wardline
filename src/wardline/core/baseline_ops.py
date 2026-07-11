@@ -18,6 +18,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from wardline.core.baseline import _is_baselineable_finding, write_baseline
+from wardline.core.confinement import SourceRootConfinement
 from wardline.core.finding import Finding, SuppressionState
 from wardline.core.paths import baseline_path as baseline_file
 from wardline.core.run import run_scan
@@ -29,7 +30,7 @@ def collect_and_write_baseline(
     overwrite: bool,
     config_path: Path | None = None,
     cache_dir: Path | None = None,
-    confine_to_root: bool = True,
+    source_root_confinement: SourceRootConfinement = SourceRootConfinement.PROJECT_ROOT,
     trust_local_packs: bool = False,
     trusted_packs: tuple[str, ...] = (),
     strict_defaults: bool = False,
@@ -56,7 +57,7 @@ def collect_and_write_baseline(
         root,
         config_path=config_path,
         cache_dir=cache_dir,
-        confine_to_root=confine_to_root,
+        source_root_confinement=source_root_confinement,
         trust_local_packs=trust_local_packs,
         trusted_packs=trusted_packs,
         strict_defaults=strict_defaults,
@@ -80,7 +81,7 @@ def generate_baseline(
     overwrite: bool,
     config_path: Path | None = None,
     cache_dir: Path | None = None,
-    confine_to_root: bool = True,
+    source_root_confinement: SourceRootConfinement = SourceRootConfinement.PROJECT_ROOT,
     trust_local_packs: bool = False,
     trusted_packs: tuple[str, ...] = (),
     strict_defaults: bool = False,
@@ -95,7 +96,7 @@ def generate_baseline(
             overwrite=overwrite,
             config_path=config_path,
             cache_dir=cache_dir,
-            confine_to_root=confine_to_root,
+            source_root_confinement=source_root_confinement,
             trust_local_packs=trust_local_packs,
             trusted_packs=trusted_packs,
             strict_defaults=strict_defaults,

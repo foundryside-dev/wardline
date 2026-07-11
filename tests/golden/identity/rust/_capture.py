@@ -34,6 +34,7 @@ from typing import TYPE_CHECKING, Any
 
 from golden.identity._capture import _finding_sort_key, to_json  # type: ignore[import-not-found]
 from wardline.core import config as config_mod
+from wardline.core.confinement import SourceRootConfinement
 from wardline.core.discovery import discover
 from wardline.core.finding import Finding, Kind
 from wardline.core.paths import weft_config_path
@@ -71,7 +72,12 @@ def _parsed_files(root: Path) -> list[RustParsedFile]:
     crate-root pass, same ``_module_for`` route, relative ``path`` labels only."""
     resolved_root = root.resolve()
     cfg = config_mod.load(weft_config_path(resolved_root), explicit=False)
-    files = discover(resolved_root, cfg, confine_to_root=True, suffixes=frozenset({".rs"}))
+    files = discover(
+        resolved_root,
+        cfg,
+        source_root_confinement=SourceRootConfinement.PROJECT_ROOT,
+        suffixes=frozenset({".rs"}),
+    )
     crate_roots = discover_crate_roots(resolved_root)
     sources = {file: file.read_text(encoding="utf-8") for file in files}
     # Same Amendment-8 pre-pass as the analyzer: per-crate #[path] mount overlays.

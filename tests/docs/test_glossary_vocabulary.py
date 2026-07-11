@@ -24,35 +24,35 @@ _GLOSSARY = _REPO / "docs" / "reference" / "finding-lifecycle-vocabulary.md"
 # ``(repo-relative path, 1-based line, substring required on that line)``.
 _ANCHORS: tuple[tuple[str, int, str], ...] = (
     # src/wardline/core/run.py — ScanSummary fields, gate population, delta-scope, gate_decision
-    ("src/wardline/core/run.py", 99, "total: int"),
-    ("src/wardline/core/run.py", 100, "active: int"),
-    ("src/wardline/core/run.py", 102, "baselined: int"),
-    ("src/wardline/core/run.py", 103, "waived: int"),
-    ("src/wardline/core/run.py", 104, "judged: int"),
-    ("src/wardline/core/run.py", 110, "informational: int"),
-    ("src/wardline/core/run.py", 118, "unanalyzed: int"),
-    ("src/wardline/core/run.py", 144, "gate_findings:"),
-    ("src/wardline/core/run.py", 196, "class GateDecision"),
-    ("src/wardline/core/run.py", 206, "verdict: str"),
-    ("src/wardline/core/run.py", 570, "Baseline(frozenset())"),
-    ("src/wardline/core/run.py", 598, "def apply_delta_scope"),
-    ("src/wardline/core/run.py", 659, "active=sum"),
-    ("src/wardline/core/run.py", 758, "honors_suppressions"),
+    ("src/wardline/core/run.py", 103, "total: int"),
+    ("src/wardline/core/run.py", 104, "active: int"),
+    ("src/wardline/core/run.py", 106, "baselined: int"),
+    ("src/wardline/core/run.py", 107, "waived: int"),
+    ("src/wardline/core/run.py", 108, "judged: int"),
+    ("src/wardline/core/run.py", 114, "informational: int"),
+    ("src/wardline/core/run.py", 122, "unanalyzed: int"),
+    ("src/wardline/core/run.py", 169, "gate_population: GatePopulation"),
+    ("src/wardline/core/run.py", 201, "class GateDecision"),
+    ("src/wardline/core/run.py", 211, "verdict: str"),
+    ("src/wardline/core/run.py", 594, "Baseline(frozenset())"),
+    ("src/wardline/core/run.py", 625, "def apply_delta_scope"),
+    ("src/wardline/core/run.py", 685, "active=sum"),
+    ("src/wardline/core/run.py", 775, "honors_suppressions"),
     # src/wardline/cli/scan.py — CLI summary line + gate stderr
-    ("src/wardline/cli/scan.py", 654, "suppressed"),
-    ("src/wardline/cli/scan.py", 655, "{s.active} active"),
-    ("src/wardline/cli/scan.py", 714, "gate: FAILED"),
+    ("src/wardline/cli/scan.py", 665, "suppressed"),
+    ("src/wardline/cli/scan.py", 666, "{s.active} active"),
+    ("src/wardline/cli/scan.py", 725, "gate: FAILED"),
     # src/wardline/mcp/server.py — MCP scan summary + gate block
-    ("src/wardline/mcp/server.py", 943, '"total": result.summary.total'),
-    ("src/wardline/mcp/server.py", 944, '"active": result.summary.active'),
-    ("src/wardline/mcp/server.py", 945, '"baselined": result.summary.baselined'),
-    ("src/wardline/mcp/server.py", 946, '"waived": result.summary.waived'),
-    ("src/wardline/mcp/server.py", 947, '"judged": result.summary.judged'),
-    ("src/wardline/mcp/server.py", 952, '"informational": result.summary.informational'),
-    ("src/wardline/mcp/server.py", 956, '"unanalyzed": result.summary.unanalyzed'),
-    ("src/wardline/mcp/server.py", 958, '"gate": {'),
-    ("src/wardline/mcp/server.py", 959, '"tripped": decision.tripped'),
-    ("src/wardline/mcp/server.py", 963, '"verdict": decision.verdict'),
+    ("src/wardline/mcp/server.py", 945, '"total": result.summary.total'),
+    ("src/wardline/mcp/server.py", 946, '"active": result.summary.active'),
+    ("src/wardline/mcp/server.py", 947, '"baselined": result.summary.baselined'),
+    ("src/wardline/mcp/server.py", 948, '"waived": result.summary.waived'),
+    ("src/wardline/mcp/server.py", 949, '"judged": result.summary.judged'),
+    ("src/wardline/mcp/server.py", 954, '"informational": result.summary.informational'),
+    ("src/wardline/mcp/server.py", 958, '"unanalyzed": result.summary.unanalyzed'),
+    ("src/wardline/mcp/server.py", 960, '"gate": {'),
+    ("src/wardline/mcp/server.py", 961, '"tripped": decision.tripped'),
+    ("src/wardline/mcp/server.py", 965, '"verdict": decision.verdict'),
     # src/wardline/core/agent_summary.py — agent-summary JSON keys
     ("src/wardline/core/agent_summary.py", 129, '"total_findings"'),
     ("src/wardline/core/agent_summary.py", 130, '"active_defects"'),
@@ -72,6 +72,53 @@ _ANCHORS: tuple[tuple[str, int, str], ...] = (
     # stable-file anchors (lower churn, but locked for free)
     ("src/wardline/core/finding.py", 77, 'ACTIVE = "active"'),
     ("src/wardline/core/suppression.py", 24, "SuppressionState.BASELINED"),
+)
+
+# Every concrete source citation in the cross-surface mapping table. Keep this
+# separate from _ANCHORS: a correct citation elsewhere in the glossary must not
+# mask a stale pointer inside the table itself.
+_MAPPING_TABLE_ANCHORS: tuple[tuple[str, str, int, str], ...] = (
+    ("every finding", "src/wardline/core/run.py", 103, "total: int"),
+    ("every finding", "src/wardline/mcp/server.py", 945, '"total": result.summary.total'),
+    ("every finding", "src/wardline/core/agent_summary.py", 129, '"total_findings"'),
+    ("live defect", "src/wardline/cli/scan.py", 666, "{s.active} active"),
+    ("live defect", "src/wardline/core/run.py", 104, "active: int"),
+    ("live defect", "src/wardline/core/run.py", 685, "active=sum"),
+    ("live defect", "src/wardline/mcp/server.py", 946, '"active": result.summary.active'),
+    ("live defect", "src/wardline/core/agent_summary.py", 130, '"active_defects"'),
+    ("live defect", "src/wardline/core/finding.py", 304, "if finding.suppressed is not SuppressionState.ACTIVE"),
+    ("suppressed (sum)", "src/wardline/cli/scan.py", 665, "suppressed"),
+    ("suppressed (sum)", "src/wardline/core/agent_summary.py", 131, '"suppressed_findings"'),
+    ("suppressed (sum)", "src/wardline/core/finding.py", 305, 'wardline["suppression_state"]'),
+    ("baselined", "src/wardline/core/run.py", 106, "baselined: int"),
+    ("baselined", "src/wardline/mcp/server.py", 947, '"baselined": result.summary.baselined'),
+    ("baselined", "src/wardline/core/agent_summary.py", 133, '"baselined"'),
+    ("waived", "src/wardline/core/run.py", 107, "waived: int"),
+    ("waived", "src/wardline/mcp/server.py", 948, '"waived": result.summary.waived'),
+    ("waived", "src/wardline/core/agent_summary.py", 134, '"waived"'),
+    ("judged", "src/wardline/core/run.py", 108, "judged: int"),
+    ("judged", "src/wardline/mcp/server.py", 949, '"judged": result.summary.judged'),
+    ("judged", "src/wardline/core/agent_summary.py", 135, '"judged"'),
+    ("informational (summary)", "src/wardline/core/run.py", 114, "informational: int"),
+    (
+        "informational (summary)",
+        "src/wardline/mcp/server.py",
+        954,
+        '"informational": result.summary.informational',
+    ),
+    ("informational (summary)", "src/wardline/core/agent_summary.py", 141, '"informational"'),
+    ("informational (display)", "src/wardline/core/agent_summary.py", 172, '"informational": informational'),
+    ("under-scan", "src/wardline/core/run.py", 122, "unanalyzed: int"),
+    ("under-scan", "src/wardline/mcp/server.py", 958, '"unanalyzed": result.summary.unanalyzed'),
+    ("under-scan", "src/wardline/core/agent_summary.py", 142, '"unanalyzed"'),
+    ("gate verdict", "src/wardline/core/run.py", 169, "gate_population: GatePopulation"),
+    ("gate verdict", "src/wardline/core/run.py", 201, "class GateDecision"),
+    ("gate verdict", "src/wardline/core/run.py", 211, "verdict: str"),
+    ("gate verdict", "src/wardline/mcp/server.py", 960, '"gate": {'),
+    ("gate verdict", "src/wardline/mcp/server.py", 961, '"tripped": decision.tripped'),
+    ("gate verdict", "src/wardline/mcp/server.py", 965, '"verdict": decision.verdict'),
+    ("gate verdict", "src/wardline/core/agent_summary.py", 145, '"tripped": self.gate.tripped'),
+    ("gate verdict", "src/wardline/core/agent_summary.py", 148, '"verdict": self.gate.verdict'),
 )
 
 
@@ -102,3 +149,18 @@ def test_glossary_anchors_bind_to_code() -> None:
         # comma/dash list (`run.py:49,280` / `run.py:82-92`). Require the line to appear.
         cite = re.compile(rf"`(?:[\w./-]+/)?{re.escape(base)}:[\d,\-]*\b{line}\b")
         assert cite.search(text), f"glossary no longer cites {base}:{line} (anchor {token!r})"
+
+
+def test_mapping_table_anchors_bind_to_code() -> None:
+    text = _GLOSSARY.read_text(encoding="utf-8")
+    table = text.split("## Cross-surface mapping table", 1)[1].split("\n\nThe unsuppressed", 1)[0]
+    rows = {}
+    for row in table.splitlines():
+        if row.startswith("|"):
+            rows[row.split("|")[1].strip()] = row
+    for concept, relpath, line, token in _MAPPING_TABLE_ANCHORS:
+        code = (_REPO / relpath).read_text(encoding="utf-8").splitlines()
+        assert token in code[line - 1], f"{relpath}:{line} no longer contains {token!r}"
+        base = relpath.rsplit("/", 1)[-1]
+        cite = re.compile(rf"`(?:[\w./-]+/)?{re.escape(base)}:[\d,\-]*\b{line}\b")
+        assert cite.search(rows[concept]), f"mapping table row {concept!r} no longer cites {base}:{line}"

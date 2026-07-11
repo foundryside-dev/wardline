@@ -21,6 +21,7 @@ from wardline.core.attest import build_attestation, verify_attestation
 from wardline.core.attest_key import load_attest_key
 from wardline.core.baseline import load_baseline
 from wardline.core.baseline_ops import generate_baseline
+from wardline.core.confinement import SourceRootConfinement
 from wardline.core.delta_scope import ScopeParseError, load_affected_scope, parse_affected_scope
 from wardline.core.errors import WardlineError
 from wardline.core.explain import explain_taint_result, explanation_from_context, explanation_to_dict
@@ -41,7 +42,7 @@ from wardline.core.finding_query import filter_findings
 from wardline.core.judge_run import run_judge
 from wardline.core.paths import baseline_path as baseline_file
 from wardline.core.paths import project_root_for, waivers_path, weft_config_path
-from wardline.core.run import baseline_migration_hint, gate_decision, run_scan
+from wardline.core.run import ScanResult, baseline_migration_hint, gate_decision, run_scan
 from wardline.core.scan_jobs import cancel_scan_job, read_scan_job_status, start_scan_job
 from wardline.core.sei_resolution import resolve_query_filters
 from wardline.core.waivers import add_waiver, load_project_waivers
@@ -131,6 +132,7 @@ def _emit_filigree(
         "auth_rejected": er.auth_rejected,
         "token_sent": er.token_sent,
         "url": redact_url_for_diagnostics(er.url),
+        "chunks_landed": er.chunks_landed,
         # N1 / C-10(a): name where findings went so a wrong-project write is visible.
         "destination": filigree_destination(er.url),
     }
@@ -810,7 +812,7 @@ def _scan(
         path,
         config_path=config_path,
         cache_dir=cache_dir,
-        confine_to_root=True,
+        source_root_confinement=SourceRootConfinement.PROJECT_ROOT,
         new_since=new_since,
         affected=affected,
         sei_resolver=sei_resolver,
@@ -980,16 +982,7 @@ def _scan(
     # structured payload is byte-identical to today when no scope was requested (INV-1).
     if result.scope is not None:
         response["scope"] = result.scope.to_dict()
-    _attach_legis_artifact(
-        response,
-        result,
-        path,
-        args,
-        config_path=config_path,
-        trust_local_packs=trust_local_packs,
-        trusted_packs=trusted_packs,
-        strict_defaults=strict_defaults,
-    )
+    _attach_legis_artifact(response, result, path, args)
     return response
 
 
@@ -1139,6 +1132,12 @@ _SCAN_OUTPUT_SCHEMA: dict[str, Any] = {
                             "rejected).",
                         },
                         "url": {"type": ["string", "null"], "description": "The endpoint attempted."},
+                        "chunks_landed": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "description": "Number of chunks Filigree accepted during this emit attempt; zero only "
+                            "when none landed.",
+                        },
                         "destination": {"$ref": "#/$defs/filigree_destination"},
                     },
                     "required": [
@@ -1152,6 +1151,7 @@ _SCAN_OUTPUT_SCHEMA: dict[str, Any] = {
                         "auth_rejected",
                         "token_sent",
                         "url",
+                        "chunks_landed",
                         "destination",
                     ],
                     "additionalProperties": False,
@@ -2128,14 +2128,9 @@ _SCAN_JOB_CANCEL_TOOL: dict[str, Any] = {
 
 def _attach_legis_artifact(
     response: dict[str, Any],
-    result: Any,
+    result: ScanResult,
     path: Path,
     args: dict[str, Any],
-    *,
-    config_path: Path | None,
-    trust_local_packs: bool,
-    trusted_packs: tuple[str, ...],
-    strict_defaults: bool,
 ) -> None:
     """Opt-in: attach the signed, verbatim-postable legis scan-artifact.
 
@@ -2167,21 +2162,8 @@ def _attach_legis_artifact(
         # (dogfood-4 B6 blew the MCP token cap exactly this way). An explicit
         # legis_artifact:true still wins when the caller asks for both.
         return
-
-    # ``config_path`` is the SAME value ``run_scan`` received (an explicit ``config`` arg
-    # resolves against the SERVER root, per the input schema). Re-resolving the arg here
-    # against the scan sub-path would (a) load a DIFFERENT policy than the one that
-    # produced ``result`` — a signed artifact whose rule_set_version/scan_scope
-    # misattribute provenance on the legis wire — and (b) raise on a root-relative config
-    # that does not exist under (or escapes) the sub-path, turning a completed scan into
-    # isError in violation of this block's fail-soft contract.
-    cfg = config_mod.load(
-        config_path or weft_config_path(path),
-        explicit=config_path is not None,
-        trust_local_packs=trust_local_packs,
-        trusted_packs=trusted_packs,
-        strict_defaults=strict_defaults,
-    )
+    if result.effective_config is None:
+        raise ToolError("scan result did not retain its effective configuration")
     key_bytes = key_str.encode("utf-8") if key_str else None
     allow_dirty = _bool_arg(args, "allow_dirty", False)
     status: dict[str, Any] = {
@@ -2191,7 +2173,13 @@ def _attach_legis_artifact(
         "reason": None,
     }
     try:
-        artifact = build_legis_artifact(result, root=path, config=cfg, key=key_bytes, allow_dirty=allow_dirty)
+        artifact = build_legis_artifact(
+            result,
+            root=path,
+            config=result.effective_config,
+            key=key_bytes,
+            allow_dirty=allow_dirty,
+        )
     except LegisArtifactError as exc:
         status["reason"] = str(exc)
         response["legis_artifact_status"] = status
@@ -2232,7 +2220,7 @@ def _explain_taint(args: dict[str, Any], root: Path, loomweave: Any = None) -> d
         path=match_path,
         line=args.get("line"),
         config_path=_cfg(args, root),
-        confine_to_root=True,
+        source_root_confinement=SourceRootConfinement.PROJECT_ROOT,
         loomweave=loomweave,
         sink_qualname=args.get("sink_qualname"),
         chain=_bool_arg(args, "chain", False),
@@ -2513,7 +2501,7 @@ def _dossier(
         loomweave_client=loomweave,
         filigree_url=filigree_url,
         config_path=_cfg(args, root),
-        confine_to_root=True,
+        source_root_confinement=SourceRootConfinement.PROJECT_ROOT,
     )
     return dossier.to_dict()
 
@@ -2802,7 +2790,11 @@ def _assure(args: dict[str, Any], root: Path) -> dict[str, Any]:
     unknown, plus waiver-debt. Identical to the CLI `assure` JSON by construction (both
     call ``build_posture``). Path/config confined under root like every rooted tool."""
     path = _resolve_under_root(root, args["path"]) if args.get("path") else root
-    posture = build_posture(path, config_path=_cfg(args, root), confine_to_root=True)
+    posture = build_posture(
+        path,
+        config_path=_cfg(args, root),
+        source_root_confinement=SourceRootConfinement.PROJECT_ROOT,
+    )
     return posture.to_dict()
 
 
@@ -2948,7 +2940,7 @@ def _decorator_coverage(
         loomweave_client=loomweave,
         filigree_url=filigree_url,
         config_path=_cfg(args, root),
-        confine_to_root=True,
+        source_root_confinement=SourceRootConfinement.PROJECT_ROOT,
     )
     return report.to_dict()
 
@@ -3184,7 +3176,7 @@ def _attest(args: dict[str, Any], root: Path, loomweave: Any = None) -> dict[str
         key,
         config_path=_cfg(args, root),
         cache_dir=_cache_dir_arg(args, root),
-        confine_to_root=True,
+        source_root_confinement=SourceRootConfinement.PROJECT_ROOT,
         trust_local_packs=_bool_arg(args, "trust_local_packs", False),
         trusted_packs=_trusted_packs_arg(args),
         strict_defaults=_bool_arg(args, "strict_defaults", False),
@@ -3338,6 +3330,23 @@ _ATTEST_OUTPUT_SCHEMA: dict[str, Any] = {
                     "description": "'loomweave' iff a client was supplied AND at least one SEI resolved; else "
                     "'unavailable'.",
                 },
+                "sei_diagnostics": {
+                    "type": "array",
+                    "description": "Per-boundary Loomweave identity-resolution diagnostics, sorted by qualname.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "qualname": {"type": "string"},
+                            "reason": {"type": "string"},
+                            "auth_status": {
+                                "type": ["integer", "null"],
+                                "enum": [401, 403, None],
+                            },
+                        },
+                        "required": ["qualname", "reason", "auth_status"],
+                        "additionalProperties": False,
+                    },
+                },
             },
             "required": [
                 "wardline_version",
@@ -3348,6 +3357,7 @@ _ATTEST_OUTPUT_SCHEMA: dict[str, Any] = {
                 "posture",
                 "boundaries",
                 "sei_source",
+                "sei_diagnostics",
             ],
             "additionalProperties": False,
         },
@@ -3425,7 +3435,7 @@ def _verify_attestation(args: dict[str, Any], root: Path, loomweave: Any = None)
         config_path=_cfg(args, root),
         cache_dir=_cache_dir_arg(args, root),
         loomweave_client=loomweave,
-        confine_to_root=True,
+        source_root_confinement=SourceRootConfinement.PROJECT_ROOT,
         trust_local_packs=_bool_arg(args, "trust_local_packs", False),
         trusted_packs=_trusted_packs_arg(args),
         strict_defaults=_bool_arg(args, "strict_defaults", False),
@@ -3511,7 +3521,7 @@ def _judge(args: dict[str, Any], root: Path) -> dict[str, Any]:
         model=args.get("model"),
         max_findings=args.get("max_findings"),
         write=_bool_arg(args, "write", False),
-        confine_to_root=True,
+        source_root_confinement=SourceRootConfinement.PROJECT_ROOT,
         trust_local_packs=_bool_arg(args, "trust_local_packs", False),
         trusted_packs=tuple(args.get("trust_packs") or []),
         trust_judge_config=_bool_arg(args, "trust_judge_config", False),
@@ -3628,7 +3638,7 @@ def _baseline(args: dict[str, Any], root: Path) -> dict[str, Any]:
             overwrite=overwrite,
             config_path=_cfg(args, root),
             cache_dir=_cache_dir_arg(args, root),
-            confine_to_root=True,
+            source_root_confinement=SourceRootConfinement.PROJECT_ROOT,
             trust_local_packs=_bool_arg(args, "trust_local_packs", False),
             trusted_packs=_trusted_packs_arg(args),
             strict_defaults=_bool_arg(args, "strict_defaults", False),
@@ -4220,7 +4230,7 @@ def _rekey(args: dict[str, Any], root: Path, filigree: Any = None) -> dict[str, 
             path,
             config_path=_cfg(args, root),
             cache_dir=_cache_dir_arg(args, root),
-            confine_to_root=True,
+            source_root_confinement=SourceRootConfinement.PROJECT_ROOT,
             trust_local_packs=_bool_arg(args, "trust_local_packs", False),
             trusted_packs=_trusted_packs_arg(args),
             strict_defaults=_bool_arg(args, "strict_defaults", False),
@@ -4511,7 +4521,11 @@ def _fix(args: dict[str, Any], root: Path) -> dict[str, Any]:
         from wardline.core.config import load
 
         cfg = load(cfg_path or weft_config_path(path), explicit=cfg_path is not None)
-        result = run_scan(path, config_path=cfg_path, confine_to_root=True)
+        result = run_scan(
+            path,
+            config_path=cfg_path,
+            source_root_confinement=SourceRootConfinement.PROJECT_ROOT,
+        )
     except WardlineError as exc:
         raise ToolError(str(exc)) from exc
 

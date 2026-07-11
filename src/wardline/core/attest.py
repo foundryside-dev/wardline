@@ -52,6 +52,7 @@ from wardline._version import __version__
 from wardline.core import config as config_mod
 from wardline.core.assure import _empty_posture, posture_from_scan
 from wardline.core.attest_key import key_id
+from wardline.core.confinement import SourceRootConfinement
 from wardline.core.dossier import classify_entity_trust
 from wardline.core.errors import AttestError
 from wardline.core.paths import weft_config_path
@@ -133,18 +134,20 @@ def _sign(payload: dict[str, Any], key: str, *, schema: str = ATTEST_SCHEMA) -> 
     return {"alg": "HMAC-SHA256", "value": value, "key_id": key_id(key)}
 
 
-def _enrich_seis(boundaries: list[dict[str, Any]], loomweave_client: Any) -> str:
+def _enrich_seis(boundaries: list[dict[str, Any]], loomweave_client: Any) -> tuple[str, list[dict[str, Any]]]:
     """Fill each boundary's ``sei`` from Loomweave, fail-soft per boundary.
 
-    Returns the ``sei_source``: ``"loomweave"`` if a client was supplied AND at least one
-    SEI resolved, else ``"unavailable"``. The Loomweave seam is an optional extra, so it is
-    imported LAZILY here (the module base stays zero-dependency). Any failure leaves
+    Returns ``(sei_source, diagnostics)``. The source is ``"loomweave"`` if a client
+    was supplied AND at least one SEI resolved, else ``"unavailable"``. Diagnostics
+    preserve status-aware resolution failures in boundary order. The Loomweave seam is
+    an optional extra, so it is imported LAZILY here (the module base stays zero-dependency). Any failure leaves
     ``sei=None`` and never crashes attestation: an outer ``try`` degrades the WHOLE
     enrichment (a capabilities / resolver-construction outage → ``"unavailable"``), and a
     per-qualname ``try`` keeps one unresolvable boundary from aborting the rest.
     """
+    diagnostics: list[dict[str, Any]] = []
     if loomweave_client is None:
-        return "unavailable"
+        return "unavailable", diagnostics
 
     try:
         from wardline.loomweave.dossier_sources import resolve_entity_binding
@@ -158,17 +161,27 @@ def _enrich_seis(boundaries: list[dict[str, Any]], loomweave_client: Any) -> str
             try:
                 # Boundaries come from the Python AnalysisContext (declared_qualnames),
                 # so the producer is known — send the ADR-036 plugin hint.
-                binding = resolve_entity_binding(loomweave_client, resolver, boundary["qualname"], plugin="python")
+                resolution = resolve_entity_binding(loomweave_client, resolver, boundary["qualname"], plugin="python")
             except Exception:  # noqa: BLE001 — per-boundary fail-soft, see docstring
                 continue
-            if binding is not None and binding.sei:
+            binding = resolution.binding
+            if binding is None:
+                diagnostics.append(
+                    {
+                        "qualname": boundary["qualname"],
+                        "reason": resolution.unavailable_reason or "Loomweave identity unavailable",
+                        "auth_status": resolution.auth_status,
+                    }
+                )
+                continue
+            if binding.sei:
                 boundary["sei"] = binding.sei
                 boundary["content_hash"] = binding.content_hash
                 resolved_any = True
     except Exception:  # noqa: BLE001 — whole-enrichment fail-soft, see docstring
-        return "unavailable"
+        return "unavailable", diagnostics
 
-    return "loomweave" if resolved_any else "unavailable"
+    return ("loomweave" if resolved_any else "unavailable"), diagnostics
 
 
 def _build_payload(
@@ -176,7 +189,7 @@ def _build_payload(
     *,
     config_path: Path | None,
     cache_dir: Path | None = None,
-    confine_to_root: bool = True,
+    source_root_confinement: SourceRootConfinement = SourceRootConfinement.PROJECT_ROOT,
     trust_local_packs: bool = False,
     trusted_packs: tuple[str, ...] = (),
     strict_defaults: bool = False,
@@ -204,7 +217,7 @@ def _build_payload(
         root,
         config_path=config_path,
         cache_dir=cache_dir,
-        confine_to_root=confine_to_root,
+        source_root_confinement=source_root_confinement,
         trust_local_packs=trust_local_packs,
         trusted_packs=trusted_packs,
         strict_defaults=strict_defaults,
@@ -215,6 +228,7 @@ def _build_payload(
         posture = _empty_posture(waivers, today)
         boundaries: list[dict[str, Any]] = []
         sei_source = "unavailable"  # no boundaries → nothing to key
+        sei_diagnostics: list[dict[str, Any]] = []
     else:
         posture = posture_from_scan(result, result.context, waivers=waivers, today=today)
         boundaries = []
@@ -229,7 +243,7 @@ def _build_payload(
                     "tier": verdict.declared_tier,
                 }
             )
-        sei_source = _enrich_seis(boundaries, loomweave_client)
+        sei_source, sei_diagnostics = _enrich_seis(boundaries, loomweave_client)
 
     return {
         "wardline_version": __version__,
@@ -240,6 +254,7 @@ def _build_payload(
         "posture": posture.to_dict(),
         "boundaries": boundaries,
         "sei_source": sei_source,
+        "sei_diagnostics": sei_diagnostics,
     }
 
 
@@ -249,7 +264,7 @@ def build_attestation(
     *,
     config_path: Path | None = None,
     cache_dir: Path | None = None,
-    confine_to_root: bool = True,
+    source_root_confinement: SourceRootConfinement = SourceRootConfinement.PROJECT_ROOT,
     trust_local_packs: bool = False,
     trusted_packs: tuple[str, ...] = (),
     strict_defaults: bool = False,
@@ -277,7 +292,7 @@ def build_attestation(
         root,
         config_path=config_path,
         cache_dir=cache_dir,
-        confine_to_root=confine_to_root,
+        source_root_confinement=source_root_confinement,
         trust_local_packs=trust_local_packs,
         trusted_packs=trusted_packs,
         strict_defaults=strict_defaults,
@@ -308,7 +323,7 @@ def verify_attestation(
     config_path: Path | None = None,
     cache_dir: Path | None = None,
     loomweave_client: Any = None,
-    confine_to_root: bool = True,
+    source_root_confinement: SourceRootConfinement = SourceRootConfinement.PROJECT_ROOT,
     trust_local_packs: bool = False,
     trusted_packs: tuple[str, ...] = (),
     strict_defaults: bool = False,
@@ -373,7 +388,7 @@ def verify_attestation(
         root,
         config_path=config_path,
         cache_dir=cache_dir,
-        confine_to_root=confine_to_root,
+        source_root_confinement=source_root_confinement,
         trust_local_packs=trust_local_packs,
         trusted_packs=trusted_packs,
         strict_defaults=strict_defaults,

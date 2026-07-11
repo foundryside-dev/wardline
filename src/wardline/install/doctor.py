@@ -19,7 +19,13 @@ from wardline.core import discovery, paths
 from wardline.core.baseline import inspect_baseline_store
 from wardline.core.config import ArtifactSettings, _filigree_published_url, filigree_server_scoped_url, load
 from wardline.core.errors import ConfigError, LoomweaveError, WardlineError
-from wardline.core.filigree_emit import FiligreeEmitter, Transport, UrllibTransport
+from wardline.core.filigree_emit import (
+    FiligreeEmitter,
+    Transport,
+    UrllibTransport,
+    filigree_url_project,
+    redact_url_for_diagnostics,
+)
 from wardline.core.http import WeftHttp
 from wardline.core.paths import legacy_sibling_dir, sibling_state_dir, weft_config_path, weft_state_dir
 from wardline.core.safe_paths import safe_project_path, safe_read_text_if_regular, safe_write_text
@@ -391,15 +397,69 @@ def _check_url(
     check_id = f"{key}.url"
     if effective_url:
         source = effective_url_source or f"--{key}-url launch flag"
-        if _valid_http_url(effective_url):
-            return DoctorCheck(check_id, "ok", fixed=fixed, message=f"from {source}")
-        return DoctorCheck(check_id, "error", fixed=False, message=f"invalid URL ({source}): {effective_url!r}")
+        if not _valid_http_url(effective_url):
+            return DoctorCheck(check_id, "error", fixed=False, message=f"invalid URL ({source}): {effective_url!r}")
+        if key == "filigree":
+            scope = _check_filigree_project_scope(root, effective_url, source, check_id=check_id)
+            if scope is not None:
+                return scope
+        return DoctorCheck(check_id, "ok", fixed=fixed, message=f"from {source}")
     url = os.environ.get(env_key)
-    if not url:
-        return DoctorCheck(check_id, "ok", fixed=fixed, message="not configured (no launch flag, no env)")
-    if _valid_http_url(url):
+    if url:
+        if not _valid_http_url(url):
+            return DoctorCheck(check_id, "error", fixed=False, message=f"invalid URL: {url!r}")
+        if key == "filigree":
+            scope = _check_filigree_project_scope(root, url, f"env {env_key}", check_id=check_id)
+            if scope is not None:
+                return scope
         return DoctorCheck(check_id, "ok", fixed=fixed, message=f"from env {env_key}")
-    return DoctorCheck(check_id, "error", fixed=False, message=f"invalid URL: {url!r}")
+    if key == "filigree":
+        target = _resolve_probe_target(root, None)
+        if target is not None:
+            if not _valid_http_url(target.url):
+                return DoctorCheck(
+                    check_id,
+                    "error",
+                    fixed=False,
+                    message=f"invalid URL ({target.source}): {target.url!r}",
+                )
+            scope = _check_filigree_project_scope(root, target.url, target.source, check_id=check_id)
+            if scope is not None:
+                return scope
+            return DoctorCheck(check_id, "ok", fixed=fixed, message=f"from {target.source}")
+    return DoctorCheck(check_id, "ok", fixed=fixed, message="not configured (no launch flag, no env)")
+
+
+def _filigree_project_scope_hint(source: str, scoped_url: str) -> str:
+    if source == "mcp":
+        return f"run `wardline doctor --repair` to rewrite .mcp.json to {scoped_url}"
+    if source == "env" or source.startswith("env "):
+        return f"unset WARDLINE_FILIGREE_URL or set it to {scoped_url}"
+    if source == "flag" or "launch flag" in source:
+        return f"update the --filigree-url launch flag to {scoped_url}"
+    return f"use {scoped_url} or add ?project= to the configured URL"
+
+
+def _check_filigree_project_scope(
+    root: Path,
+    url: str,
+    source: str,
+    *,
+    check_id: str,
+) -> DoctorCheck | None:
+    scoped_url = filigree_server_scoped_url(root)
+    if scoped_url is None or filigree_url_project(url) is not None:
+        return None
+    hint = _filigree_project_scope_hint(source, scoped_url)
+    redacted = redact_url_for_diagnostics(url)
+    return DoctorCheck(
+        check_id,
+        "error",
+        message=(
+            f"project-unpinned Filigree URL from {source}: {redacted}; "
+            f"server-mode registry expects {scoped_url}. {hint}"
+        ),
+    )
 
 
 def _check_decorator_grammar() -> DoctorCheck:
@@ -733,6 +793,9 @@ def _check_filigree_auth(
             "filigree daemon — start it with `filigree server start`",
         )
     url = target.url
+    scope = _check_filigree_project_scope(root, url, target.source, check_id="filigree.auth")
+    if scope is not None:
+        return scope
     if not _is_loopback(url):
         return DoctorCheck("filigree.auth", "ok", message="non-loopback filigree; token not probed")
     if not target.token_probe_allowed:

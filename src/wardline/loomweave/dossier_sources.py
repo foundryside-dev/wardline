@@ -15,6 +15,7 @@ at call time. Neither is inferred from the other.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol
 
 from wardline.core.dossier import LinkagesSection
@@ -38,6 +39,30 @@ class _ResolveClient(Protocol):
 
 class _Resolver(Protocol):
     def resolve_locator(self, locator: str) -> EntityBinding: ...
+
+
+def binding_unavailable_reason(qualname: str, auth_status: int | None) -> str:
+    if auth_status == 401:
+        return "Loomweave authentication rejected (401): align the federation/HMAC credential and clock, then retry"
+    if auth_status == 403:
+        return (
+            "Loomweave authorization rejected (403): verify the project, scope, and "
+            "permission; setting a token alone may not grant access"
+        )
+    return f"Loomweave returned no identity for {qualname}"
+
+
+@dataclass(frozen=True, slots=True)
+class BindingResolution:
+    binding: EntityBinding | None
+    unavailable_reason: str | None
+    auth_status: int | None
+
+    def __post_init__(self) -> None:
+        if self.binding is not None and (self.unavailable_reason is not None or self.auth_status is not None):
+            raise ValueError("a resolved binding cannot also be unavailable")
+        if self.auth_status not in (None, 401, 403):
+            raise ValueError("auth_status must be 401, 403, or None")
 
 
 class LoomweaveLinkageProvider:
@@ -81,13 +106,13 @@ class LoomweaveLinkageProvider:
 
 def resolve_entity_binding(
     client: _ResolveClient, resolver: _Resolver, qualname: str, *, plugin: str | None = None
-) -> EntityBinding | None:
+) -> BindingResolution:
     """Resolve a Wardline qualname to its opaque SEI :class:`EntityBinding`.
 
     Two hops, both via existing Track-3 surfaces: ``resolve`` maps the qualname to its
     Loomweave locator, then the ``SeiResolver`` maps the locator to its SEI binding (the
-    identity axis). Returns None when the qualname cannot be resolved to a locator (the
-    caller degrades to a no-binding, honest-unavailable dossier — never a guessed key).
+    identity axis). Returns an unavailable resolution when the qualname cannot be
+    resolved to a locator (the caller degrades honestly — never a guessed key).
 
     ``plugin`` is the batch-scoped producer hint (ADR-036): pass it when the caller
     KNOWS which frontend minted the qualname (attest boundaries and decorator coverage
@@ -95,7 +120,9 @@ def resolve_entity_binding(
     the language is genuinely unknown (a user-supplied dossier entity) — the contract
     never fabricates a hint."""
     rr = client.resolve([qualname], plugin=plugin)
-    locator = rr.resolved.get(qualname) if rr is not None else None
+    if rr is None:
+        return BindingResolution(None, "Loomweave unreachable while resolving identity", None)
+    locator = rr.resolved.get(qualname)
     if not locator:
-        return None
-    return resolver.resolve_locator(locator)
+        return BindingResolution(None, binding_unavailable_reason(qualname, rr.auth_status), rr.auth_status)
+    return BindingResolution(resolver.resolve_locator(locator), None, None)

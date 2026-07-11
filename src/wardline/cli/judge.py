@@ -15,6 +15,7 @@ import click
 
 from wardline.core import config as config_mod
 from wardline.core.config import parse_judge_settings
+from wardline.core.confinement import SourceRootConfinement
 from wardline.core.errors import JudgeContractError, WardlineError
 from wardline.core.judge import JudgeRequest, JudgeResponse, JudgeVerdict, call_judge
 from wardline.core.judge_run import (
@@ -122,7 +123,7 @@ def judge(
             context_lines=context_lines,
             max_findings=max_findings,
             write=do_write,
-            confine_to_root=True,
+            source_root_confinement=SourceRootConfinement.PROJECT_ROOT,
             trust_local_packs=trust_local_packs,
             trusted_packs=trusted_packs,
             trust_judge_config=trust_judge_config,

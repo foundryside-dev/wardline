@@ -258,7 +258,7 @@ def test_artifact_includes_all_findings_projected(tmp_path) -> None:
     # artifact carries every finding — including engine FACTs — each projected so its
     # non-tier diagnostics (here {"source_root": "pkg"}) can't 422 legis. Non-defect
     # kinds simply aren't routed; they still count.
-    from wardline.core.run import ScanResult, ScanSummary
+    from wardline.core.run import GatePopulation, ScanResult, ScanSummary
 
     loc = Location(path="svc.py", line_start=1, line_end=1, col_start=0, col_end=0)
     defect = _finding(properties={"declared_return": "INTEGRAL", "actual_return": "EXTERNAL_RAW"})
@@ -277,6 +277,7 @@ def test_artifact_includes_all_findings_projected(tmp_path) -> None:
         summary=ScanSummary(total=2, active=1, baselined=0, waived=0, judged=0, unanalyzed=1),
         files_scanned=1,
         context=None,
+        gate_population=GatePopulation.honoring((defect, fact)),
     )
     repo = tmp_path / "norepo"
     repo.mkdir()
@@ -359,13 +360,14 @@ def _scope(mode: str = "delta", gate_authority: str = "advisory") -> DeltaScopeR
 
 
 def _result_with_scope(scope: DeltaScopeReport):
-    from wardline.core.run import ScanResult, ScanSummary
+    from wardline.core.run import GatePopulation, ScanResult, ScanSummary
 
     return ScanResult(
         findings=[_finding()],
         summary=ScanSummary(total=1, active=1, baselined=0, waived=0, judged=0),
         files_scanned=1,
         context=None,
+        gate_population=GatePopulation.honoring((_finding(),)),
         scanned_paths=("svc.py", "other.py"),
         analyzed_paths=("svc.py",),
         scope=scope,

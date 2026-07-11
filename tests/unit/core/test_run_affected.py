@@ -6,7 +6,7 @@ These tests pin the wiring ``run_scan`` adds between discovery and analysis:
 * the full path is unchanged when ``affected is None`` (INV-1) — proven by a spy that
   ``build_qualname_index`` is NOT called on the full-scan path;
 * ``affected`` + ``new_since`` together is a loud ``ScopeParseError``;
-* in delta mode ``gate_findings`` RETAINS a display-excluded ERROR in an analyzed file
+* in delta mode ``gate population findings`` RETAINS a display-excluded ERROR in an analyzed file
   (the gate population is NEVER narrowed by the entity filter — INV-4 / THREAT-001);
 * a clean advisory delta subset is NOT a gate-of-record PASS for skipped files.
 """
@@ -20,7 +20,7 @@ import pytest
 
 from wardline.core.delta_scope import ScopeParseError, parse_affected_scope
 from wardline.core.finding import Kind, Severity, SuppressionState
-from wardline.core.run import gate_decision, run_scan
+from wardline.core.run import GateSuppressionPosture, gate_decision, run_scan
 
 # A trusted boundary returning an external-tainted value: PY-WL-101 ERROR defect.
 # Mirrors ``_LEAKY`` in test_run.py — the entity ``leaky`` carries the ERROR.
@@ -32,7 +32,7 @@ _LEAKY = (
 
 # Two CO-LOCATED leaky entities in one module: ``alpha`` and ``beta``. A worklist naming
 # only ``alpha`` displays alpha's finding, drops beta's from the displayed set, but keeps
-# beta's finding in ``gate_findings`` (the file IS analyzed; the display filter never
+# beta's finding in ``gate population findings`` (the file IS analyzed; the display filter never
 # touches the gate population — INV-4 at the Phase 3 seam).
 _TWO_ENTITY = (
     "from wardline.decorators import external_boundary, trusted\n"
@@ -148,9 +148,9 @@ def test_affected_and_new_since_mutually_exclusive(tmp_path: Path) -> None:
         run_scan(proj, affected=scope, new_since="origin/main")
 
 
-def test_delta_gate_findings_retains_out_of_scope_finding(tmp_path: Path) -> None:
+def test_delta_gate_population_retains_out_of_scope_finding(tmp_path: Path) -> None:
     """INV-4 / THREAT-001: a worklist naming only ``alpha`` narrows the DISPLAYED findings
-    (``beta`` dropped) but the gate population (``gate_findings``) STILL contains ``beta``'s
+    (``beta`` dropped) but the tagged gate population STILL contains ``beta``'s
     ERROR — the display filter NEVER narrows the gate, so an attacker-influenceable scope
     cannot forge a green by excluding a co-located sink."""
     proj = _co_located_proj(tmp_path)
@@ -162,12 +162,12 @@ def test_delta_gate_findings_retains_out_of_scope_finding(tmp_path: Path) -> Non
     assert result.scope is not None and result.scope.mode == "delta"
     # Displayed: only alpha. Gate population: BOTH (never narrowed by the filter).
     assert _py101_quals(result.findings) == {"svc.alpha"}
-    assert result.gate_findings is not None
-    assert _py101_quals(result.gate_findings) == {"svc.alpha", "svc.beta"}
+    assert result.gate_population.posture is GateSuppressionPosture.UNSUPPRESSED
+    assert _py101_quals(result.gate_population.findings) == {"svc.alpha", "svc.beta"}
     # The display-excluded beta ERROR is still live in the gate population.
     beta_in_gate = [
         f
-        for f in result.gate_findings
+        for f in result.gate_population.findings
         if f.rule_id == "PY-WL-101" and f.qualname == "svc.beta" and f.suppressed is SuppressionState.ACTIVE
     ]
     assert beta_in_gate
@@ -224,10 +224,9 @@ def test_delta_gate_decision_is_not_evaluated_for_advisory_subset(tmp_path: Path
 
 
 def test_delta_trust_suppressions_gate_population_is_unfiltered(tmp_path: Path) -> None:
-    """INV-4 / THREAT-001 under ``--trust-suppressions``: a delta scan MATERIALISES a
-    concrete gate population (post-suppression, pre-delta-filter) instead of leaving
-    ``gate_findings`` at the ``None`` sentinel — otherwise the gate would fall back to the
-    delta-FILTERED ``findings`` and a surgical-exclusion worklist could forge a green.
+    """INV-4 / THREAT-001 under ``--trust-suppressions``: a delta scan retains the
+    concrete post-suppression, pre-delta-filter gate population while narrowing only the
+    displayed findings, so a surgical-exclusion worklist cannot forge a green.
 
     The displayed ``findings`` are narrowed to ``alpha``, but the gate population retains
     BOTH co-located ERROR sinks, and the posture still HONORS suppressions (``--trust-
@@ -237,14 +236,11 @@ def test_delta_trust_suppressions_gate_population_is_unfiltered(tmp_path: Path) 
 
     result = run_scan(proj, affected=scope, trust_suppressions=True)
 
-    # Displayed: only alpha. Gate population: a CONCRETE list carrying BOTH sinks —
-    # never the None sentinel (which would fall back to the filtered display set).
+    # Displayed: only alpha. The mandatory tagged gate population carries BOTH sinks.
     assert _py101_quals(result.findings) == {"svc.alpha"}
-    assert result.gate_findings is not None
-    assert _py101_quals(result.gate_findings) == {"svc.alpha", "svc.beta"}
-    # The posture is still trust-suppressions (the verdict honors repo suppressions),
-    # but it is carried EXPLICITLY, decoupled from the gate_findings sentinel.
-    assert result.honors_suppressions is True
+    assert result.gate_population.posture is GateSuppressionPosture.HONORS_SUPPRESSIONS
+    assert _py101_quals(result.gate_population.findings) == {"svc.alpha", "svc.beta"}
+    # The posture is still trust-suppressions: the verdict honors repo suppressions.
 
 
 def test_delta_trust_suppressions_cannot_forge_green(tmp_path: Path) -> None:

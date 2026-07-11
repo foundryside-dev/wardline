@@ -197,9 +197,11 @@ confidence floor.
 
 ## A note on line sensitivity
 
-All three layers key on the full fingerprint, which includes the finding's start
-line (a deliberate strict-matching dial). A cosmetic edit that shifts a line —
-adding an import or a docstring — re-keys the finding: a previously
-baselined/waived/judged defect resurfaces as active. After a refactor that moves
-lines, regenerate the baseline (`wardline baseline update`) and re-copy any
-affected waiver fingerprints.
+All three layers key on the full `wlfp2` fingerprint, whose core formula is
+line-insensitive: absolute `line_start` is display/SARIF data and is not hashed.
+Moving an otherwise unchanged function or adding lines above it therefore keeps
+the same suppression join. A source edit *inside* an entity can still re-key a
+finding when it changes the source-derived discriminator (for example, a sink's
+entity-relative span), and renaming a path or qualname also changes identity.
+After those identity-bearing refactors, regenerate the baseline
+(`wardline baseline update`) and re-copy affected waiver fingerprints.

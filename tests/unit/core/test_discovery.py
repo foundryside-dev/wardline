@@ -1,7 +1,11 @@
 from pathlib import Path
 
+import pytest
+
 from wardline.core.config import WardlineConfig
+from wardline.core.confinement import SourceRootConfinement
 from wardline.core.discovery import discover
+from wardline.core.errors import ConfigError
 
 FIXTURE = Path(__file__).parents[2] / "fixtures" / "sample_project"
 
@@ -66,12 +70,40 @@ def test_confine_excludes_symlink_escaping_root(tmp_path: Path) -> None:
     (src / "evil.py").symlink_to(secret)
 
     cfg = WardlineConfig(source_roots=("src",))
-    files = discover(root, cfg, confine_to_root=True)
+    files = discover(root, cfg, source_root_confinement=SourceRootConfinement.PROJECT_ROOT)
 
     resolved = {p.resolve() for p in files}
     assert secret.resolve() not in resolved
     assert real.resolve() in resolved
     assert all(p.name != "evil.py" for p in files)
+
+
+def test_confined_in_root_symlink_returns_validated_canonical_target(tmp_path: Path) -> None:
+    root = tmp_path / "root"
+    src = root / "src"
+    targets = root / "targets"
+    src.mkdir(parents=True)
+    targets.mkdir()
+    target = targets / "service.py"
+    target.write_text("def service(): return 1\n", encoding="utf-8")
+    (src / "alias.py").symlink_to(target)
+
+    files = discover(root, WardlineConfig(source_roots=("src",)))
+
+    assert files == [target.resolve()]
+
+
+def test_confined_symlink_alias_deduplicates_canonical_target(tmp_path: Path) -> None:
+    root = tmp_path / "root"
+    src = root / "src"
+    src.mkdir(parents=True)
+    target = src / "service.py"
+    target.write_text("def service(): return 1\n", encoding="utf-8")
+    (src / "alias.py").symlink_to(target)
+
+    files = discover(root, WardlineConfig(source_roots=("src",)))
+
+    assert files == [target.resolve()]
 
 
 def test_discover_rust_suffix(tmp_path: Path) -> None:
@@ -156,9 +188,7 @@ def test_repo_gitignore_cannot_hide_source_from_discovery(tmp_path: Path) -> Non
 def test_discover_rust_symlink_confined(tmp_path: Path) -> None:
     # The THREAT-001 confinement invariant holds for `.rs` discovery too: a `.rs`
     # file-symlink inside a legitimate source_root pointing OUTSIDE the root is
-    # skipped with WLN-ENGINE-FILE-SKIPPED under confine_to_root, never read.
-    import pytest
-
+    # skipped with WLN-ENGINE-FILE-SKIPPED under PROJECT_ROOT, never read.
     outside = tmp_path / "outside"
     outside.mkdir()
     secret = outside / "secret.rs"
@@ -173,7 +203,12 @@ def test_discover_rust_symlink_confined(tmp_path: Path) -> None:
 
     cfg = WardlineConfig(source_roots=("src",))
     with pytest.warns(UserWarning, match="WLN-ENGINE-FILE-SKIPPED"):
-        files = discover(root, cfg, confine_to_root=True, suffixes=frozenset({".rs"}))
+        files = discover(
+            root,
+            cfg,
+            source_root_confinement=SourceRootConfinement.PROJECT_ROOT,
+            suffixes=frozenset({".rs"}),
+        )
 
     resolved = {p.resolve() for p in files}
     assert secret.resolve() not in resolved
@@ -322,7 +357,12 @@ def test_gitignore_does_not_prune_outside_root(tmp_path: Path) -> None:
     (data / "keep.py").write_text("x = 1\n", encoding="utf-8")
 
     cfg = WardlineConfig(source_roots=("../sibling",))
-    files = discover(root, cfg, respect_gitignore=True)
+    files = discover(
+        root,
+        cfg,
+        source_root_confinement=SourceRootConfinement.LEGACY_ALLOW_ESCAPE,
+        respect_gitignore=True,
+    )
 
     # The root's `data/` rule must not reach into the out-of-root sibling tree.
     rel = sorted(p.name for p in files)
@@ -343,6 +383,22 @@ def test_no_confine_keeps_low_level_symlink_escape_behavior(tmp_path: Path) -> N
     (src / "evil.py").symlink_to(secret)
 
     cfg = WardlineConfig(source_roots=("src",))
-    files = discover(root, cfg)  # confine_to_root defaults to False
+    files = discover(
+        root,
+        cfg,
+        source_root_confinement=SourceRootConfinement.LEGACY_ALLOW_ESCAPE,
+    )
 
     assert any(p.name == "evil.py" for p in files)
+
+
+def test_discover_secure_default_rejects_poisoned_source_root(tmp_path: Path) -> None:
+    root = tmp_path / "root"
+    root.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "secret.py").write_text("SECRET = 1\n", encoding="utf-8")
+    cfg = WardlineConfig(source_roots=("../outside",))
+
+    with pytest.raises(ConfigError, match="outside the project root"):
+        discover(root, cfg)

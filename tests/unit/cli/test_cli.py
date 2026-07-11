@@ -406,6 +406,189 @@ def test_scan_format_legis_default_output_path(tmp_path: Path) -> None:
     assert not (repo / "scan.legis.json").exists()
 
 
+def _legis_cli_result(config, *, fixable: bool = False):
+    from wardline.core.finding import Finding, Kind, Location, Severity
+    from wardline.core.run import GatePopulation, ScanResult, ScanSummary
+
+    findings = []
+    if fixable:
+        findings.append(
+            Finding(
+                rule_id="PY-WL-111",
+                message="replace an assert boundary",
+                severity=Severity.WARN,
+                kind=Kind.SUGGESTION,
+                location=Location(path="svc.py", line_start=1),
+                fingerprint="f" * 64,
+            )
+        )
+    return ScanResult(
+        findings=findings,
+        summary=ScanSummary(
+            total=len(findings),
+            active=0,
+            baselined=0,
+            waived=0,
+            judged=0,
+            informational=len(findings),
+        ),
+        files_scanned=1,
+        context=None,
+        gate_population=GatePopulation.honoring(findings),
+        scanned_paths=("svc.py",),
+        analyzed_paths=("svc.py",),
+        effective_config=config,
+    )
+
+
+@pytest.mark.parametrize("config_mode", ["default", "explicit-pack", "strict-defaults"])
+@pytest.mark.parametrize("signed", [False, True])
+def test_scan_format_legis_uses_exact_scan_config(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    config_mode: str,
+    signed: bool,
+) -> None:
+    """The Legis wire must describe the policy that produced the findings.
+
+    The CLI performs a preliminary config load for non-scan output concerns, while
+    ``run_scan`` owns the effective analysis config. Keep those objects deliberately
+    different so this test catches the old stale-config handoff on both signed and
+    unsigned artifact paths.
+    """
+    import wardline.cli.scan as scan_mod
+    import wardline.core.legis as legis_mod
+    from wardline.core.config import WardlineConfig
+    from wardline.core.ruleset import ruleset_hash
+
+    repo = _legis_committed_repo(tmp_path)
+    out = tmp_path / "scan.legis.json"
+    preliminary = WardlineConfig(source_roots=("preliminary",), rules_severity={"PY-WL-101": "WARN"})
+    effective = WardlineConfig(source_roots=("effective",), rules_severity={"PY-WL-101": "ERROR"})
+    scan_result = _legis_cli_result(effective)
+    run_kwargs: list[dict] = []
+    built_with = []
+    real_build = legis_mod.build_legis_artifact
+
+    monkeypatch.setattr(scan_mod, "load_config", lambda *args, **kwargs: preliminary)
+
+    def recording_scan(*args, **kwargs):
+        run_kwargs.append(dict(kwargs))
+        return scan_result
+
+    def recording_build(result, *, root, config, key, allow_dirty=False):
+        built_with.append(config)
+        return real_build(result, root=root, config=config, key=key, allow_dirty=allow_dirty)
+
+    monkeypatch.setattr(scan_mod, "run_scan", recording_scan)
+    monkeypatch.setattr(legis_mod, "build_legis_artifact", recording_build)
+
+    args = ["scan", str(repo), "--format", "legis", "--output", str(out), "--local-only"]
+    if config_mode == "explicit-pack":
+        args.extend(
+            [
+                "--config",
+                str(repo / "wardline.yaml"),
+                "--trust-pack",
+                "trusted.example",
+                "--allow-custom-packs",
+            ]
+        )
+    elif config_mode == "strict-defaults":
+        args.append("--strict-defaults")
+
+    env = {"WARDLINE_LEGIS_ARTIFACT_KEY": "devkey"} if signed else {"WARDLINE_LEGIS_ARTIFACT_KEY": ""}
+    result = CliRunner().invoke(cli, args, env=env)
+
+    assert result.exit_code == 0, result.output
+    assert built_with == [effective]
+    artifact = _json.loads(out.read_text(encoding="utf-8"))
+    assert artifact["rule_set_version"] == ruleset_hash(effective)
+    assert artifact["rule_set_version"] != ruleset_hash(preliminary)
+    assert artifact["scan_scope"]["source_roots"] == ["effective"]
+    assert artifact["scan_scope"]["resolved_source_roots"] == ["effective"]
+    assert ("artifact_signature" in artifact) is signed
+    assert len(run_kwargs) == 1
+    assert run_kwargs[0]["strict_defaults"] is (config_mode == "strict-defaults")
+    assert run_kwargs[0]["trust_local_packs"] is (config_mode == "explicit-pack")
+    assert run_kwargs[0]["trusted_packs"] == (("trusted.example",) if config_mode == "explicit-pack" else ())
+
+
+def test_scan_format_legis_fix_rescan_uses_final_scan_config(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import wardline.cli.scan as scan_mod
+    import wardline.core.autofix as autofix_mod
+    import wardline.core.legis as legis_mod
+    from wardline.core.config import WardlineConfig
+    from wardline.core.ruleset import ruleset_hash
+
+    repo = _legis_committed_repo(tmp_path)
+    out = tmp_path / "scan.legis.json"
+    preliminary = WardlineConfig(source_roots=("preliminary",))
+    initial = WardlineConfig(source_roots=("initial",), rules_severity={"PY-WL-101": "WARN"})
+    final = WardlineConfig(source_roots=("final",), rules_severity={"PY-WL-101": "ERROR"})
+    results = iter((_legis_cli_result(initial, fixable=True), _legis_cli_result(final)))
+    built_with = []
+    real_build = legis_mod.build_legis_artifact
+
+    monkeypatch.setattr(scan_mod, "load_config", lambda *args, **kwargs: preliminary)
+    monkeypatch.setattr(scan_mod, "run_scan", lambda *args, **kwargs: next(results))
+    monkeypatch.setattr(autofix_mod, "run_autofix", lambda *args, **kwargs: 1)
+
+    def recording_build(result, *, root, config, key, allow_dirty=False):
+        built_with.append(config)
+        return real_build(result, root=root, config=config, key=key, allow_dirty=allow_dirty)
+
+    monkeypatch.setattr(legis_mod, "build_legis_artifact", recording_build)
+
+    result = CliRunner().invoke(
+        cli,
+        ["scan", str(repo), "--fix", "--yes", "--format", "legis", "--output", str(out), "--local-only"],
+        env={"WARDLINE_LEGIS_ARTIFACT_KEY": ""},
+    )
+
+    assert result.exit_code == 0, result.output
+    assert built_with == [final]
+    artifact = _json.loads(out.read_text(encoding="utf-8"))
+    assert artifact["rule_set_version"] == ruleset_hash(final)
+    assert artifact["scan_scope"]["source_roots"] == ["final"]
+
+
+def test_scan_missing_effective_config_fails_only_for_legis(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from dataclasses import replace
+
+    import wardline.cli.scan as scan_mod
+    from wardline.core.config import WardlineConfig
+
+    repo = _legis_committed_repo(tmp_path)
+    preliminary = WardlineConfig()
+    result_without_config = replace(_legis_cli_result(preliminary), effective_config=None)
+    monkeypatch.setattr(scan_mod, "load_config", lambda *args, **kwargs: preliminary)
+    monkeypatch.setattr(scan_mod, "run_scan", lambda *args, **kwargs: result_without_config)
+
+    jsonl_out = tmp_path / "scan.jsonl"
+    jsonl = CliRunner().invoke(
+        cli,
+        ["scan", str(repo), "--format", "jsonl", "--output", str(jsonl_out), "--local-only"],
+    )
+    legis_out = tmp_path / "scan.legis.json"
+    legis = CliRunner().invoke(
+        cli,
+        ["scan", str(repo), "--format", "legis", "--output", str(legis_out), "--local-only"],
+        env={"WARDLINE_LEGIS_ARTIFACT_KEY": ""},
+    )
+
+    assert jsonl.exit_code == 0, jsonl.output
+    assert legis.exit_code == 2
+    assert "did not retain its effective configuration" in legis.output
+    assert not legis_out.exists()
+
+
 _LEAKY_SRC = (
     "from wardline.decorators import external_boundary, trusted\n"
     "@external_boundary\ndef raw(p):\n    return p\n"
@@ -439,6 +622,28 @@ def test_scan_armed_gate_pass_prints_verdict_and_population(tmp_path: Path) -> N
     assert result.exit_code == 0, result.output
     assert "gate: PASSED (--fail-on ERROR) — no ERROR+ defects in the evaluated population" in result.output
     assert "gate: evaluated unsuppressed" in result.output
+
+
+def test_scan_armed_gate_over_empty_configured_root_is_not_evaluated(tmp_path: Path) -> None:
+    project = tmp_path / "proj"
+    source_root = project / "src"
+    source_root.mkdir(parents=True)
+    (project / "weft.toml").write_text(
+        '[wardline]\nsource_roots = ["src"]\n',
+        encoding="utf-8",
+    )
+    out = tmp_path / "o.jsonl"
+
+    result = CliRunner().invoke(
+        cli,
+        ["scan", str(project), "--fail-on", "ERROR", "--output", str(out), "--local-only"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "scanned 0 file(s)" in result.output
+    assert "gate: NOT_EVALUATED" in result.output
+    assert "no_files_scanned" in result.output
+    assert "gate: PASSED" not in result.output
 
 
 def test_scan_armed_gate_pass_verdict_names_both_knobs(tmp_path: Path) -> None:
@@ -1274,6 +1479,26 @@ def test_scan_loomweave_write_success(tmp_path, monkeypatch) -> None:
     result = CliRunner().invoke(scan, [str(proj), "--output", str(out), "--loomweave-url", "http://x/api/taint"])
     assert result.exit_code == 0, result.output
     assert "wrote 2 taint fact(s) to http://x/api/taint" in result.output
+
+
+def test_scan_loomweave_zero_facts_is_neutral_no_attempt(tmp_path) -> None:
+    from wardline.loomweave.write import NO_FACTS_REASON
+
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    _write(proj, "README.md", "docs only\n")
+    out = tmp_path / "f.jsonl"
+
+    result = CliRunner().invoke(
+        scan,
+        [str(proj), "--output", str(out), "--loomweave-url", "http://loomweave.example/api"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert NO_FACTS_REASON in result.output
+    assert "warning: Loomweave" not in result.output
+    assert "taint store not written" not in result.output
+    assert "http://loomweave.example" not in result.output  # no claim that the peer was reached
 
 
 def test_scan_loomweave_soft_outage_does_not_change_exit(tmp_path, monkeypatch) -> None:

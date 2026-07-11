@@ -16,6 +16,12 @@ Every tool is rooted at the launch project path (`--root`, default cwd). Any
 `path`/`config`/`cache_dir`/`output` argument is confined under that root —
 the same containment guarantee as the CLI.
 
+Confinement is applied twice. First, MCP `path`, `config`, `cache_dir`, and output
+arguments are resolved under the server root by `resolve_under_root`. Second, after an
+allowed config is loaded, `SourceRootConfinement.PROJECT_ROOT` independently rejects
+escaping `source_roots` and skips escaping source-file symlinks during discovery. Passing
+the first check does not certify paths named inside the config.
+
 For the matching command-line surface, see the [CLI reference](cli.md).
 
 ## Tool capability matrix

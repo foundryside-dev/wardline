@@ -104,6 +104,33 @@ def test_scan_results_body_disables_mark_unseen_for_function_skip() -> None:
     assert body["findings"][0]["rule_id"] == "WLN-ENGINE-FUNCTION-SKIPPED"
 
 
+def test_pydantic_discovery_limit_suppresses_reconciliation_through_emit() -> None:
+    degraded = _f(
+        rule_id="WLN-ENGINE-PYDANTIC-DISCOVERY-LIMIT",
+        severity=Severity.ERROR,
+        kind=Kind.DEFECT,
+        location=Location(path="<engine>", line_start=1),
+        fingerprint="d" * 64,
+        properties={"reason": "work_budget_exceeded"},
+    )
+    envelope = build_scan_results_body(
+        [degraded],
+        scanned_paths=("src/m.py",),
+        mark_unseen=True,
+    )
+    assert envelope["mark_unseen"] is False
+
+    transport = _FakeTransport(response=Response(status=200, body=_ok_body()))
+    FiligreeEmitter("http://x/api/weft/scan-results", transport=transport).emit(
+        [degraded],
+        scanned_paths=("src/m.py",),
+        mark_unseen=True,
+    )
+    emitted = json.loads(transport.calls[0][1])
+    assert emitted["mark_unseen"] is False
+    assert emitted["findings"][0]["rule_id"] == "WLN-ENGINE-PYDANTIC-DISCOVERY-LIMIT"
+
+
 def test_finding_uses_path_not_file_path() -> None:
     wire = build_scan_results_body([_f()])["findings"][0]
     assert wire["path"] == "src/m.py"

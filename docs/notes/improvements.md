@@ -2,9 +2,10 @@
 
 > **Status (2026-06-02, implemented — all items resolved):** The cheap test
 > guards (**#1–#5**) and **PY-WL-111** are DONE. #1 caught and fixed real
-> `PY-WL-101` example-rot; #4 pins the *real* anchor-line fingerprint contract
-> (the literal "blank-line insert → identical" framing below was incorrect —
-> `line_start` is a fingerprint input, so a line shift changes it by design).
+> `PY-WL-101` example-rot; #4 pins the live `wlfp2` fingerprint contract.
+> Absolute `line_start` is not a fingerprint input, so moving an otherwise
+> unchanged entity keeps its identity. Path/qualname changes and changes to
+> entity-relative/source-derived discriminators can still re-key a finding.
 > #6 (mutation testing) is **deferred** — explicitly heavy, adds a dev dep + a
 > CI-gate decision, lowest value-per-effort (the one item not taken on).
 >
@@ -83,14 +84,16 @@ the deliberate `confine_to_root=True` difference on the MCP side).
 
 ### 4. Fingerprint-stability corpus
 
-Assert that cosmetic refactors — rename a local, reorder top-level functions,
-insert blank lines / comments — leave finding fingerprints **byte-identical**.
+Assert that whole-entity moves — reordering top-level functions or inserting
+blank lines/comments above an otherwise unchanged entity — leave finding
+fingerprints **byte-identical**.
 
 - **Why:** CLAUDE.md calls a fingerprint change "breaking" (it silently
-  invalidates baselines/waivers), yet nothing pins the *negative* case — that
-  cosmetic edits *don't* move fingerprints. The fingerprint inputs are
-  `(rule_id, path, line_start, qualname, taint_path)`; line-shifting edits are
-  the obvious risk surface.
+  invalidates baselines/waivers), so the negative whole-entity-move case needs
+  a regression lock. The live `wlfp2` core inputs are `(rule_id, path,
+  qualname, taint_path)`; absolute `line_start` is excluded. Identity-bearing
+  edits still re-key when they change path/qualname or an
+  entity-relative/source-derived discriminator.
 - **Cost:** moderate.
 
 ### 5. `least_trusted` idempotence + associativity (exhaustive)

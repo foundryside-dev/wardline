@@ -168,7 +168,7 @@ it at a package root, not a single file.
 | `--trust-pack TEXT` (repeatable), `--allow-custom-packs` | Allow loading trust-grammar packs declared in `weft.toml [wardline]` (`--trust-pack`) or from the local project directory (`--allow-custom-packs`). |
 | `--fix`, `-y`/`--yes` | Apply mechanical autofixes during the scan; `-y` auto-confirms every fix. |
 | `--strict-defaults` | Ignore repository-supplied custom configuration overrides in `weft.toml`. |
-| `--allow-source-root-escape` | Allow `weft.toml [wardline] source_roots` to resolve outside `PATH`. |
+| `--allow-source-root-escape` | Select the explicit `SourceRootConfinement.LEGACY_ALLOW_ESCAPE` compatibility policy, allowing `weft.toml [wardline] source_roots` to resolve outside `PATH`. The default is `PROJECT_ROOT`; automation and enforcement should not enable the legacy policy. |
 | `--trust-suppressions` | Let repository-controlled baseline/waiver/judged files clear the `--fail-on` gate (they always annotate findings regardless). Use only for trusted local checkouts; in CI prefer the unforgeable `--new-since <merge-base>` ratchet. Default off, so the gate evaluates the unsuppressed population and a PR cannot self-suppress. |
 | `--allow-dirty` | `--format legis` only: on a dirty working tree, emit an UNSIGNED, clearly-marked (`dirty: true`) dev artifact instead of refusing. Signing stays clean-tree-only. |
 

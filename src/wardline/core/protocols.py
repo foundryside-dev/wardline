@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
 from wardline.core.config import WardlineConfig
+from wardline.core.confinement import SourceRootConfinement
 from wardline.core.finding import Finding
 
 if TYPE_CHECKING:
@@ -18,7 +19,14 @@ class Analyzer(Protocol):
     @property
     def last_context(self) -> AnalysisContext | None: ...
 
-    def analyze(self, files: Sequence[Path], config: WardlineConfig, *, root: Path) -> Sequence[Finding]: ...
+    def analyze(
+        self,
+        files: Sequence[Path],
+        config: WardlineConfig,
+        *,
+        root: Path,
+        source_root_confinement: SourceRootConfinement = SourceRootConfinement.PROJECT_ROOT,
+    ) -> Sequence[Finding]: ...
 
 
 class Rule(Protocol):

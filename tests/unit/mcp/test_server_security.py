@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+from wardline.core.confinement import SourceRootConfinement
 from wardline.core.errors import ConfigError
 from wardline.core.run import run_scan
 from wardline.mcp.server import WardlineMCPServer
@@ -100,11 +101,7 @@ def test_scan_bad_fail_on_enum_is_actionable_iserror(tmp_path: Path) -> None:
         assert w in text
 
 
-def test_poisoned_source_roots_refused_by_mcp_and_core_by_default(tmp_path: Path) -> None:
-    # The deeper exfil vector: an IN-ROOT weft.toml [wardline] whose source_roots escape
-    # the root. config is confined, but the config itself points out. discover()
-    # behind confine_to_root=True refuses it. The shared core default is now
-    # confined too; legacy escape requires an explicit opt-out.
+def _poisoned_project(tmp_path: Path) -> Path:
     proj = tmp_path / "proj"
     proj.mkdir()
     (proj / "svc.py").write_text(_LEAKY, encoding="utf-8")
@@ -112,19 +109,28 @@ def test_poisoned_source_roots_refused_by_mcp_and_core_by_default(tmp_path: Path
     outside.mkdir()
     (outside / "secret.py").write_text("SECRET = 'do not exfiltrate'\n", encoding="utf-8")
     (proj / "weft.toml").write_text('[wardline]\nsource_roots = ["../outside"]\n', encoding="utf-8")
+    return proj
 
-    # MCP scan tool → confine_to_root=True → ConfigError → isError, no scan of outside.
+
+def test_mcp_confined_config_path_does_not_certify_source_roots_inside_it(tmp_path: Path) -> None:
+    proj = _poisoned_project(tmp_path)
+
     server = WardlineMCPServer(root=proj)
-    resp = _dispatch(server, "scan", {})
+    resp = _dispatch(server, "scan", {"config": "weft.toml"})
+
+    _assert_iserror(resp, "source_root")
     _assert_iserror(resp, "outside the project root")
     assert "findings" not in resp["result"]
+
+
+def test_core_source_root_policy_secure_default_and_legacy_opt_out(tmp_path: Path) -> None:
+    proj = _poisoned_project(tmp_path)
 
     with pytest.raises(ConfigError, match="outside the project root"):
         run_scan(proj)
 
-    # Discriminator (advisor trap #4): prove the config can still be accepted by
-    # an explicit unconfined opt-out, so the raising condition is confinement.
-    result = run_scan(proj, confine_to_root=False)
-    assert result.files_scanned >= 1  # the out-of-root file is scanned, as before
-    with pytest.raises(ConfigError, match="outside the project root"):
-        run_scan(proj, confine_to_root=True)
+    result = run_scan(
+        proj,
+        source_root_confinement=SourceRootConfinement.LEGACY_ALLOW_ESCAPE,
+    )
+    assert result.files_scanned >= 1

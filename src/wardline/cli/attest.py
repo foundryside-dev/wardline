@@ -22,6 +22,7 @@ import click
 
 from wardline.core.attest_key import load_attest_key
 from wardline.core.config import resolve_loomweave_url
+from wardline.core.confinement import SourceRootConfinement
 from wardline.core.errors import WardlineError
 
 
@@ -129,7 +130,7 @@ def attest(
                 config_path=config_path,
                 cache_dir=cache_dir,
                 loomweave_client=loomweave_client,
-                confine_to_root=True,
+                source_root_confinement=SourceRootConfinement.PROJECT_ROOT,
                 trust_local_packs=trust_local_packs,
                 trusted_packs=trusted_packs,
                 strict_defaults=strict_defaults,
@@ -151,7 +152,7 @@ def attest(
             config_path=config_path,
             cache_dir=cache_dir,
             loomweave_client=loomweave_client,
-            confine_to_root=True,
+            source_root_confinement=SourceRootConfinement.PROJECT_ROOT,
             trust_local_packs=trust_local_packs,
             trusted_packs=trusted_packs,
             strict_defaults=strict_defaults,

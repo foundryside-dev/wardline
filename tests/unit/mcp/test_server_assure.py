@@ -9,6 +9,7 @@ import json
 from pathlib import Path
 
 from wardline.core.assure import build_posture
+from wardline.core.confinement import SourceRootConfinement
 from wardline.mcp.server import WardlineMCPServer
 
 _TRUSTED = "from wardline.decorators import trusted\n@trusted\ndef produce(p):\n    return p\n"
@@ -40,7 +41,10 @@ def test_mcp_assure_result_equals_core_posture(tmp_path: Path) -> None:
     # MCP-result == core posture (== CLI JSON): identical by construction.
     proj = _proj(tmp_path)
     out = _mcp_call(WardlineMCPServer(root=proj), "assure", {"path": str(proj)})
-    expected = build_posture(proj, confine_to_root=True).to_dict()
+    expected = build_posture(
+        proj,
+        source_root_confinement=SourceRootConfinement.PROJECT_ROOT,
+    ).to_dict()
     assert out == expected
 
 
@@ -48,7 +52,10 @@ def test_mcp_assure_no_path_defaults_to_root(tmp_path: Path) -> None:
     # No `path` arg → posture of the whole root, still == core.
     proj = _proj(tmp_path)
     out = _mcp_call(WardlineMCPServer(root=proj), "assure", {})
-    expected = build_posture(proj, confine_to_root=True).to_dict()
+    expected = build_posture(
+        proj,
+        source_root_confinement=SourceRootConfinement.PROJECT_ROOT,
+    ).to_dict()
     assert out == expected
 
 

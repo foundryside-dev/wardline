@@ -18,6 +18,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Protocol
 
+from wardline.core.confinement import SourceRootConfinement
 from wardline.core.dossier import (
     DOSSIER_TOKEN_BUDGET,
     EntityDossier,
@@ -66,7 +67,7 @@ def build_weft_dossier(
     filigree_url: str | None = None,
     filigree_transport: FiligreeTransport | None = None,
     config_path: Path | None = None,
-    confine_to_root: bool = True,
+    source_root_confinement: SourceRootConfinement = SourceRootConfinement.PROJECT_ROOT,
     budget: int = DOSSIER_TOKEN_BUDGET,
 ) -> EntityDossier:
     """Assemble the one-call Weft dossier for ``entity`` against live sources.
@@ -77,6 +78,7 @@ def build_weft_dossier(
     honest ``unavailable`` sections; the self/trust posture is always computed for real.
     """
     binding: EntityBinding | None = None
+    binding_reason: str | None = None
     linkage_provider: LinkageProvider | None = None
     work_provider: WorkProvider | None = None
 
@@ -104,7 +106,9 @@ def build_weft_dossier(
     elif loomweave_client is not None:
         capabilities = loomweave_client.capabilities()
         resolver = SeiResolver(loomweave_client, SeiCapability.from_capabilities(capabilities))
-        binding = resolve_entity_binding(loomweave_client, resolver, entity)
+        resolution = resolve_entity_binding(loomweave_client, resolver, entity)
+        binding = resolution.binding
+        binding_reason = resolution.unavailable_reason
         linkage_provider = LoomweaveLinkageProvider(loomweave_client, linkages_http=_linkages_http(capabilities))
 
     if filigree_url is not None:
@@ -116,8 +120,9 @@ def build_weft_dossier(
         entity,
         root=root,
         config_path=config_path,
-        confine_to_root=confine_to_root,
+        source_root_confinement=source_root_confinement,
         binding=binding,
+        binding_unavailable_reason=binding_reason,
         linkage_provider=linkage_provider,
         work_provider=work_provider,
         budget=budget,

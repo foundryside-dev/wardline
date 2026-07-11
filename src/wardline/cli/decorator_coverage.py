@@ -8,6 +8,7 @@ from pathlib import Path
 import click
 
 from wardline.core.config import resolve_filigree_url, resolve_loomweave_url
+from wardline.core.confinement import SourceRootConfinement
 from wardline.core.errors import WardlineError
 
 
@@ -56,7 +57,7 @@ def decorator_coverage(
             loomweave_client=loomweave_client,
             filigree_url=filigree_url,
             config_path=config_path,
-            confine_to_root=True,
+            source_root_confinement=SourceRootConfinement.PROJECT_ROOT,
         )
     except WardlineError as exc:
         click.echo(f"error: {exc}", err=True)

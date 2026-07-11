@@ -70,6 +70,7 @@ def test_scan_emits_to_filigree_when_emitter_present(tmp_path):
         "auth_rejected": False,
         "token_sent": False,
         "url": None,
+        "chunks_landed": 0,
         "disabled_reason": None,
         "destination": {"url": None, "project": None, "project_pinned": False},
     }
@@ -94,6 +95,7 @@ def test_scan_reports_both_integrations_successful(tmp_path):
         "auth_rejected": False,
         "token_sent": False,
         "url": None,
+        "chunks_landed": 0,
         "disabled_reason": None,
         "destination": {"url": None, "project": None, "project_pinned": False},
     }

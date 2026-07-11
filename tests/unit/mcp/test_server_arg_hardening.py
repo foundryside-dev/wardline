@@ -24,13 +24,20 @@ from __future__ import annotations
 
 import json
 import sys
+from inspect import signature
 from pathlib import Path
+from types import ModuleType
+
+import pytest
 
 from wardline.core import config as config_mod
 from wardline.core.attest_key import WARDLINE_ATTEST_KEY_ENV
+from wardline.core.filigree_issue import FileResult, IdentityAttachResult
 from wardline.core.legis import LEGIS_ARTIFACT_KEY_ENV
 from wardline.core.ruleset import ruleset_hash
-from wardline.mcp.server import WardlineMCPServer, _scan
+from wardline.core.run import GatePopulation, ScanResult, ScanSummary
+from wardline.mcp.server import WardlineMCPServer, _attach_legis_artifact, _scan
+from wardline.mcp.tooling import ToolError
 
 _LEAKY = (
     "from wardline.decorators import external_boundary, trusted\n"
@@ -149,6 +156,196 @@ def test_scan_fail_on_none_is_documented_enum_error_not_internal_crash(tmp_path,
     assert "internal error" not in text
 
 
+@pytest.mark.parametrize(
+    ("tool", "arguments", "field", "side_effect"),
+    [
+        pytest.param("judge", {"write": "false"}, "write", "run_judge", id="judge.write"),
+        pytest.param(
+            "baseline",
+            {"overwrite": "false"},
+            "overwrite",
+            "generate_baseline",
+            id="baseline.overwrite",
+        ),
+        pytest.param(
+            "scan_job_start",
+            {"local_only": "false"},
+            "local_only",
+            "start_scan_job",
+            id="scan-job.local-only",
+        ),
+        pytest.param("doctor", {"repair": "false"}, "repair", "doctor", id="doctor.repair"),
+        pytest.param("rekey", {"apply": "false"}, "apply", "run_scan", id="rekey.apply"),
+        pytest.param(
+            "rekey",
+            {"apply": False, "resume": "false"},
+            "resume",
+            "wardline.core.rekey.resume_rekey",
+            id="rekey.resume",
+        ),
+        pytest.param(
+            "rekey",
+            {"apply": False, "resume": False, "rollback": "false"},
+            "rollback",
+            "wardline.core.rekey.rollback",
+            id="rekey.rollback",
+        ),
+    ],
+)
+def test_destructive_boolean_rejected_before_side_effect_without_jsonschema(
+    tmp_path, monkeypatch, tool, arguments, field, side_effect
+) -> None:
+    _block_jsonschema(monkeypatch)
+    called = False
+
+    def forbidden(*args, **kwargs):
+        nonlocal called
+        called = True
+        raise AssertionError("side effect ran before boolean validation")
+
+    if side_effect == "doctor":
+        monkeypatch.setattr("wardline.install.doctor.machine_readable_doctor", forbidden)
+    elif "." in side_effect:
+        monkeypatch.setattr(side_effect, forbidden)
+    else:
+        monkeypatch.setattr(f"wardline.mcp.server.{side_effect}", forbidden)
+    server = WardlineMCPServer(root=_leaky_project(tmp_path))
+
+    resp = _dispatch(server, tool, arguments)
+
+    assert resp["result"]["isError"] is True
+    assert f"{field} must be a boolean" in resp["result"]["content"][0]["text"]
+    assert called is False
+
+
+class _SpyFiler:
+    def __init__(self) -> None:
+        self.file_calls = 0
+
+    def file(self, *args, **kwargs) -> FileResult:
+        self.file_calls += 1
+        return FileResult(reachable=True, issue_id="wardline-filed", created=True)
+
+
+def test_file_finding_rejects_string_attach_before_issue_or_identity_side_effect(tmp_path, monkeypatch) -> None:
+    _block_jsonschema(monkeypatch)
+    filer = _SpyFiler()
+    loomweave_client_calls = 0
+    identity_attach_calls = 0
+
+    def fake_loomweave_client(*args, **kwargs):
+        nonlocal loomweave_client_calls
+        loomweave_client_calls += 1
+        return object()
+
+    def fake_identity_attach(**kwargs):
+        nonlocal identity_attach_calls
+        identity_attach_calls += 1
+        return IdentityAttachResult.skipped("must not run")
+
+    monkeypatch.setattr(WardlineMCPServer, "_filigree_filer", lambda *args, **kwargs: filer)
+    monkeypatch.setattr(WardlineMCPServer, "_loomweave_client", fake_loomweave_client)
+    monkeypatch.setattr(
+        "wardline.core.filigree_issue.attach_loomweave_identity_for_finding",
+        fake_identity_attach,
+    )
+    server = WardlineMCPServer(root=_leaky_project(tmp_path))
+
+    resp = _dispatch(
+        server,
+        "file_finding",
+        {"fingerprint": "a" * 64, "attach_loomweave_identity": "false"},
+    )
+
+    assert resp["result"]["isError"] is True
+    assert "attach_loomweave_identity must be a boolean" in resp["result"]["content"][0]["text"]
+    assert filer.file_calls == 0
+    assert loomweave_client_calls == 0
+    assert identity_attach_calls == 0
+
+
+@pytest.mark.parametrize("attach", [False, True])
+def test_file_finding_accepts_real_attach_booleans_without_jsonschema(tmp_path, monkeypatch, attach) -> None:
+    _block_jsonschema(monkeypatch)
+    filer = _SpyFiler()
+    loomweave_client_calls = 0
+    identity_attach_calls = 0
+
+    def fake_loomweave_client(*args, **kwargs):
+        nonlocal loomweave_client_calls
+        loomweave_client_calls += 1
+        return object()
+
+    def fake_identity_attach(**kwargs):
+        nonlocal identity_attach_calls
+        identity_attach_calls += 1
+        return IdentityAttachResult.success(
+            entity_id="loomweave:eid:attached",
+            content_hash="hash-v1",
+            binding_kind="sei",
+        )
+
+    monkeypatch.setattr(WardlineMCPServer, "_filigree_filer", lambda *args, **kwargs: filer)
+    monkeypatch.setattr(WardlineMCPServer, "_loomweave_client", fake_loomweave_client)
+    monkeypatch.setattr(
+        "wardline.core.filigree_issue.attach_loomweave_identity_for_finding",
+        fake_identity_attach,
+    )
+    server = WardlineMCPServer(root=_leaky_project(tmp_path))
+
+    resp = _dispatch(
+        server,
+        "file_finding",
+        {"fingerprint": "a" * 64, "attach_loomweave_identity": attach},
+    )
+
+    assert resp["result"].get("isError") is not True, resp
+    payload = json.loads(resp["result"]["content"][0]["text"])
+    assert filer.file_calls == 1
+    assert loomweave_client_calls == int(attach)
+    assert identity_attach_calls == int(attach)
+    assert ("identity_attach" in payload) is attach
+
+
+_ASSERT_ONLY = (
+    "from wardline.decorators import trust_boundary\n"
+    "@trust_boundary(to_level='ASSURED')\n"
+    "def boundary(value):\n"
+    "    assert isinstance(value, str)\n"
+    "    return value\n"
+)
+
+
+@pytest.mark.parametrize(
+    ("arguments", "field"),
+    [
+        pytest.param({"apply": "false"}, "apply", id="fix.apply"),
+        pytest.param({"apply": True, "dry_run": "false"}, "dry_run", id="fix.dry-run"),
+    ],
+)
+def test_fix_boolean_rejected_before_autofix_without_jsonschema(tmp_path, monkeypatch, arguments, field) -> None:
+    _block_jsonschema(monkeypatch)
+    root = tmp_path / "project"
+    root.mkdir()
+    source = root / "boundary.py"
+    source.write_text(_ASSERT_ONLY, encoding="utf-8")
+    before = source.read_bytes()
+    called = False
+
+    def forbidden(*args, **kwargs):
+        nonlocal called
+        called = True
+        raise AssertionError("autofix ran before boolean validation")
+
+    monkeypatch.setattr("wardline.core.autofix.run_autofix", forbidden)
+    resp = _dispatch(WardlineMCPServer(root=root), "fix", arguments)
+
+    assert resp["result"]["isError"] is True
+    assert f"{field} must be a boolean" in resp["result"]["content"][0]["text"]
+    assert called is False
+    assert source.read_bytes() == before
+
+
 # ---------------------------------------------------------------------------
 # 2. Legis artifact config provenance (root-resolved, same policy as the scan)
 # ---------------------------------------------------------------------------
@@ -161,6 +358,109 @@ def _subpath_project(tmp_path: Path) -> Path:
     (root / "sub" / "svc.py").write_text(_LEAKY, encoding="utf-8")
     (root / "weft.toml").write_text('[wardline]\nexclude = ["zzz_root_marker/**"]\n', encoding="utf-8")
     return root
+
+
+@pytest.mark.parametrize(
+    ("case", "args", "scan_kwargs"),
+    [
+        ("explicit", {"config": "weft.toml", "legis_artifact": True}, {}),
+        ("implicit", {"legis_artifact": True}, {}),
+        (
+            "trusted-pack",
+            {"legis_artifact": True, "trust_packs": ["operator_pack"]},
+            {},
+        ),
+        (
+            "local-pack",
+            {
+                "legis_artifact": True,
+                "trust_packs": ["local_pack"],
+            },
+            {"trust_local_packs": True},
+        ),
+        ("strict-default", {"legis_artifact": True}, {"strict_defaults": True}),
+    ],
+)
+def test_legis_artifact_reuses_exact_scan_config_once(tmp_path, monkeypatch, case, args, scan_kwargs) -> None:
+    from wardline.core import legis as legis_mod
+
+    monkeypatch.delenv(LEGIS_ARTIFACT_KEY_ENV, raising=False)
+    root = _subpath_project(tmp_path)
+    if case == "trusted-pack":
+        pack = ModuleType("operator_pack")
+        pack.config = {}  # type: ignore[attr-defined]
+        monkeypatch.setitem(sys.modules, "operator_pack", pack)
+        (root / "weft.toml").write_text(
+            '[wardline]\npacks = ["operator_pack"]\n',
+            encoding="utf-8",
+        )
+    elif case == "local-pack":
+        (root / "local_pack.py").write_text("config = {}\n", encoding="utf-8")
+        monkeypatch.syspath_prepend(str(root))
+        (root / "weft.toml").write_text(
+            '[wardline]\npacks = ["local_pack"]\n',
+            encoding="utf-8",
+        )
+
+    loads = []
+    built_with = []
+    real_load = config_mod.load
+    real_build = legis_mod.build_legis_artifact
+
+    def recording_load(*load_args, **load_kwargs):
+        config = real_load(*load_args, **load_kwargs)
+        loads.append(config)
+        return config
+
+    def recording_build(result, *, root, config, key, allow_dirty=False):
+        built_with.append(config)
+        return real_build(result, root=root, config=config, key=key, allow_dirty=allow_dirty)
+
+    monkeypatch.setattr(config_mod, "load", recording_load)
+    monkeypatch.setattr(legis_mod, "build_legis_artifact", recording_build)
+
+    out = _scan(args, root, None, None, **scan_kwargs)
+
+    assert "legis_artifact" in out
+    assert len(loads) == 1, case
+    assert len(built_with) == 1, case
+    assert built_with[0] is loads[0], case
+    assert out["legis_artifact"]["rule_set_version"] == ruleset_hash(loads[0])
+
+
+def _result_without_effective_config() -> ScanResult:
+    return ScanResult(
+        findings=[],
+        summary=ScanSummary(total=0, active=0, baselined=0, waived=0, judged=0),
+        files_scanned=0,
+        context=None,
+        gate_population=GatePopulation.honoring(()),
+    )
+
+
+def test_legis_artifact_config_provenance_is_intrinsic_to_scan_result() -> None:
+    assert "config" not in signature(_attach_legis_artifact).parameters
+
+
+def test_legis_artifact_missing_effective_config_fails_loudly_when_activated(tmp_path, monkeypatch) -> None:
+    monkeypatch.delenv(LEGIS_ARTIFACT_KEY_ENV, raising=False)
+
+    with pytest.raises(ToolError, match="did not retain its effective configuration"):
+        _attach_legis_artifact(
+            {},
+            _result_without_effective_config(),
+            tmp_path,
+            {"legis_artifact": True},
+        )
+
+
+def test_legis_artifact_missing_effective_config_is_ignored_when_inactive(tmp_path, monkeypatch) -> None:
+    monkeypatch.delenv(LEGIS_ARTIFACT_KEY_ENV, raising=False)
+    response: dict = {}
+
+    _attach_legis_artifact(response, _result_without_effective_config(), tmp_path, {})
+
+    assert response == {}
 
 
 def test_legis_artifact_subpath_scan_with_root_relative_config_stays_fail_soft(tmp_path, monkeypatch) -> None:

@@ -1,16 +1,22 @@
+import subprocess
 import textwrap
+from dataclasses import FrozenInstanceError
 from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
+from wardline.core import config as config_mod
+from wardline.core.confinement import SourceRootConfinement
 from wardline.core.errors import ConfigError
-from wardline.core.finding import FINGERPRINT_SCHEME, Finding, Kind, Location, Severity, SuppressionState
+from wardline.core.finding import ENGINE_PATH, FINGERPRINT_SCHEME, Finding, Kind, Location, Severity, SuppressionState
 from wardline.core.judged import JudgedFP, write_judged
 from wardline.core.paths import baseline_path, judged_path, waivers_path
 from wardline.core.run import (
     GateDecision,
+    GatePopulation,
+    GateSuppressionPosture,
     ScanResult,
     ScanSummary,
     baseline_migration_hint,
@@ -42,11 +48,28 @@ def test_run_scan_returns_findings_summary_and_context() -> None:
     # hold for any fixture regardless of finding count.
     assert result.summary.total == len(result.findings)
     # active is the count of non-suppressed DEFECTs in the emitted findings (the gate
-    # evaluates ScanResult.gate_findings, a separate unsuppressed population)
+    # evaluates ScanResult.gate_population.findings, a separate unsuppressed population)
     active = sum(1 for f in result.findings if f.kind is Kind.DEFECT and f.suppressed is SuppressionState.ACTIVE)
     assert result.summary.active == active
     # context is carried for explain_finding to reuse
     assert result.context is not None
+
+
+def test_run_scan_retains_effective_config_in_process(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    seen = []
+    real_load = config_mod.load
+
+    def recording_load(*args, **kwargs):
+        cfg = real_load(*args, **kwargs)
+        seen.append(cfg)
+        return cfg
+
+    monkeypatch.setattr(config_mod, "load", recording_load)
+
+    result = run_scan(_empty_proj(tmp_path))
+
+    assert len(seen) == 1
+    assert result.effective_config is seen[0]
 
 
 def test_run_scan_reports_discovery_and_analysis_progress(tmp_path: Path) -> None:
@@ -215,8 +238,7 @@ def test_trust_suppressions_restores_old_gate_clearing(tmp_path: Path, writer) -
     proj, fp = _leaky_proj(tmp_path)
     writer(proj, fp)
     result = run_scan(proj, trust_suppressions=True)
-    # gate_findings is the None sentinel -> gate falls back to the suppressed findings.
-    assert result.gate_findings is None
+    assert result.gate_population.posture is GateSuppressionPosture.HONORS_SUPPRESSIONS
     assert gate_decision(result, Severity.ERROR).tripped is False
 
 
@@ -412,7 +434,13 @@ def test_gate_decision_evaluated_reflects_trust_suppressions(tmp_path: Path) -> 
 
 def test_gate_decision_no_threshold_is_not_evaluated() -> None:
     # weft-b937e53854: a bare scan is NOT a clean pass — it never ran the gate.
-    result = ScanResult(findings=[], summary=ScanSummary(0, 0, 0, 0, 0), files_scanned=0, context=None)
+    result = ScanResult(
+        findings=[],
+        summary=ScanSummary(0, 0, 0, 0, 0),
+        files_scanned=0,
+        context=None,
+        gate_population=GatePopulation.honoring(()),
+    )
     decision = gate_decision(result, None)
     assert decision.verdict == "NOT_EVALUATED"
     assert decision.tripped is False and decision.exit_class == 0
@@ -430,6 +458,7 @@ def _unanalyzed_result(unanalyzed: int) -> ScanResult:
         summary=ScanSummary(unanalyzed, 0, 0, 0, 0, informational=unanalyzed, unanalyzed=unanalyzed),
         files_scanned=1,
         context=None,
+        gate_population=GatePopulation.honoring(()),
     )
 
 
@@ -573,18 +602,59 @@ def test_migration_hint_silent_without_baseline_file(tmp_path: Path) -> None:
     assert _hint(proj) is None
 
 
-def test_gate_findings_is_unsuppressed_population(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("posture", "honors"),
+    [
+        (GateSuppressionPosture.UNSUPPRESSED, False),
+        (GateSuppressionPosture.HONORS_SUPPRESSIONS, True),
+    ],
+)
+def test_gate_population_closed_posture_matrix(posture: GateSuppressionPosture, honors: bool) -> None:
+    population = GatePopulation(findings=(), posture=posture)
+
+    assert population.honors_suppressions is honors
+
+
+def test_gate_population_rejects_mutable_findings() -> None:
+    with pytest.raises(TypeError, match="findings must be a tuple"):
+        GatePopulation(findings=[], posture=GateSuppressionPosture.UNSUPPRESSED)  # type: ignore[arg-type]
+
+
+def test_gate_population_rejects_untyped_posture() -> None:
+    with pytest.raises(TypeError, match="GateSuppressionPosture"):
+        GatePopulation(findings=(), posture="unsuppressed")  # type: ignore[arg-type]
+
+
+def test_gate_population_is_frozen() -> None:
+    population = GatePopulation.unsuppressed(())
+
+    with pytest.raises(FrozenInstanceError):
+        population.posture = GateSuppressionPosture.HONORS_SUPPRESSIONS  # type: ignore[misc]
+
+
+def test_secure_default_builds_unsuppressed_tagged_population(tmp_path: Path) -> None:
     proj, fp = _leaky_proj(tmp_path)
     _write_baseline(proj, fp)
     result = run_scan(proj)
-    assert result.gate_findings is not None
-    gate_leak = next(f for f in result.gate_findings if f.rule_id == "PY-WL-101")
+
+    assert result.gate_population.posture is GateSuppressionPosture.UNSUPPRESSED
+    gate_leak = next(f for f in result.gate_population.findings if f.rule_id == "PY-WL-101")
     assert gate_leak.suppressed is SuppressionState.ACTIVE  # gate sees it active
 
 
-def test_directly_constructed_scanresult_falls_back_to_findings() -> None:
-    # The None sentinel: a ScanResult built without gate_findings (e.g. in a test) must
-    # gate on its findings, never silently pass because gate_findings defaulted empty.
+def test_trust_suppressions_builds_honoring_tagged_population(tmp_path: Path) -> None:
+    proj, fp = _leaky_proj(tmp_path)
+    _write_baseline(proj, fp)
+
+    result = run_scan(proj, trust_suppressions=True)
+
+    assert result.gate_population.posture is GateSuppressionPosture.HONORS_SUPPRESSIONS
+    gate_leak = next(f for f in result.gate_population.findings if f.rule_id == "PY-WL-101")
+    assert gate_leak.suppressed is SuppressionState.BASELINED
+    assert gate_decision(result, Severity.ERROR).tripped is False
+
+
+def test_directly_constructed_scanresult_requires_explicit_gate_population() -> None:
     leak = Finding(
         rule_id="PY-WL-101",
         message="m",
@@ -599,17 +669,16 @@ def test_directly_constructed_scanresult_falls_back_to_findings() -> None:
         summary=ScanSummary(total=1, active=1, baselined=0, waived=0, judged=0),
         files_scanned=1,
         context=None,
+        gate_population=GatePopulation.honoring((leak,)),
     )
-    assert result.gate_findings is None
+
+    assert result.gate_population.posture is GateSuppressionPosture.HONORS_SUPPRESSIONS
     assert gate_decision(result, Severity.ERROR).tripped is True
 
 
-def test_lineless_defect_does_not_trip_gate(tmp_path: Path) -> None:
-    # Regression guard for the bug PR #25 had (gate_findings = list(raw)): a lineless
-    # DEFECT must be downgraded to a non-gating FACT in the gate population, exactly as
-    # apply_suppressions does for the emitted findings — so it never trips the gate.
+def test_lineless_source_defect_trips_gate_via_engine_diagnostic() -> None:
     from wardline.core.baseline import Baseline
-    from wardline.core.finding import ENGINE_PATH  # noqa: F401  (documents the carve-out)
+    from wardline.core.finding import ENGINE_PATH
     from wardline.core.suppression import apply_suppressions, gate_trips
     from wardline.core.waivers import WaiverSet
 
@@ -622,11 +691,171 @@ def test_lineless_defect_does_not_trip_gate(tmp_path: Path) -> None:
         fingerprint="b" * 64,
         suppressed=SuppressionState.ACTIVE,
     )
-    # This is the EXACT empty-suppression transform run_scan applies to build gate_findings.
+
     gate_pop = apply_suppressions([lineless], Baseline(frozenset()), WaiverSet([]), today=datetime.now(UTC).date())
-    downgraded = next(f for f in gate_pop if f.location.path == "svc.py")
-    assert downgraded.kind is Kind.FACT  # DEFECT -> FACT, no longer gating
-    assert gate_trips(gate_pop, Severity.ERROR) is False
+
+    diagnostic = next(f for f in gate_pop if f.rule_id == "WLN-ENGINE-LINELESS-DEFECT")
+    assert diagnostic.location.path == ENGINE_PATH
+    assert diagnostic.kind is Kind.DEFECT
+    assert gate_trips(gate_pop, Severity.ERROR) is True
+
+
+def _changed_git_project(tmp_path: Path) -> tuple[Path, str]:
+    project = tmp_path / "project"
+    project.mkdir()
+    source = project / "svc.py"
+    source.write_text("value = 1\n", encoding="utf-8")
+    subprocess.run(["git", "init", "-q"], cwd=project, check=True)
+    subprocess.run(["git", "add", "svc.py"], cwd=project, check=True)
+    subprocess.run(
+        [
+            "git",
+            "-c",
+            "user.name=Wardline Test",
+            "-c",
+            "user.email=wardline@example.invalid",
+            "commit",
+            "-qm",
+            "base",
+        ],
+        cwd=project,
+        check=True,
+    )
+    base = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=project, check=True, capture_output=True, text=True
+    ).stdout.strip()
+    source.write_text("value = 2\n", encoding="utf-8")
+    return project, base
+
+
+def test_new_since_scopes_lineless_diagnostic_by_changed_source_path(tmp_path: Path) -> None:
+    project, base = _changed_git_project(tmp_path)
+    lineless = Finding(
+        rule_id="PY-WL-101",
+        message="lineless source defect",
+        severity=Severity.ERROR,
+        kind=Kind.DEFECT,
+        location=Location(path="svc.py"),
+        fingerprint="b" * 64,
+    )
+
+    with patch("wardline.scanner.analyzer.WardlineAnalyzer.analyze", return_value=[lineless]):
+        result = run_scan(project, new_since=base)
+
+    emitted = next(f for f in result.findings if f.rule_id == "WLN-ENGINE-LINELESS-DEFECT")
+    gated = next(f for f in result.gate_population.findings if f.rule_id == "WLN-ENGINE-LINELESS-DEFECT")
+    assert emitted.location.path == gated.location.path == ENGINE_PATH
+    assert emitted.properties["original_path"] == gated.properties["original_path"] == "svc.py"
+    assert emitted.suppressed is SuppressionState.ACTIVE
+    assert gated.suppressed is SuppressionState.ACTIVE
+    assert gate_decision(result, Severity.ERROR).tripped is True
+
+
+def test_new_since_keeps_pydantic_discovery_limit_active(tmp_path: Path) -> None:
+    project, base = _changed_git_project(tmp_path)
+    (project / "svc.py").write_text("value = 1\n", encoding="utf-8")
+    for index in range(80):
+        source = (
+            "from pydantic import BaseModel\nclass Model0(BaseModel): pass\n"
+            if index == 0
+            else (f"from m{index - 1} import Model{index - 1}\nclass Model{index}(Model{index - 1}): pass\n")
+        )
+        (project / f"m{index}.py").write_text(source, encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=project, check=True)
+    subprocess.run(["git", "commit", "-m", "add model chain"], cwd=project, check=True)
+
+    result = run_scan(project, new_since=base)
+
+    emitted = next(f for f in result.findings if f.rule_id == "WLN-ENGINE-PYDANTIC-DISCOVERY-LIMIT")
+    gated = next(f for f in result.gate_population.findings if f.rule_id == "WLN-ENGINE-PYDANTIC-DISCOVERY-LIMIT")
+    assert emitted.suppressed is SuppressionState.ACTIVE
+    assert gated.suppressed is SuppressionState.ACTIVE
+    assert gate_decision(result, Severity.ERROR).tripped is True
+
+
+@pytest.mark.parametrize(
+    "properties",
+    [
+        {},
+        {"original_path": ""},
+        {"original_path": 42},
+    ],
+    ids=["missing", "empty", "non-string"],
+)
+def test_new_since_malformed_lineless_source_binding_fails_closed(
+    tmp_path: Path, properties: dict[str, object]
+) -> None:
+    project, base = _changed_git_project(tmp_path)
+    diagnostic = Finding(
+        rule_id="WLN-ENGINE-LINELESS-DEFECT",
+        message="lineless source diagnostic with malformed binding",
+        severity=Severity.ERROR,
+        kind=Kind.DEFECT,
+        location=Location(path=ENGINE_PATH),
+        fingerprint="d" * 64,
+        properties=properties,
+    )
+
+    with patch("wardline.scanner.analyzer.WardlineAnalyzer.analyze", return_value=[diagnostic]):
+        result = run_scan(project, new_since=base)
+
+    emitted = next(f for f in result.findings if f.rule_id == "WLN-ENGINE-LINELESS-DEFECT")
+    gated = next(f for f in result.gate_population.findings if f.rule_id == "WLN-ENGINE-LINELESS-DEFECT")
+    assert emitted.suppressed is SuppressionState.ACTIVE
+    assert gated.suppressed is SuppressionState.ACTIVE
+    assert gate_decision(result, Severity.ERROR).tripped is True
+
+
+@pytest.mark.parametrize(
+    "state",
+    [SuppressionState.BASELINED, SuppressionState.WAIVED, SuppressionState.JUDGED],
+)
+def test_new_since_malformed_lineless_source_binding_preserves_suppression(
+    tmp_path: Path, state: SuppressionState
+) -> None:
+    project, base = _changed_git_project(tmp_path)
+    diagnostic = Finding(
+        rule_id="WLN-ENGINE-LINELESS-DEFECT",
+        message="already-suppressed malformed source diagnostic",
+        severity=Severity.ERROR,
+        kind=Kind.DEFECT,
+        location=Location(path=ENGINE_PATH),
+        fingerprint="e" * 64,
+        properties={},
+        suppressed=state,
+        suppression_reason="existing suppression",
+    )
+
+    with patch("wardline.scanner.analyzer.WardlineAnalyzer.analyze", return_value=[diagnostic]):
+        result = run_scan(project, new_since=base)
+
+    emitted = next(f for f in result.findings if f.rule_id == "WLN-ENGINE-LINELESS-DEFECT")
+    gated = next(f for f in result.gate_population.findings if f.rule_id == "WLN-ENGINE-LINELESS-DEFECT")
+    assert emitted.suppressed is state
+    assert gated.suppressed is state
+    assert emitted.suppression_reason == gated.suppression_reason == "existing suppression"
+
+
+def test_new_since_does_not_trust_original_path_on_ordinary_engine_diagnostic(tmp_path: Path) -> None:
+    project, base = _changed_git_project(tmp_path)
+    engine_diagnostic = Finding(
+        rule_id="WLN-ENGINE-PROBE",
+        message="ordinary engine diagnostic",
+        severity=Severity.ERROR,
+        kind=Kind.DEFECT,
+        location=Location(path=ENGINE_PATH),
+        fingerprint="c" * 64,
+        properties={"original_path": "svc.py"},
+    )
+
+    with patch("wardline.scanner.analyzer.WardlineAnalyzer.analyze", return_value=[engine_diagnostic]):
+        result = run_scan(project, new_since=base)
+
+    emitted = next(f for f in result.findings if f.rule_id == "WLN-ENGINE-PROBE")
+    gated = next(f for f in result.gate_population.findings if f.rule_id == "WLN-ENGINE-PROBE")
+    assert emitted.suppressed is SuppressionState.BASELINED
+    assert gated.suppressed is SuppressionState.BASELINED
+    assert gate_decision(result, Severity.ERROR).tripped is False
 
 
 def test_new_since_scopes_both_populations_and_resists_suppression(tmp_path: Path) -> None:
@@ -696,8 +925,9 @@ def test_new_since_scopes_both_populations_and_resists_suppression(tmp_path: Pat
         result = run_scan(tmp_path, new_since="HEAD~1")
 
     # The in-delta caller.f stays ACTIVE in the gate population despite the baseline entry.
-    assert result.gate_findings is not None
-    gate_by_qn = {f.qualname: f for f in result.gate_findings if f.kind is Kind.DEFECT}
+    assert result.gate_population.posture is GateSuppressionPosture.UNSUPPRESSED
+    assert isinstance(result.gate_population.findings, tuple)
+    gate_by_qn = {f.qualname: f for f in result.gate_population.findings if f.kind is Kind.DEFECT}
     assert gate_by_qn["caller.f"].suppressed is SuppressionState.ACTIVE
     # The out-of-delta unrelated.h is scoped OUT of the gate (delta: unchanged).
     assert gate_by_qn["unrelated.h"].suppressed is SuppressionState.BASELINED
@@ -862,12 +1092,222 @@ def test_run_scan_out_of_root_symlink_yields_finding(tmp_path: Path) -> None:
     # A *.py symlink inside a legitimate source_root pointing outside the root.
     (src / "evil.py").symlink_to(secret)
 
-    # run_scan with confine_to_root=True should skip evil.py and add a finding.
-    result = run_scan(root, confine_to_root=True)
+    # The secure source-root policy skips evil.py and adds a finding.
+    result = run_scan(root, source_root_confinement=SourceRootConfinement.PROJECT_ROOT)
     skipped = [f for f in result.findings if f.rule_id == "WLN-ENGINE-FILE-SKIPPED"]
     assert len(skipped) == 1
     assert skipped[0].location.path == "src/evil.py"
     assert skipped[0].properties.get("reason") == "out_of_root_symlink"
+
+
+def test_run_scan_pins_in_root_symlink_target_before_adversarial_retarget(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "root"
+    src = root / "src"
+    targets = root / "targets"
+    outside_dir = tmp_path / "outside"
+    src.mkdir(parents=True)
+    targets.mkdir()
+    outside_dir.mkdir()
+    safe = targets / "safe.py"
+    safe.write_text(_LEAKY, encoding="utf-8")
+    outside = outside_dir / "secret.py"
+    outside.write_text("def outside_entity(): return 2\n", encoding="utf-8")
+    link = src / "entry.py"
+    link.symlink_to(safe)
+    (root / "weft.toml").write_text('[wardline]\nsource_roots = ["src"]\n', encoding="utf-8")
+
+    real_resolve = Path.resolve
+    real_read_bytes = Path.read_bytes
+    retargeted = False
+    outside_reads: list[Path] = []
+
+    def retarget_after_validation(path: Path, strict: bool = False) -> Path:
+        nonlocal retargeted
+        resolved = real_resolve(path, strict=strict)
+        if path == link and not retargeted:
+            link.unlink()
+            link.symlink_to(outside)
+            retargeted = True
+        return resolved
+
+    def record_outside_read(path: Path) -> bytes:
+        if real_resolve(path) == real_resolve(outside):
+            outside_reads.append(path)
+        return real_read_bytes(path)
+
+    monkeypatch.setattr(Path, "resolve", retarget_after_validation)
+    monkeypatch.setattr(Path, "read_bytes", record_outside_read)
+
+    result = run_scan(root, source_root_confinement=SourceRootConfinement.PROJECT_ROOT)
+
+    assert retargeted is True
+    assert outside_reads == []
+    assert result.scanned_paths == ("targets/safe.py",)
+    assert result.context is not None
+    assert "targets.safe.leaky" in result.context.entities
+    assert all("outside_entity" not in qualname for qualname in result.context.entities)
+    leak = next(f for f in result.findings if f.rule_id == "PY-WL-101")
+    assert leak.location.path == "targets/safe.py"
+    assert all(f.rule_id != "WLN-ENGINE-TREE-CHANGED-DURING-SCAN" for f in result.findings)
+
+
+def test_run_scan_rejects_canonical_target_replaced_after_discovery(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import wardline.core.run as run_mod
+
+    root = tmp_path / "root"
+    src = root / "src"
+    outside_dir = tmp_path / "outside"
+    src.mkdir(parents=True)
+    outside_dir.mkdir()
+    source = src / "safe.py"
+    source.write_text(_LEAKY, encoding="utf-8")
+    outside = outside_dir / "secret.py"
+    outside.write_text("def outside_entity(): return 2\n", encoding="utf-8")
+    (root / "weft.toml").write_text('[wardline]\nsource_roots = ["src"]\n', encoding="utf-8")
+
+    real_snapshot = run_mod._stat_snapshot
+    real_read_bytes = Path.read_bytes
+    outside_reads: list[Path] = []
+
+    def replace_target_then_snapshot(files):  # noqa: ANN001
+        source.unlink()
+        source.symlink_to(outside)
+        return real_snapshot(files)
+
+    def record_outside_read(path: Path) -> bytes:
+        if path.resolve() == outside.resolve():
+            outside_reads.append(path)
+        return real_read_bytes(path)
+
+    monkeypatch.setattr(run_mod, "_stat_snapshot", replace_target_then_snapshot)
+    monkeypatch.setattr(Path, "read_bytes", record_outside_read)
+
+    result = run_scan(root, source_root_confinement=SourceRootConfinement.PROJECT_ROOT)
+
+    assert outside_reads == []
+    assert result.context is not None
+    assert all("outside_entity" not in qualname for qualname in result.context.entities)
+    parse_error = next(f for f in result.findings if f.rule_id == "WLN-ENGINE-PARSE-ERROR")
+    assert parse_error.location.path == "src/safe.py"
+    assert parse_error.suppressed is SuppressionState.ACTIVE
+    assert gate_decision(result, Severity.ERROR).tripped is True
+
+
+def test_run_scan_rejects_source_parent_replaced_after_discovery(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import os
+
+    import wardline.core.run as run_mod
+
+    root = tmp_path / "root"
+    parent = root / "src" / "pkg"
+    outside = tmp_path / "outside"
+    parent.mkdir(parents=True)
+    outside.mkdir()
+    source = parent / "safe.py"
+    source.write_text(_LEAKY, encoding="utf-8")
+    (outside / "safe.py").write_text("def outside_entity(): return 2\n", encoding="utf-8")
+    (root / "weft.toml").write_text('[wardline]\nsource_roots = ["src"]\n', encoding="utf-8")
+    parked = root / "src" / "pkg-safe"
+    real_snapshot = run_mod._stat_snapshot
+    real_resolve = Path.resolve
+    real_open = os.open
+    armed = False
+    swapped = False
+
+    def swap_parent() -> None:
+        nonlocal swapped
+        parent.rename(parked)
+        parent.symlink_to(outside, target_is_directory=True)
+        swapped = True
+
+    def arm_after_snapshot(files):  # noqa: ANN001
+        nonlocal armed
+        snapshot = real_snapshot(files)
+        armed = True
+        return snapshot
+
+    def hooked_resolve(path: Path, strict: bool = False) -> Path:
+        resolved = real_resolve(path, strict=strict)
+        if armed and path == source and not swapped:
+            swap_parent()
+        return resolved
+
+    def hooked_open(path, flags, mode=0o777, *, dir_fd=None):  # noqa: ANN001
+        if armed and path == "pkg" and not swapped:
+            swap_parent()
+        return real_open(path, flags, mode, dir_fd=dir_fd)
+
+    monkeypatch.setattr(run_mod, "_stat_snapshot", arm_after_snapshot)
+    monkeypatch.setattr(Path, "resolve", hooked_resolve)
+    monkeypatch.setattr(os, "open", hooked_open)
+
+    result = run_scan(root, source_root_confinement=SourceRootConfinement.PROJECT_ROOT)
+
+    assert swapped is True
+    assert result.context is not None
+    assert all("outside_entity" not in qualname for qualname in result.context.entities)
+    parse_error = next(f for f in result.findings if f.rule_id == "WLN-ENGINE-PARSE-ERROR")
+    assert parse_error.location.path == "src/pkg/safe.py"
+    assert gate_decision(result, Severity.ERROR).tripped is True
+
+
+def test_run_scan_rejects_project_root_ancestor_replaced_after_resolution(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import wardline.core.run as run_mod
+
+    ancestor = tmp_path / "container"
+    root = ancestor / "project"
+    source = root / "src" / "safe.py"
+    source.parent.mkdir(parents=True)
+    source.write_text(_LEAKY, encoding="utf-8")
+    (root / "weft.toml").write_text('[wardline]\nsource_roots = ["src"]\n', encoding="utf-8")
+    outside_ancestor = tmp_path / "outside-container"
+    outside_source = outside_ancestor / "project" / "src" / "safe.py"
+    outside_source.parent.mkdir(parents=True)
+    outside_source.write_text("def outside_entity(): return 2\n", encoding="utf-8")
+    (outside_ancestor / "project" / "weft.toml").write_text('[wardline]\nsource_roots = ["src"]\n', encoding="utf-8")
+    parked = tmp_path / "container-safe"
+    real_snapshot = run_mod._stat_snapshot
+    real_resolve = Path.resolve
+    armed = False
+    swapped = False
+    armed_root_resolves = 0
+
+    def arm_after_snapshot(files):  # noqa: ANN001
+        nonlocal armed
+        snapshot = real_snapshot(files)
+        armed = True
+        return snapshot
+
+    def swap_after_root_resolution(path: Path, strict: bool = False) -> Path:
+        nonlocal armed_root_resolves, swapped
+        resolved = real_resolve(path, strict=strict)
+        if armed and path == root:
+            armed_root_resolves += 1
+            if armed_root_resolves == 3 and not swapped:
+                ancestor.rename(parked)
+                ancestor.symlink_to(outside_ancestor, target_is_directory=True)
+                swapped = True
+        return resolved
+
+    monkeypatch.setattr(run_mod, "_stat_snapshot", arm_after_snapshot)
+    monkeypatch.setattr(Path, "resolve", swap_after_root_resolution)
+
+    result = run_scan(root, source_root_confinement=SourceRootConfinement.PROJECT_ROOT)
+
+    assert swapped is True
+    assert result.context is not None
+    assert all("outside_entity" not in qualname for qualname in result.context.entities)
+    parse_error = next(f for f in result.findings if f.rule_id == "WLN-ENGINE-PARSE-ERROR")
+    assert parse_error.location.path == "src/safe.py"
+    assert gate_decision(result, Severity.ERROR).tripped is True
 
 
 # --- N-3 (wardline-8669de3576): nested scan root is surfaced, never silent ---
@@ -1025,7 +1465,13 @@ def test_gate_decision_zero_files_fail_closed_trips_still_fail(tmp_path: Path) -
 def test_gate_decision_bare_scan_zero_files_carries_files_scanned() -> None:
     # The bare-scan branch (no gates configured) keeps its NOT_EVALUATED shape but now
     # carries files-scanned visibility on the decision itself.
-    result = ScanResult(findings=[], summary=ScanSummary(0, 0, 0, 0, 0), files_scanned=0, context=None)
+    result = ScanResult(
+        findings=[],
+        summary=ScanSummary(0, 0, 0, 0, 0),
+        files_scanned=0,
+        context=None,
+        gate_population=GatePopulation.honoring(()),
+    )
     decision = gate_decision(result, None)
     assert decision.verdict == "NOT_EVALUATED"
     assert decision.files_scanned == 0

@@ -16,6 +16,7 @@ from pathlib import Path
 
 from wardline.core import config as config_mod
 from wardline.core.config import JudgeSettings, parse_judge_settings
+from wardline.core.confinement import SourceRootConfinement
 from wardline.core.errors import WardlineError
 from wardline.core.judge import (
     _API_KEY_ENV,
@@ -136,7 +137,7 @@ def run_judge(
     context_lines: int | None = None,
     max_findings: int | None = None,
     write: bool = False,
-    confine_to_root: bool = True,
+    source_root_confinement: SourceRootConfinement = SourceRootConfinement.PROJECT_ROOT,
     trust_local_packs: bool = False,
     trusted_packs: tuple[str, ...] = (),
     trust_judge_config: bool = False,
@@ -179,7 +180,7 @@ def run_judge(
     scan = run_scan(
         root,
         config_path=config_path,
-        confine_to_root=confine_to_root,
+        source_root_confinement=source_root_confinement,
         trust_local_packs=trust_local_packs,
         trusted_packs=trusted_packs,
         strict_defaults=strict_defaults,

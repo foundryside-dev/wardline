@@ -14,6 +14,7 @@ from pathlib import Path
 import click
 
 from wardline.core.config import resolve_loomweave_url
+from wardline.core.confinement import SourceRootConfinement
 from wardline.core.errors import WardlineError
 
 
@@ -85,7 +86,7 @@ def explain_taint(
             path,
             fingerprint=fingerprint,
             config_path=config_path,
-            confine_to_root=True,
+            source_root_confinement=SourceRootConfinement.PROJECT_ROOT,
             loomweave=loomweave,
             sink_qualname=sink_qualname,
             chain=chain,

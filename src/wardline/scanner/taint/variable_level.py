@@ -27,7 +27,7 @@ from __future__ import annotations
 import ast
 import contextvars
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from wardline.core.taints import _PROVENANCE_CLASH, RAW_ZONE, TRUST_RANK, TaintState, combine
@@ -173,17 +173,50 @@ class _RequestMembers:
 # model — NOT whole-param tainting, so ``req.app``/``req.state``/``req.url``/``req.scope``/
 # ``req.client`` stay clean). The match is on the RESOLVED type via the alias map, never
 # the parameter name. FastAPI's ``Request`` subclasses Starlette's (identical accessor
-# surface), so both keys share one member set; both are still needed because the alias
+# surface), so all keys share one member set; each is still needed because the alias
 # map records the import spelling actually used. Mechanism is general — a new framework is
-# one dict row; seeding stays scoped to these two FQNs deliberately (precision over recall).
+# one dict row; seeding stays scoped to these three FQNs deliberately (precision over recall).
 _STARLETTE_REQUEST_MEMBERS = _RequestMembers(
     properties=frozenset({"query_params", "path_params", "headers", "cookies"}),
     methods=frozenset({"json", "body", "form", "stream"}),
 )
 _REQUEST_SOURCE_TYPES: dict[str, _RequestMembers] = {
     "fastapi.Request": _STARLETTE_REQUEST_MEMBERS,
+    "fastapi.requests.Request": _STARLETTE_REQUEST_MEMBERS,
     "starlette.requests.Request": _STARLETTE_REQUEST_MEMBERS,
 }
+_REQUEST_NESTED_ATTRIBUTE_SOURCES: frozenset[tuple[str, str]] = frozenset({("url", "query")})
+_REQUEST_NESTED_SUBSCRIPT_SOURCES: frozenset[tuple[str, str]] = frozenset({("scope", "query_string")})
+
+
+def _request_receiver_fqns(name: str) -> tuple[str, ...]:
+    var_types = _CURRENT_VAR_TYPES.get()
+    if var_types is None:
+        return ()
+    return tuple(fqn for fqn in var_types.get(name, ()) if fqn in _REQUEST_SOURCE_TYPES)
+
+
+def _constant_string(node: ast.expr) -> str | None:
+    return node.value if isinstance(node, ast.Constant) and isinstance(node.value, str) else None
+
+
+def _is_exact_nested_request_source(node: ast.expr) -> bool:
+    if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Attribute):
+        base = node.value
+        return (
+            isinstance(base.value, ast.Name)
+            and bool(_request_receiver_fqns(base.value.id))
+            and (base.attr, node.attr) in _REQUEST_NESTED_ATTRIBUTE_SOURCES
+        )
+    if isinstance(node, ast.Subscript) and isinstance(node.value, ast.Attribute):
+        base = node.value
+        return (
+            isinstance(base.value, ast.Name)
+            and bool(_request_receiver_fqns(base.value.id))
+            and (base.attr, _constant_string(node.slice)) in _REQUEST_NESTED_SUBSCRIPT_SOURCES
+        )
+    return False
+
 
 _CURRENT_ALIAS_MAP: contextvars.ContextVar[dict[str, str] | None] = contextvars.ContextVar(
     "_CURRENT_ALIAS_MAP", default=None
@@ -323,6 +356,9 @@ class VariableTaintContext:
     module_prefix: str | None = None
     param_meets: dict[str, TaintState] | None = None
     provenance_clash: bool | None = None
+    route_body_params: frozenset[str] = frozenset()
+    route_dependency_params: dict[str, TaintState] = field(default_factory=dict)
+    parameter_type_fqns: dict[str, tuple[str, ...]] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -421,6 +457,9 @@ def analyze_function_variables(
             alias_map=context.alias_map,
             call_site_arg_taints=call_site_arg_taints,
             param_meets=context.param_meets,
+            route_body_params=context.route_body_params,
+            route_dependency_params=context.route_dependency_params,
+            parameter_type_fqns=context.parameter_type_fqns,
             provenance_clash=context.provenance_clash,
             out_var_types=return_var_types,
         )
@@ -661,9 +700,12 @@ def compute_variable_taints(
     alias_map: dict[str, str] | None = None,
     call_site_arg_taints: dict[int, dict[int | str | None, TaintState]] | None = None,
     param_meets: dict[str, TaintState] | None = None,
+    route_body_params: frozenset[str] = frozenset(),
+    route_dependency_params: dict[str, TaintState] | None = None,
     *,
     provenance_clash: bool | None = None,
     out_var_types: dict[str, list[str]] | None = None,
+    parameter_type_fqns: dict[str, tuple[str, ...]] | None = None,
 ) -> dict[str, TaintState]:
     """Compute per-variable taint for a function body.
 
@@ -711,7 +753,16 @@ def compute_variable_taints(
         token_args = _CURRENT_CALL_SITE_ARG_TAINTS.set(call_site_arg_taints)
     try:
         var_taints: dict[str, TaintState] = {}
-        _seed_parameters(func_node, function_taint, var_taints, param_meets, taint_map)
+        _seed_parameters(
+            func_node,
+            function_taint,
+            var_taints,
+            param_meets,
+            taint_map,
+            route_body_params,
+            route_dependency_params or {},
+            parameter_type_fqns,
+        )
         _walk_body(func_node.body, function_taint, taint_map, var_taints, call_site_taints)
         # Second pass: resolve lambda BODIES against the worst taint each variable holds
         # anywhere in the function, so a deferred lambda that captures a variable tainted
@@ -751,6 +802,9 @@ def _seed_parameters(
     var_taints: dict[str, TaintState],
     param_meets: dict[str, TaintState] | None = None,
     taint_map: dict[str, TaintState] | None = None,
+    route_body_params: frozenset[str] = frozenset(),
+    route_dependency_params: dict[str, TaintState] | None = None,
+    parameter_type_fqns: dict[str, tuple[str, ...]] | None = None,
 ) -> None:
     args = func_node.args
     var_types = _CURRENT_VAR_TYPES.get()
@@ -775,16 +829,25 @@ def _seed_parameters(
             default_taints[param.arg] = _resolve_expr(kw_default_expr, function_taint, taint_map or {}, {})
 
     def handle_arg(arg: ast.arg) -> None:
-        fallback = default_taints.get(arg.arg, function_taint)
+        # FastAPI resolves dependency-provider results before invoking a route. Seed a
+        # recognized dependency from its provider's fixed-point return taint; unresolved
+        # providers and generic imported calls/defaults retain conservative fallbacks.
+        fallback = (route_dependency_params or {}).get(arg.arg, default_taints.get(arg.arg, function_taint))
         seed_val = fallback
         if param_meets is not None and arg.arg in param_meets:
             seed_val = combine(seed_val, param_meets[arg.arg])
+        if arg.arg in route_body_params:
+            seed_val = combine(seed_val, TaintState.EXTERNAL_RAW)
         var_taints[arg.arg] = seed_val
 
         if arg.annotation and var_types is not None:
-            fqn = _resolve_expr_fqn(arg.annotation, alias_map)
-            if fqn:
-                var_types[arg.arg] = [fqn]
+            if parameter_type_fqns is not None:
+                fqns = parameter_type_fqns.get(arg.arg, ())
+            else:
+                fqn = _resolve_expr_fqn(arg.annotation, alias_map)
+                fqns = (fqn,) if fqn is not None else ()
+            if fqns:
+                var_types[arg.arg] = list(fqns)
 
     for arg in (*args.posonlyargs, *args.args, *args.kwonlyargs):
         handle_arg(arg)
@@ -893,11 +956,15 @@ def _resolve_expr(
     if isinstance(node, ast.UnaryOp):
         return _resolve_expr(node.operand, function_taint, taint_map, var_taints)
     if isinstance(node, ast.Subscript):
+        if _is_exact_nested_request_source(node):
+            return TaintState.EXTERNAL_RAW
         # Resolve the slice for walrus side-effects (discarded); the subscript
         # result carries its container's taint.
         _resolve_expr(node.slice, function_taint, taint_map, var_taints)
         return _resolve_expr(node.value, function_taint, taint_map, var_taints)
     if isinstance(node, ast.Attribute):
+        if _is_exact_nested_request_source(node):
+            return TaintState.EXTERNAL_RAW
         # A ``self.<attr>``/``cls.<attr>`` read whose attribute has a project-computed
         # cross-method summary (injected by the analyzer under that dotted key) reads
         # the summary — closing the function-level fail-open where raw written to an

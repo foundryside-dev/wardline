@@ -5,12 +5,14 @@ from __future__ import annotations
 import ast
 import hashlib
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
+from wardline.core.confinement import SourceRootConfinement
 from wardline.core.finding import Finding, Kind, Location, Severity
 from wardline.core.qualname import module_dotted_name
+from wardline.core.safe_paths import read_source_bytes
 from wardline.core.taints import TaintState
 from wardline.scanner.ast_primitives import build_import_alias_map
 from wardline.scanner.index import Entity, discover_class_qualnames, discover_file_entities
@@ -52,6 +54,7 @@ class ParseProjectInput:
     config: WardlineConfig
     star_exports: dict[str, dict[str, str]]
     summary_cache: SummaryCache | None = None
+    source_root_confinement: SourceRootConfinement = SourceRootConfinement.PROJECT_ROOT
 
 
 @dataclass(frozen=True, slots=True)
@@ -127,7 +130,11 @@ def run_parse_project_stage(stage_input: ParseProjectInput) -> ParseProjectOutpu
             continue
 
         try:
-            source_bytes = path.read_bytes()
+            source_bytes = read_source_bytes(
+                path,
+                root=root,
+                source_root_confinement=stage_input.source_root_confinement,
+            )
             source = source_bytes.decode("utf-8")
             source_sha256 = hashlib.sha256(source_bytes).hexdigest()
 
@@ -290,6 +297,9 @@ class L2FunctionInput:
     alias_map: dict[str, str]
     param_meets: dict[str, TaintState] | None = None
     module_prefix: str | None = None
+    route_body_params: frozenset[str] = frozenset()
+    route_dependency_params: dict[str, TaintState] = field(default_factory=dict)
+    parameter_type_fqns: dict[str, tuple[str, ...]] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -311,6 +321,9 @@ def run_l2_function_stage(stage_input: L2FunctionInput) -> L2FunctionOutput:
             alias_map=stage_input.alias_map,
             module_prefix=stage_input.module_prefix,
             param_meets=stage_input.param_meets,
+            route_body_params=stage_input.route_body_params,
+            route_dependency_params=stage_input.route_dependency_params,
+            parameter_type_fqns=stage_input.parameter_type_fqns,
         ),
     )
     return L2FunctionOutput(

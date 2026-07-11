@@ -275,15 +275,12 @@ def build_legis_artifact(
 
     The findings are the GATE population — the SAME population Wardline's own
     ``--fail-on`` gate evaluates (``gate_decision``), each projected onto legis's
-    accepted vocabulary. Under the secure default that is ``result.gate_findings``
-    (the unsuppressed population: a committed baseline/waiver/judged annotates the
-    emitted ``findings`` but does NOT clear the gate), so a defect a malicious PR
-    self-suppresses still rides as ``active`` and legis enforces it — the one-judge
-    property. Under ``--trust-suppressions`` ``gate_findings`` is None and the
-    artifact honours the repo suppressions (``result.findings``), exactly as the
-    gate does. Both populations are ``apply_suppressions`` over the same raw list, so
-    ``len(gate_findings) == len(findings)`` and the ``finding_count`` legis records
-    over the whole list (``service/wardline.py``) stays honest.
+    accepted vocabulary. Under the secure default that is the tagged unsuppressed
+    population: a committed baseline/waiver/judged annotates the emitted ``findings``
+    but does NOT clear the gate, so a defect a malicious PR self-suppresses still rides
+    as ``active`` and legis enforces it — the one-judge property. Under
+    ``--trust-suppressions`` the tagged population honours repository suppressions,
+    exactly as the gate does.
 
     legis routes only the active defects but records ``finding_count`` over the whole
     list; the projection makes facts and diagnostics ingest cleanly (non-tier
@@ -330,15 +327,9 @@ def build_legis_artifact(
             "advisory marker on the frozen legis wire; run a full scan for the legis hop"
         )
 
-    # Mirror gate_decision's exact population selection so the artifact tracks the gate:
-    # use ``gate_findings`` whenever it is present, falling back to ``findings`` only for
-    # the legacy ``None`` sentinel. Secure-default -> the unsuppressed population (baselined/
-    # judged/waived ride as active -> legis enforces them, the one-judge property). A full
-    # --trust-suppressions scan -> ``gate_findings is None`` -> honour the repo suppressions
-    # in ``findings``. A delta --trust-suppressions scan MATERIALISES a concrete (post-
-    # suppression, pre-delta-filter) ``gate_findings`` so the artifact, like the gate, is the
+    # Consume the same mandatory tagged population as gate_decision. It is always the
     # unfiltered analyzed population — never the delta display set (INV-4 / THREAT-001).
-    gate_population = result.gate_findings if result.gate_findings is not None else result.findings
+    gate_population = result.gate_population.findings
     findings = [project_finding(f) for f in gate_population]
     scan: dict[str, Any] = {
         "scanner_identity": f"wardline@{__version__}",

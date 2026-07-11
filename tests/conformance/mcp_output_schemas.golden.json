@@ -375,6 +375,38 @@
             "description": "Deterministic 'sha256:<hex>' over the effective scan policy.",
             "type": "string"
           },
+          "sei_diagnostics": {
+            "description": "Per-boundary Loomweave identity-resolution diagnostics, sorted by qualname.",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "auth_status": {
+                  "enum": [
+                    401,
+                    403,
+                    null
+                  ],
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "qualname": {
+                  "type": "string"
+                },
+                "reason": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "qualname",
+                "reason",
+                "auth_status"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
           "sei_source": {
             "description": "'loomweave' iff a client was supplied AND at least one SEI resolved; else 'unavailable'.",
             "enum": [
@@ -396,7 +428,8 @@
           "ruleset_hash",
           "posture",
           "boundaries",
-          "sei_source"
+          "sei_source",
+          "sei_diagnostics"
         ],
         "type": "object"
       },
@@ -2427,6 +2460,11 @@
             "description": "Absent when not configured.",
             "type": "boolean"
           },
+          "chunks_landed": {
+            "description": "Number of chunks Filigree accepted during this emit attempt; zero only when none landed.",
+            "minimum": 0,
+            "type": "integer"
+          },
           "configured": {
             "type": "boolean"
           },
@@ -2962,6 +3000,11 @@
                 "description": "True when the emit was refused with 401/403.",
                 "type": "boolean"
               },
+              "chunks_landed": {
+                "description": "Number of chunks Filigree accepted during this emit attempt; zero only when none landed.",
+                "minimum": 0,
+                "type": "integer"
+              },
               "created": {
                 "type": "integer"
               },
@@ -3017,6 +3060,7 @@
               "auth_rejected",
               "token_sent",
               "url",
+              "chunks_landed",
               "destination"
             ],
             "type": "object"

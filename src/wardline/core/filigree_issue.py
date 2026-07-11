@@ -23,6 +23,7 @@ from wardline.core.errors import FiligreeEmitError
 from wardline.core.filigree_emit import filigree_api_base_url, redact_url_for_diagnostics, sanitize_peer_text
 from wardline.core.finding import FINGERPRINT_SCHEME, format_fingerprint
 from wardline.core.http import WeftHttp
+from wardline.loomweave.dossier_sources import binding_unavailable_reason
 from wardline.loomweave.identity import SeiResolver
 
 _ALLOWED_SCHEMES = ("http", "https")
@@ -451,6 +452,12 @@ def _legacy_locator_binding(loomweave_client: Any, qualname: str, *, plugin: str
     if resolved is None:
         return IdentityAttachResult.skipped(
             "Loomweave unavailable while resolving legacy locator",
+            binding_kind="locator",
+        )
+    auth_status = getattr(resolved, "auth_status", None)
+    if auth_status in (401, 403):
+        return IdentityAttachResult.skipped(
+            binding_unavailable_reason(qualname, auth_status),
             binding_kind="locator",
         )
     resolved_map = getattr(resolved, "resolved", {})

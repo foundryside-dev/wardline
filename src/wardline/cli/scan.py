@@ -10,8 +10,9 @@ from typing import IO, TYPE_CHECKING
 import click
 
 from wardline.core.artifacts import write_scan_artifact
+from wardline.core.config import WardlineConfig, resolve_filigree_url, resolve_loomweave_url
 from wardline.core.config import load as load_config
-from wardline.core.config import resolve_filigree_url, resolve_loomweave_url
+from wardline.core.confinement import SourceRootConfinement
 from wardline.core.delta_scope import (
     _MAX_PAYLOAD_BYTES,
     AffectedScope,
@@ -324,6 +325,11 @@ def scan(
         # scope is requested and a loomweave URL resolves; any loomweave error -> None
         # (fail-soft, recorded as "loomweave unavailable" in the scope block).
         sei_resolver = _build_sei_resolver(loomweave_url, path) if affected is not None else None
+        source_root_confinement = (
+            SourceRootConfinement.LEGACY_ALLOW_ESCAPE
+            if allow_source_root_escape
+            else SourceRootConfinement.PROJECT_ROOT
+        )
         result = run_scan(
             path,
             config_path=config_path,
@@ -334,7 +340,7 @@ def scan(
             trust_local_packs=trust_local_packs,
             trusted_packs=trusted_packs,
             strict_defaults=strict_defaults,
-            confine_to_root=not allow_source_root_escape,
+            source_root_confinement=source_root_confinement,
             trust_suppressions=trust_suppressions,
             lang=lang,
         )
@@ -366,7 +372,7 @@ def scan(
                         trust_local_packs=trust_local_packs,
                         trusted_packs=trusted_packs,
                         strict_defaults=strict_defaults,
-                        confine_to_root=not allow_source_root_escape,
+                        source_root_confinement=source_root_confinement,
                         trust_suppressions=trust_suppressions,
                         lang=lang,
                     )
@@ -429,7 +435,7 @@ def scan(
             artifact = build_legis_artifact(
                 result,
                 root=path,
-                config=cfg,
+                config=_effective_legis_config(result),
                 key=legis_key.encode("utf-8") if legis_key else None,
                 allow_dirty=allow_dirty,
             )
@@ -481,7 +487,7 @@ def scan(
             from wardline.core.errors import LoomweaveError
             from wardline.loomweave.client import LoomweaveClient, WriteResult
             from wardline.loomweave.config import load_loomweave_token, resolve_project_name
-            from wardline.loomweave.write import write_facts_to_loomweave
+            from wardline.loomweave.write import NO_FACTS_REASON, write_facts_to_loomweave
 
             try:
                 client = LoomweaveClient(
@@ -607,7 +613,12 @@ def scan(
         logged_loomweave_url = _redact_url_for_log(loomweave_url)
         if not loomweave_result.reachable:
             reason = loomweave_result.disabled_reason or "unreachable"
-            if loomweave_result.written:
+            if reason == NO_FACTS_REASON:
+                # No transport call occurred, so this is neither an outage warning nor
+                # evidence that the configured peer was reachable. Report the neutral
+                # orchestration outcome without naming the destination URL.
+                click.echo(f"Loomweave taint-fact write: {reason}.")
+            elif loomweave_result.written:
                 # Mid-batch soft failure (outage/403 on a later chunk): earlier chunks
                 # ARE committed (per-entity replace; `written` counts only chunks that
                 # landed before the failure — the write_taint_facts contract), so the
@@ -648,7 +659,7 @@ def scan(
     # used by SuppressionState.ACTIVE, ScanSummary.active, the MCP summary key, the
     # agent-summary active_defects, and the wardline:loop prompt. It is NOT Filigree's
     # first-seen "new" (unseen fingerprint) nor the --fail-on gate population
-    # (ScanResult.gate_findings). See docs/reference/finding-lifecycle-vocabulary.md.
+    # (ScanResult.gate_population.findings). See docs/reference/finding-lifecycle-vocabulary.md.
     click.echo(
         f"scanned {result.files_scanned} file(s); {s.total} finding(s) — "
         f"{s.baselined + s.waived + s.judged} suppressed "
@@ -787,3 +798,9 @@ def _loomweave_status(result: object | None) -> dict[str, object]:
 
 def _redact_url_for_log(url: str | None) -> str:
     return redact_url_for_diagnostics(url) or "<not configured>"
+
+
+def _effective_legis_config(result: ScanResult) -> WardlineConfig:
+    if result.effective_config is None:
+        raise WardlineError("scan result did not retain its effective configuration")
+    return result.effective_config

@@ -21,7 +21,9 @@ from wardline.core.rekey import (  # noqa: E402
     _write_store_doc,  # noqa: E402
     apply_pending_legs,
     carry_baseline_forward,
+    resume_rekey,
     snapshot_dir,
+    write_journal,
 )
 
 A, NA = "a" * 64, "1" * 64
@@ -83,3 +85,36 @@ def test_crash_after_write_before_flag_preserves_content(tmp_path: Path) -> None
         "resume must re-derive verdicts from the snapshot — an empty store here would mean "
         "every verdict was silently shredded"
     )
+
+
+def test_resume_preflights_every_pending_snapshot_scheme_before_any_write(tmp_path: Path) -> None:
+    root = tmp_path
+    _seed_snapshot_baseline(root)
+    sdir = snapshot_dir(root)
+    (sdir / "judged.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "fingerprint_scheme": "wlfp999",
+                "version": 1,
+                "findings": [{"fingerprint": A, "rule_id": "PY-WL-108", "path": "m.py"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    baseline_live = paths.baseline_path(root)
+    judged_live = paths.judged_path(root)
+    baseline_live.write_bytes(b"baseline-live-before")
+    judged_live.write_bytes(b"judged-live-before")
+    journal_path = paths.migration_journal_path(root)
+    write_journal(journal_path, Journal(remap={A: NA}), root=root)
+    before = {
+        baseline_live: baseline_live.read_bytes(),
+        judged_live: judged_live.read_bytes(),
+        journal_path: journal_path.read_bytes(),
+    }
+
+    with pytest.raises(ConfigError, match="judged.yaml: unsupported fingerprint scheme 'wlfp999'"):
+        resume_rekey(root)
+
+    assert {path: path.read_bytes() for path in before} == before
