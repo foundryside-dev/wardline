@@ -24,6 +24,7 @@ _REKEY_SOURCE = _ROOT / "src/wardline/core/rekey.py"
 
 def test_authoritative_identity_docs_match_live_scheme_and_formula() -> None:
     adr = _ADR.read_text(encoding="utf-8")
+    normalized_adr = " ".join(adr.split())
     guide = _SUPPRESSION_GUIDE.read_text(encoding="utf-8")
     improvements = _IMPROVEMENTS_NOTE.read_text(encoding="utf-8")
     rekey_source = _REKEY_SOURCE.read_text(encoding="utf-8")
@@ -38,6 +39,11 @@ def test_authoritative_identity_docs_match_live_scheme_and_formula() -> None:
     assert "`wlfp2`" in adr
     assert "sha256(rule_id \\0 path \\0 qualname \\0 taint_path)" in adr
     assert "`line_start` is deliberately not hashed" in adr
+    assert "`path` is scan-root-relative" in adr
+    assert "`taint_path` (the fourth fingerprint input)" in adr
+    assert "more than one finding per `(rule_id, path, qualname)`" in normalized_adr
+    assert "the fifth fingerprint input" not in adr
+    assert "`path` is repo-relative" not in adr
     assert "line-insensitive" in guide
     assert "`line_start` is not a fingerprint input" in improvements
     assert "entity-relative/source-derived discriminators" in improvements

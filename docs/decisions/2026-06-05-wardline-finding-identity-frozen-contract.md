@@ -20,7 +20,7 @@ externally-observable *identity*:
 
 The live `wlfp2` fingerprint is
 `sha256(rule_id \0 path \0 qualname \0 taint_path)` (`core/finding.py`), where
-`path` is repo-relative. `line_start` is deliberately not hashed: source-derived
+`path` is scan-root-relative. `line_start` is deliberately not hashed: source-derived
 multi-emit discriminators use entity-relative spans so moving an unchanged entity
 does not re-key it. If the Rust
 parser produces even slightly different spans, qualnames, or fingerprints, every
@@ -114,10 +114,10 @@ pass unchanged.** Concretely:
    schedule pressure.
 
 8. **`taint_path` discriminator convention (weft-4a9d0f863c).** A finding's
-   `taint_path` (the fifth fingerprint input) holds ONLY a source-derived
+   `taint_path` (the fourth fingerprint input) holds ONLY a source-derived
    discriminator — never a resolved `TaintState` tier or `via_callee`, which drift
    across builds for identical source. Call-site-anchored rules that can emit more
-   than one finding per `(rule_id, path, line_start, qualname)` discriminate by the
+   than one finding per `(rule_id, path, qualname)` discriminate by the
    sink/callee spelling plus the call node's **full lexical span**, serialized as
    `{lineno - entity_line_start}:{col_offset}:{end_lineno - entity_line_start}:{end_col_offset}`.
    The line coordinates are entity-relative so moving the whole function does not

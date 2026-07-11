@@ -571,6 +571,31 @@ def _write_store_doc(root: Path, live_path: Path, document: dict[str, Any]) -> N
     )
 
 
+def _preflight_pending_snapshot_payloads(root: Path, journal: Journal) -> dict[str, bytes | None]:
+    """Read and validate every pending YAML snapshot before any migration write.
+
+    Return the validated bytes so application consumes the exact preflighted
+    payloads. This closes both incremental validation and a preflight/use race:
+    a later snapshot cannot become unsupported after an earlier leg mutates its
+    live store and journal.
+    """
+    sdir = snapshot_dir(root)
+    payloads: dict[str, bytes | None] = {}
+    for leg in journal.legs:
+        if leg.done or leg.name == "filigree":
+            continue
+        snap_name, _live_path_fn, _list_key, _version = _YAML_LEGS[leg.name]
+        snap = sdir / snap_name
+        if not _has_path_or_symlink(snap):
+            payloads[leg.name] = None
+            continue
+        data = _read_required_snapshot_bytes(root, snap)
+        loaded = _load_old_store_bytes(data, snap_name)
+        _require_rekey_store_scheme(loaded.get("fingerprint_scheme"), store_name=snap_name)
+        payloads[leg.name] = data
+    return payloads
+
+
 def apply_pending_legs(
     root: Path, journal: Journal, *, findings: Sequence[Finding] | None = None, filigree: Any = None
 ) -> Journal:
@@ -580,8 +605,8 @@ def apply_pending_legs(
     identical content — never an empty store, because carry NEVER reads the live store.
     YAML legs are idempotent; the Filigree leg soft-fails into recorded debt and never
     aborts the (already-complete) YAML migration."""
+    snapshot_payloads = _preflight_pending_snapshot_payloads(root, journal)
     jpath = paths.migration_journal_path(root)
-    sdir = snapshot_dir(root)
     for leg in journal.legs:
         if leg.done:
             continue
@@ -590,13 +615,12 @@ def apply_pending_legs(
             write_journal(jpath, journal, root=root)
             continue
         snap_name, live_path_fn, list_key, version = _YAML_LEGS[leg.name]
-        snap = sdir / snap_name
-        if not _has_path_or_symlink(snap):
+        snapshot_data = snapshot_payloads[leg.name]
+        if snapshot_data is None:
             # The store never existed pre-migration — nothing to carry, create nothing.
             leg.done = True
             write_journal(jpath, journal, root=root)
             continue
-        snapshot_data = _read_required_snapshot_bytes(root, snap)
         result = _carry_store_bytes(snapshot_data, snap_name, list_key, version, journal.remap)
         _write_store_doc(root, live_path_fn(root), result.document)
         leg.carried = list(result.carried)
