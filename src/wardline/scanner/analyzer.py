@@ -14,7 +14,7 @@ from __future__ import annotations
 import ast
 import hashlib
 from collections.abc import Iterator
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from wardline.core.config import WardlineConfig
 from wardline.core.confinement import SourceRootConfinement
@@ -42,17 +42,18 @@ from wardline.scanner.taint.fastapi_sources import (
     discover_exported_type_candidates,
     discover_fastapi_route_receivers,
     discover_parameter_types,
-    discover_pydantic_models,
 )
 from wardline.scanner.taint.module_summariser import collect_module_global_raw_seeds, own_scope_global_names
 from wardline.scanner.taint.project_resolver import resolve_project_taints
 from wardline.scanner.taint.provider import TaintSourceProvider
+from wardline.scanner.taint.pydantic_discovery import discover_project_pydantic_models
 from wardline.scanner.taint.variable_level import L2BudgetExceeded, attribute_write_recording, project_attribute_writes
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
     from pathlib import Path
 
+    from wardline.scanner.taint.pydantic_discovery import ParsedPydanticModule
     from wardline.scanner.taint.summary_cache import SummaryCache
 
 
@@ -645,63 +646,41 @@ class WardlineAnalyzer:
 
         # ── L2 pass 1 — per-method var/return taints + per-class attribute summary ──
         all_classes = frozenset(c for parsed in file_meta for c in parsed.class_qualnames)
-        pydantic_models = frozenset[str]()
-        model_states = {pydantic_models}
-        model_work = 0
-        model_work_budget = max(4096, sum(len(parsed.tree.body) for parsed in file_meta) * 32)
-        model_degraded_reason: str | None = None
-        max_model_rounds = (
-            sum(1 for parsed in file_meta for stmt in parsed.tree.body if isinstance(stmt, ast.ClassDef)) + 1
-        )
-        for _model_round in range(max_model_rounds):
-            next_models: set[str] = set()
-            for parsed in file_meta:
-                model_work += len(parsed.tree.body) + len(pydantic_models) + 1
-                if model_work > model_work_budget:
-                    model_degraded_reason = "work_budget_exceeded"
-                    break
-                discovered = discover_pydantic_models(
-                    parsed.tree,
-                    module=parsed.module,
-                    aliases=parsed.alias_map,
-                    known_models=pydantic_models,
-                    is_package=parsed.relpath.rsplit("/", 1)[-1] == "__init__.py",
+        model_result = discover_project_pydantic_models(cast("Sequence[ParsedPydanticModule]", file_meta))
+        pydantic_models = model_result.models
+        if model_result.degraded_reason is not None:
+            model_degraded_reason = model_result.degraded_reason
+            model_budget = model_result.budget
+            model_properties: dict[str, object] = {
+                "reason": model_degraded_reason,
+                "round": model_result.round_number,
+                "work": model_result.work_completed,
+                "budget": model_budget.work_budget,
+                "file_count": model_budget.file_count,
+                "statement_count": model_budget.statement_count,
+                "known_model_count": model_result.known_model_count,
+                "absolute_cap_applied": model_budget.absolute_cap_applied,
+            }
+            model_detail = f"work={model_result.work_completed}/{model_budget.work_budget}"
+            if model_result.next_round_cost is not None and model_result.required_total is not None:
+                model_properties["next_round_cost"] = model_result.next_round_cost
+                model_properties["required_total"] = model_result.required_total
+                model_detail = (
+                    f"work={model_result.work_completed}; next_round={model_result.next_round_cost}; "
+                    f"required={model_result.required_total}; budget={model_budget.work_budget}"
                 )
-                next_models.update(name for name in discovered if name.rpartition(".")[0] == parsed.module)
-            if model_degraded_reason is not None:
-                pydantic_models = all_classes
-                break
-            next_state = frozenset(next_models)
-            if next_state == pydantic_models:
-                break
-            if next_state in model_states:
-                pydantic_models = all_classes
-                model_degraded_reason = "repeated_state"
-                break
-            model_states.add(next_state)
-            pydantic_models = next_state
-        else:
-            pydantic_models = all_classes
-            model_degraded_reason = "round_limit_exceeded"
-        if model_degraded_reason is not None:
             func_skip_findings.append(
                 Finding(
                     rule_id="WLN-ENGINE-PYDANTIC-DISCOVERY-LIMIT",
                     message=(
                         "Pydantic model discovery degraded to conservative class seeding "
-                        f"({model_degraded_reason}; round={_model_round + 1}; "
-                        f"work={model_work}/{model_work_budget})"
+                        f"({model_degraded_reason}; round={model_result.round_number}; {model_detail})"
                     ),
                     severity=Severity.ERROR,
                     kind=Kind.DEFECT,
                     location=Location(path=ENGINE_PATH, line_start=1),
                     fingerprint=_fp("WLN-ENGINE-PYDANTIC-DISCOVERY-LIMIT", model_degraded_reason),
-                    properties={
-                        "reason": model_degraded_reason,
-                        "round": _model_round + 1,
-                        "work": model_work,
-                        "budget": model_work_budget,
-                    },
+                    properties=model_properties,
                 )
             )
         route_receivers_by_module = {

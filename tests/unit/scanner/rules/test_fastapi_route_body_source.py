@@ -9,9 +9,15 @@ from pathlib import Path
 import pytest
 
 from wardline.core.config import WardlineConfig
-from wardline.core.finding import Kind
+from wardline.core.finding import Kind, Severity
+from wardline.scanner import analyzer as analyzer_module
 from wardline.scanner.analyzer import WardlineAnalyzer
 from wardline.scanner.taint.fastapi_sources import _annotation_candidates, discover_fastapi_route_receivers
+from wardline.scanner.taint.pydantic_discovery import (
+    PydanticDiscoveryBudget,
+    PydanticDiscoveryReason,
+    PydanticDiscoveryResult,
+)
 
 
 def _defect_rules(tmp_path: Path, src: str) -> set[str]:
@@ -1042,5 +1048,104 @@ def test_large_model_chain_degrades_loudly_with_bounded_work(tmp_path: Path) -> 
             for index in range(1, 80)
         },
     }
-    rules = _defect_rules_files(tmp_path, files)
-    assert "WLN-ENGINE-PYDANTIC-DISCOVERY-LIMIT" in rules
+    paths = []
+    for name, src in files.items():
+        path = tmp_path / name
+        path.write_text(src, encoding="utf-8")
+        paths.append(path)
+
+    findings = WardlineAnalyzer().analyze(paths, WardlineConfig(), root=tmp_path)
+    finding = next(finding for finding in findings if finding.rule_id == "WLN-ENGINE-PYDANTIC-DISCOVERY-LIMIT")
+
+    assert finding.severity is Severity.ERROR
+    assert finding.kind is Kind.DEFECT
+    assert finding.properties == {
+        "reason": "work_budget_exceeded",
+        "round": 18,
+        "work": 14_960,
+        "budget": 15_360,
+        "next_round_cost": 1_600,
+        "required_total": 16_560,
+        "file_count": 80,
+        "statement_count": 160,
+        "known_model_count": 17,
+        "absolute_cap_applied": False,
+    }
+    assert "required=16560" in finding.message
+
+
+@pytest.mark.parametrize("reason", ["repeated_state", "round_limit_exceeded"])
+def test_pydantic_discovery_state_degradation_reports_structural_context(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    reason: PydanticDiscoveryReason,
+) -> None:
+    path = tmp_path / "m.py"
+    path.write_text("class Model: pass\n", encoding="utf-8")
+    budget = PydanticDiscoveryBudget.from_counts(file_count=1, statement_count=1)
+    result = PydanticDiscoveryResult(
+        models=frozenset({"m.Model"}),
+        degraded_reason=reason,
+        round_number=2,
+        work_completed=2,
+        budget=budget,
+        next_round_cost=None,
+        required_total=None,
+        known_model_count=1,
+        model_counts_by_round=(1, 1),
+    )
+    monkeypatch.setattr(analyzer_module, "discover_project_pydantic_models", lambda _files: result, raising=False)
+
+    findings = WardlineAnalyzer().analyze([path], WardlineConfig(), root=tmp_path)
+    finding = next(finding for finding in findings if finding.rule_id == "WLN-ENGINE-PYDANTIC-DISCOVERY-LIMIT")
+
+    assert finding.properties == {
+        "reason": reason,
+        "round": 2,
+        "work": 2,
+        "budget": 4_096,
+        "file_count": 1,
+        "statement_count": 1,
+        "known_model_count": 1,
+        "absolute_cap_applied": False,
+    }
+    assert "next_round_cost" not in finding.properties
+    assert "required_total" not in finding.properties
+
+
+def test_pydantic_discovery_budget_cap_is_visible_in_diagnostic(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = tmp_path / "m.py"
+    path.write_text("class Model: pass\n", encoding="utf-8")
+    budget = PydanticDiscoveryBudget.from_counts(file_count=100_000, statement_count=0)
+    result = PydanticDiscoveryResult(
+        models=frozenset({"m.Model"}),
+        degraded_reason="work_budget_exceeded",
+        round_number=2,
+        work_completed=4_900_000,
+        budget=budget,
+        next_round_cost=200_000,
+        required_total=5_100_000,
+        known_model_count=1,
+        model_counts_by_round=(1,),
+    )
+    monkeypatch.setattr(analyzer_module, "discover_project_pydantic_models", lambda _files: result, raising=False)
+
+    findings = WardlineAnalyzer().analyze([path], WardlineConfig(), root=tmp_path)
+    finding = next(finding for finding in findings if finding.rule_id == "WLN-ENGINE-PYDANTIC-DISCOVERY-LIMIT")
+
+    assert finding.properties == {
+        "reason": "work_budget_exceeded",
+        "round": 2,
+        "work": 4_900_000,
+        "budget": 5_000_000,
+        "next_round_cost": 200_000,
+        "required_total": 5_100_000,
+        "file_count": 100_000,
+        "statement_count": 0,
+        "known_model_count": 1,
+        "absolute_cap_applied": True,
+    }
+    assert "required=5100000" in finding.message
