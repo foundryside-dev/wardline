@@ -290,6 +290,8 @@ class L2FunctionInput:
     alias_map: dict[str, str]
     param_meets: dict[str, TaintState] | None = None
     module_prefix: str | None = None
+    route_body_params: frozenset[str] = frozenset()
+    route_dependency_params: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True, slots=True)
@@ -311,6 +313,8 @@ def run_l2_function_stage(stage_input: L2FunctionInput) -> L2FunctionOutput:
             alias_map=stage_input.alias_map,
             module_prefix=stage_input.module_prefix,
             param_meets=stage_input.param_meets,
+            route_body_params=stage_input.route_body_params,
+            route_dependency_params=stage_input.route_dependency_params,
         ),
     )
     return L2FunctionOutput(

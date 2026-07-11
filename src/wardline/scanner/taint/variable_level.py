@@ -356,6 +356,8 @@ class VariableTaintContext:
     module_prefix: str | None = None
     param_meets: dict[str, TaintState] | None = None
     provenance_clash: bool | None = None
+    route_body_params: frozenset[str] = frozenset()
+    route_dependency_params: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True, slots=True)
@@ -454,6 +456,8 @@ def analyze_function_variables(
             alias_map=context.alias_map,
             call_site_arg_taints=call_site_arg_taints,
             param_meets=context.param_meets,
+            route_body_params=context.route_body_params,
+            route_dependency_params=context.route_dependency_params,
             provenance_clash=context.provenance_clash,
             out_var_types=return_var_types,
         )
@@ -694,6 +698,8 @@ def compute_variable_taints(
     alias_map: dict[str, str] | None = None,
     call_site_arg_taints: dict[int, dict[int | str | None, TaintState]] | None = None,
     param_meets: dict[str, TaintState] | None = None,
+    route_body_params: frozenset[str] = frozenset(),
+    route_dependency_params: frozenset[str] = frozenset(),
     *,
     provenance_clash: bool | None = None,
     out_var_types: dict[str, list[str]] | None = None,
@@ -744,7 +750,15 @@ def compute_variable_taints(
         token_args = _CURRENT_CALL_SITE_ARG_TAINTS.set(call_site_arg_taints)
     try:
         var_taints: dict[str, TaintState] = {}
-        _seed_parameters(func_node, function_taint, var_taints, param_meets, taint_map)
+        _seed_parameters(
+            func_node,
+            function_taint,
+            var_taints,
+            param_meets,
+            taint_map,
+            route_body_params,
+            route_dependency_params,
+        )
         _walk_body(func_node.body, function_taint, taint_map, var_taints, call_site_taints)
         # Second pass: resolve lambda BODIES against the worst taint each variable holds
         # anywhere in the function, so a deferred lambda that captures a variable tainted
@@ -784,6 +798,8 @@ def _seed_parameters(
     var_taints: dict[str, TaintState],
     param_meets: dict[str, TaintState] | None = None,
     taint_map: dict[str, TaintState] | None = None,
+    route_body_params: frozenset[str] = frozenset(),
+    route_dependency_params: frozenset[str] = frozenset(),
 ) -> None:
     args = func_node.args
     var_types = _CURRENT_VAR_TYPES.get()
@@ -808,10 +824,17 @@ def _seed_parameters(
             default_taints[param.arg] = _resolve_expr(kw_default_expr, function_taint, taint_map or {}, {})
 
     def handle_arg(arg: ast.arg) -> None:
-        fallback = default_taints.get(arg.arg, function_taint)
+        # FastAPI resolves dependency-provider results before invoking a route. Quiet
+        # only syntactically recognized Depends defaults on recognized routes; generic
+        # imported calls/defaults retain the conservative UNKNOWN_RAW fallback.
+        fallback = (
+            TaintState.INTEGRAL if arg.arg in route_dependency_params else default_taints.get(arg.arg, function_taint)
+        )
         seed_val = fallback
         if param_meets is not None and arg.arg in param_meets:
             seed_val = combine(seed_val, param_meets[arg.arg])
+        if arg.arg in route_body_params:
+            seed_val = combine(seed_val, TaintState.EXTERNAL_RAW)
         var_taints[arg.arg] = seed_val
 
         if arg.annotation and var_types is not None:
