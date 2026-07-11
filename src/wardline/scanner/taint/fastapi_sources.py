@@ -577,6 +577,8 @@ def discover_parameter_types(
                 match_outcomes.extend(branch(case.body, shadows=pattern_names(case.pattern)) for case in stmt.cases)
                 merge_bindings(bindings, match_outcomes)
                 continue
+            if isinstance(stmt, (ast.Raise, ast.Return, ast.Break, ast.Continue)):
+                break
             assignments = _assignment_values(stmt)
             if not assignments:
                 continue

@@ -730,3 +730,23 @@ def test_try_handler_sees_request_binding_from_completed_try_prefix(tmp_path: Pa
     assert "WLN-ENGINE-PARSE-ERROR" not in rules
     assert "WLN-ENGINE-FILE-FAILED" not in rules
     assert "PY-WL-108" in rules
+
+
+def test_try_handler_ignores_request_binding_after_unconditional_raise(tmp_path: Path) -> None:
+    src = """
+        import os
+        from wardline.decorators import trusted
+
+        class Request: ...
+        try:
+            raise RuntimeError
+            from fastapi import Request
+        except RuntimeError:
+            @trusted(level='ASSURED')
+            def h(req: Request):
+                os.system(req.query_params.get('x'))
+    """
+    rules = _defect_rules(tmp_path, src)
+    assert "WLN-ENGINE-PARSE-ERROR" not in rules
+    assert "WLN-ENGINE-FILE-FAILED" not in rules
+    assert "PY-WL-108" not in rules
