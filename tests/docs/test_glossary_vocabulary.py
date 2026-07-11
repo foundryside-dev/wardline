@@ -36,8 +36,8 @@ _ANCHORS: tuple[tuple[str, int, str], ...] = (
     ("src/wardline/core/run.py", 210, "verdict: str"),
     ("src/wardline/core/run.py", 586, "Baseline(frozenset())"),
     ("src/wardline/core/run.py", 617, "def apply_delta_scope"),
-    ("src/wardline/core/run.py", 667, "active=sum"),
-    ("src/wardline/core/run.py", 757, "honors_suppressions"),
+    ("src/wardline/core/run.py", 674, "active=sum"),
+    ("src/wardline/core/run.py", 764, "honors_suppressions"),
     # src/wardline/cli/scan.py — CLI summary line + gate stderr
     ("src/wardline/cli/scan.py", 660, "suppressed"),
     ("src/wardline/cli/scan.py", 661, "{s.active} active"),

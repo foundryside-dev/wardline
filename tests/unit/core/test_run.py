@@ -751,6 +751,69 @@ def test_new_since_scopes_lineless_diagnostic_by_changed_source_path(tmp_path: P
     assert gate_decision(result, Severity.ERROR).tripped is True
 
 
+@pytest.mark.parametrize(
+    "properties",
+    [
+        {},
+        {"original_path": ""},
+        {"original_path": 42},
+    ],
+    ids=["missing", "empty", "non-string"],
+)
+def test_new_since_malformed_lineless_source_binding_fails_closed(
+    tmp_path: Path, properties: dict[str, object]
+) -> None:
+    project, base = _changed_git_project(tmp_path)
+    diagnostic = Finding(
+        rule_id="WLN-ENGINE-LINELESS-DEFECT",
+        message="lineless source diagnostic with malformed binding",
+        severity=Severity.ERROR,
+        kind=Kind.DEFECT,
+        location=Location(path=ENGINE_PATH),
+        fingerprint="d" * 64,
+        properties=properties,
+    )
+
+    with patch("wardline.scanner.analyzer.WardlineAnalyzer.analyze", return_value=[diagnostic]):
+        result = run_scan(project, new_since=base)
+
+    emitted = next(f for f in result.findings if f.rule_id == "WLN-ENGINE-LINELESS-DEFECT")
+    gated = next(f for f in result.gate_population.findings if f.rule_id == "WLN-ENGINE-LINELESS-DEFECT")
+    assert emitted.suppressed is SuppressionState.ACTIVE
+    assert gated.suppressed is SuppressionState.ACTIVE
+    assert gate_decision(result, Severity.ERROR).tripped is True
+
+
+@pytest.mark.parametrize(
+    "state",
+    [SuppressionState.BASELINED, SuppressionState.WAIVED, SuppressionState.JUDGED],
+)
+def test_new_since_malformed_lineless_source_binding_preserves_suppression(
+    tmp_path: Path, state: SuppressionState
+) -> None:
+    project, base = _changed_git_project(tmp_path)
+    diagnostic = Finding(
+        rule_id="WLN-ENGINE-LINELESS-DEFECT",
+        message="already-suppressed malformed source diagnostic",
+        severity=Severity.ERROR,
+        kind=Kind.DEFECT,
+        location=Location(path=ENGINE_PATH),
+        fingerprint="e" * 64,
+        properties={},
+        suppressed=state,
+        suppression_reason="existing suppression",
+    )
+
+    with patch("wardline.scanner.analyzer.WardlineAnalyzer.analyze", return_value=[diagnostic]):
+        result = run_scan(project, new_since=base)
+
+    emitted = next(f for f in result.findings if f.rule_id == "WLN-ENGINE-LINELESS-DEFECT")
+    gated = next(f for f in result.gate_population.findings if f.rule_id == "WLN-ENGINE-LINELESS-DEFECT")
+    assert emitted.suppressed is state
+    assert gated.suppressed is state
+    assert emitted.suppression_reason == gated.suppression_reason == "existing suppression"
+
+
 def test_new_since_does_not_trust_original_path_on_ordinary_engine_diagnostic(tmp_path: Path) -> None:
     project, base = _changed_git_project(tmp_path)
     engine_diagnostic = Finding(

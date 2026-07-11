@@ -71,7 +71,7 @@ consistently, on every surface:
 | Surface | Where | Term |
 | --- | --- | --- |
 | Enum | `src/wardline/core/finding.py:72` | `SuppressionState.ACTIVE = "active"` |
-| Summary field | `src/wardline/core/run.py:103`, built at `src/wardline/core/run.py:667` | `ScanSummary.active` |
+| Summary field | `src/wardline/core/run.py:103`, built at `src/wardline/core/run.py:674` | `ScanSummary.active` |
 | CLI summary line | `src/wardline/cli/scan.py:661` | `… {s.active} active` |
 | MCP scan response | `src/wardline/mcp/server.py:945` | `summary.active` |
 | Agent-summary JSON | `src/wardline/core/agent_summary.py:130` | `summary.active_defects` |
@@ -111,7 +111,7 @@ There are **two distinct populations** of defects in one scan, and they can
 differ on purpose:
 
 1. **Emitted-active** — `summary.active` counts `active` defects in the
-   **emitted** (post-annotation) findings (built at `src/wardline/core/run.py:667`).
+   **emitted** (post-annotation) findings (built at `src/wardline/core/run.py:674`).
    Baseline / waiver / judged annotate these findings in place; a suppressed
    defect is still emitted, just not counted as `active`.
 
@@ -124,7 +124,7 @@ differ on purpose:
    a suppression keyed to its own new defect. `gate_decision` evaluates
    the concrete tagged population directly; `--trust-suppressions` constructs the
    same population with the `HONORS_SUPPRESSIONS` posture, selected at
-   `src/wardline/core/run.py:757` (`honors_suppressions`).
+   `src/wardline/core/run.py:764` (`honors_suppressions`).
 
 This is why **`summary.active: 0` can co-exist with `gate.tripped: true`**: every
 defect was suppressed by a committed baseline (so emitted-active is 0), but those
@@ -195,7 +195,7 @@ How each concept appears on each surface:
 | Concept | CLI summary text | `ScanSummary` field | MCP `summary` key | Agent-summary key | Filigree store |
 | --- | --- | --- | --- | --- | --- |
 | every finding | `N finding(s)` | `total` (`run.py:100`) | `total` (`server.py:944`) | `total_findings` (`agent_summary.py:129`) | one finding per wire entry |
-| live defect | `N active` (`scan.py:661`) | `active` (`run.py:102,661`) | `active` (`server.py:945`) | `active_defects` (`agent_summary.py:130`) | no `suppression_state` key (`finding.py:295`) |
+| live defect | `N active` (`scan.py:661`) | `active` (`run.py:102,674`) | `active` (`server.py:945`) | `active_defects` (`agent_summary.py:130`) | no `suppression_state` key (`finding.py:295`) |
 | suppressed (sum) | `N suppressed` (`scan.py:660`) | `baselined+waived+judged` | the three keys | `suppressed_findings` (`agent_summary.py:131`) | `metadata.wardline.suppression_state` (`finding.py:295`) |
 | baselined | `N baseline` | `baselined` (`run.py:104`) | `baselined` (`server.py:946`) | `baselined` (`agent_summary.py:133`) | `suppression_state: "baselined"` |
 | waived | `N waiver` | `waived` (`run.py:105`) | `waived` (`server.py:947`) | `waived` (`agent_summary.py:134`) | `suppression_state: "waived"` |

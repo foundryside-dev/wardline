@@ -626,6 +626,13 @@ def run_scan(
                         original_path = f.properties.get("original_path")
                         if isinstance(original_path, str) and original_path:
                             delta_path = original_path
+                        else:
+                            # This reserved diagnostic represents a source defect, but a
+                            # malformed binding cannot prove which delta owns it. Keep its
+                            # current ACTIVE state rather than treating <engine> as an
+                            # unchanged source path and clearing the gate.
+                            scoped.append(f)
+                            continue
                     is_new = (delta_path in changed_files) or (
                         f.qualname is not None and f.qualname in new_since_affected
                     )
