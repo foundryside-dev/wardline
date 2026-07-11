@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
+from wardline.core.errors import ConfigError
 from wardline.core.rekey import FingerprintRemap, Journal, RekeyCollision, load_journal, new_journal, write_journal
 
 
@@ -69,3 +72,18 @@ def test_journal_persists_fanout_collisions(tmp_path: Path) -> None:
     assert loaded.collisions[0].new_fp is None
     assert loaded.collisions[0].old_fps == ("a" * 64,)
     assert loaded.collisions[0].new_fps == ("1" * 64, "2" * 64)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    (("fingerprint_scheme_from", "wlfp999"), ("fingerprint_scheme_to", "wlfp999")),
+)
+def test_journal_rejects_an_unknown_fingerprint_scheme(tmp_path: Path, field: str, value: str) -> None:
+    j = Journal(remap={})
+    p = tmp_path / "j.yaml"
+    write_journal(p, j, root=tmp_path)
+    text = p.read_text(encoding="utf-8")
+    p.write_text(text.replace(f"{field}: wlfp1" if field.endswith("from") else f"{field}: wlfp2", f"{field}: {value}"))
+
+    with pytest.raises(ConfigError, match=f"unsupported migration journal schemes.*{value}"):
+        load_journal(p)

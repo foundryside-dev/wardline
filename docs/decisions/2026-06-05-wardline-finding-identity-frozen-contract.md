@@ -15,11 +15,14 @@ externally-observable *identity*:
 - **Filigree** associates issues to findings by `fingerprint`.
 - **Loomweave** binds taint facts to entities by `qualname` (and consumes the
   whole taint-fact payload byte-wise).
-- SARIF consumers (GitHub Code Scanning) dedupe on
-  `partialFingerprints.wardlineFingerprint/v1`.
+- SARIF 2.1.0 consumers (including GitHub Code Scanning) dedupe on
+  `partialFingerprints.wardlineFingerprint/v2`.
 
-The `fingerprint` is `sha256(rule_id \0 path \0 line_start \0 qualname \0
-taint_path)` (`core/finding.py`), where `path` is repo-relative. If the Rust
+The live `wlfp2` fingerprint is
+`sha256(rule_id \0 path \0 qualname \0 taint_path)` (`core/finding.py`), where
+`path` is repo-relative. `line_start` is deliberately not hashed: source-derived
+multi-emit discriminators use entity-relative spans so moving an unchanged entity
+does not re-key it. If the Rust
 parser produces even slightly different spans, qualnames, or fingerprints, every
 existing association silently drifts — issues detach, taint bindings orphan — with
 no error. This is the single highest-risk part of the migration, and it cannot be
@@ -32,10 +35,13 @@ identity output is frozen now, while it is still the source of truth.
 (`tests/golden/identity/`) with a parity test that any engine implementation must
 pass unchanged.** Concretely:
 
-1. **Definitions.** `fingerprint`, `qualname`, and spans (`location.path` +
+1. **Definitions.** The `fingerprint` join key, `qualname`, and displayed/frozen
+   spans (`location.path` +
    `line_start`/`line_end`/`col_start`/`col_end`) are the identity fields. `path`
    is relative to the scan root (proven location-independent), so fingerprints do
-   not depend on the absolute checkout path.
+   not depend on the absolute checkout path. Spans remain externally observable
+   identity data, but absolute `line_start` does not participate in the `wlfp2`
+   digest.
 
 2. **Scope — identity-bearing only.** The corpus freezes findings matching a
    single positive predicate, `rule_id.startswith("PY-WL-") ∧ kind is
@@ -57,8 +63,9 @@ pass unchanged.** Concretely:
    and an explain projection (`explanation_from_context`, pure).
 
    **Span coverage is deliberate and complete.** The brief's #1 migration risk is
-   the Rust parser rendering different spans. `fingerprint` folds in `line_start`
-   only, so a finding gates one line coordinate; `entity_spans` closes the gap by
+   the Rust parser rendering different spans. `line_start` is deliberately not hashed
+   by `wlfp2`; `entity_spans` independently freezes the complete displayed span and
+   closes the gap by
    freezing the full span of every entity — including the stress fixture's
    span-edge constructs (nested/async/overloaded/method/classmethod/comprehension/
    unicode), which produce no finding and whose spans would otherwise be unguarded.
@@ -86,10 +93,11 @@ pass unchanged.** Concretely:
    future surface freezes an engine-produced float, explicit float normalisation
    is the escape hatch.
 
-5. **Determinism verified before freeze.** In-process stable; path-independent;
+5. **Determinism continuously enforced.** In-process stable; path-independent;
    cross-process (`PYTHONHASHSEED` 0 vs 1); and **cross-interpreter** — frozen
-   under CPython 3.12, reproduced byte-identical under 3.13. The parity test
-   therefore runs on **both** CI interpreter legs with no skip (no coverage hole).
+   corpus output is reproduced byte-identically under CPython 3.12 and 3.13. The
+   parity tests run inside the unfiltered full pytest job on **both** CI interpreter
+   legs with no marker skip (no coverage hole).
 
 6. **Stability across implementations + rekey-only escape hatch.** This identity
    is stable across engine implementations (Python today, Rust tomorrow). Any
@@ -123,6 +131,15 @@ pass unchanged.** Concretely:
    ordinal was considered as a more portable alternative but rejected: it would
    require the rule to sort calls by `(lineno, col_offset)` anyway, reintroducing
    the column dependency without the span's collision-completeness.
+
+9. **Enforcement ownership.** `wardline.core.finding` owns the `wlfp2` digest and
+   scheme stamp; the Python and Rust rule producers own their source-derived
+   `taint_path` discriminators. `tests/golden/identity/` and
+   `tests/golden/identity/rust/` own the mandatory byte-parity gates, while the
+   CI test matrix owns cross-interpreter execution on CPython 3.12 and 3.13.
+   Baseline, judged, and waiver loaders reject any non-live scheme. The rekey path
+   is the only sanctioned mixed-scheme reader and routes only missing/pre-scheme,
+   frozen `wlfp1`, and live `wlfp2` stores; any other scheme fails closed.
 
 ## Consequences
 

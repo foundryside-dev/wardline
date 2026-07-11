@@ -23,7 +23,7 @@ from wardline.core import paths
 from wardline.core.baseline import BASELINE_VERSION
 from wardline.core.errors import ConfigError, FiligreeEmitError, WardlineError
 from wardline.core.finding import FINGERPRINT_SCHEME, Finding, Kind
-from wardline.core.fingerprint_v0 import compute_finding_fingerprint_v0
+from wardline.core.fingerprint_v0 import FINGERPRINT_SCHEME_V0, compute_finding_fingerprint_v0
 from wardline.core.judged import JUDGED_VERSION
 from wardline.core.optional_deps import require_yaml
 from wardline.core.safe_paths import read_bytes_no_follow, safe_project_file, write_text_no_follow
@@ -51,12 +51,31 @@ _STORES: tuple[tuple[str, str, int], ...] = (
     ("waivers.yaml", "waivers", WAIVERS_VERSION),
 )
 
+
+def _require_rekey_store_scheme(raw: object, *, store_name: str) -> str | None:
+    """Validate the only store schemes this one-step migration can interpret.
+
+    A missing header is the explicitly supported pre-scheme case.  Any named
+    scheme other than the frozen source scheme or this build's live scheme has
+    no trustworthy remap and must fail before a verdict is carried or orphaned.
+    """
+    if raw is None:
+        return None
+    if isinstance(raw, str) and raw in {FINGERPRINT_SCHEME_V0, FINGERPRINT_SCHEME}:
+        return raw
+    raise ConfigError(
+        f"{store_name}: unsupported fingerprint scheme {raw!r}; rekey can only route "
+        f"missing/pre-scheme, {FINGERPRINT_SCHEME_V0!r}, or {FINGERPRINT_SCHEME!r} stores"
+    )
+
+
 # Mirror of scanner.rules._POLICY_CONFIG_RULE_ID (core must not import scanner — layering).
 # A drift test (test_rekey_population.py) asserts the two stay equal. POLICY-CONFIG is the
-# ONE engine rule whose fingerprint is compute_finding_fingerprint-based (line_start-sensitive
-# under wlfp1), so it is v0-reconstructed, NOT identity-mapped, unlike the other engine
-# diagnostics. Verified mechanically: no other WLN-ENGINE-*/WLN-L3-* DEFECT uses
-# compute_finding_fingerprint (they use diagnostics._fingerprint, which is scheme-independent).
+# ONE engine rule whose legacy wlfp1 fingerprint used compute_finding_fingerprint and
+# therefore included line_start. It is v0-reconstructed, NOT identity-mapped, unlike
+# the other engine diagnostics. The live wlfp2 producer excludes absolute line_start.
+# Verified mechanically: no other WLN-ENGINE-*/WLN-L3-* DEFECT uses the shared producer
+# (they use diagnostics._fingerprint, which is scheme-independent).
 _POLICY_CONFIG_RULE_ID = "WLN-ENGINE-POLICY-CONFIG"
 
 
@@ -344,17 +363,24 @@ def _load_old_store_bytes(data: bytes, name: str) -> dict[str, Any]:
 
 def _carry_store(snapshot_path: Path, list_key: str, version: int, old_to_new: dict[str, str]) -> CarryResult:
     loaded = _read_old_store(snapshot_path)
-    return _carry_loaded_store(loaded, list_key, version, old_to_new)
+    return _carry_loaded_store(loaded, list_key, version, old_to_new, store_name=snapshot_path.name)
 
 
 def _carry_store_bytes(
     data: bytes, snapshot_name: str, list_key: str, version: int, old_to_new: dict[str, str]
 ) -> CarryResult:
     loaded = _load_old_store_bytes(data, snapshot_name)
-    return _carry_loaded_store(loaded, list_key, version, old_to_new)
+    return _carry_loaded_store(loaded, list_key, version, old_to_new, store_name=snapshot_name)
 
 
-def _carry_loaded_store(loaded: dict[str, Any], list_key: str, version: int, old_to_new: dict[str, str]) -> CarryResult:
+def _carry_loaded_store(
+    loaded: dict[str, Any],
+    list_key: str,
+    version: int,
+    old_to_new: dict[str, str],
+    *,
+    store_name: str = "snapshot store",
+) -> CarryResult:
     """Remap one store: swap each entry's ``fingerprint`` old->new while byte-preserving
     every OTHER field (rationale/reason/expires/rule_id/path/message/...), drop entries
     whose old_fp is not in the remap (orphans), and re-stamp the wlfp2 scheme header.
@@ -363,7 +389,8 @@ def _carry_loaded_store(loaded: dict[str, Any], list_key: str, version: int, old
     # A snapshot store ALREADY at the live scheme needs no remap: its fingerprints are
     # wlfp2 keys, and pushing them through the wlfp1->wlfp2 map would orphan every one
     # (the mixed-scheme leg of A7, weft-dda1a6d8dd). Identity-carry it untouched.
-    already_current = loaded.get("fingerprint_scheme") == FINGERPRINT_SCHEME
+    scheme = _require_rekey_store_scheme(loaded.get("fingerprint_scheme"), store_name=store_name)
+    already_current = scheme == FINGERPRINT_SCHEME
     carried: list[str] = []
     orphaned: list[str] = []
     new_entries: list[dict[str, Any]] = []
@@ -514,13 +541,20 @@ def load_journal(path: Path) -> Journal:
         )
         for c in loaded.get("collisions") or []
     ]
+    scheme_from = str(loaded.get("fingerprint_scheme_from", FINGERPRINT_SCHEME_V0))
+    scheme_to = str(loaded.get("fingerprint_scheme_to", FINGERPRINT_SCHEME))
+    if scheme_from != FINGERPRINT_SCHEME_V0 or scheme_to != FINGERPRINT_SCHEME:
+        raise ConfigError(
+            f"{path.name}: unsupported migration journal schemes from={scheme_from!r}, to={scheme_to!r}; "
+            f"this build only resumes {FINGERPRINT_SCHEME_V0!r} -> {FINGERPRINT_SCHEME!r}"
+        )
     return Journal(
         remap=dict(loaded["remap"]),
         collisions=collisions,
         legs=legs or [Leg(n) for n in LEG_NAMES],
         schema_version=int(loaded.get("schema_version", JOURNAL_SCHEMA_VERSION)),
-        fingerprint_scheme_from=str(loaded.get("fingerprint_scheme_from", "wlfp1")),
-        fingerprint_scheme_to=str(loaded.get("fingerprint_scheme_to", FINGERPRINT_SCHEME)),
+        fingerprint_scheme_from=scheme_from,
+        fingerprint_scheme_to=scheme_to,
         snapshot_prescheme=bool(loaded.get("snapshot_prescheme", False)),
     )
 
@@ -651,14 +685,14 @@ def _store_fingerprints(root: Path) -> dict[str, tuple[str | None, set[str]]]:
         if data is None:
             continue
         loaded = _load_old_store_bytes(data, p.name)
-        scheme = loaded.get("fingerprint_scheme")
+        scheme = _require_rekey_store_scheme(loaded.get("fingerprint_scheme"), store_name=name)
         fps = {
             e["fingerprint"]
             for e in (loaded.get(key) or [])
             if isinstance(e, dict) and isinstance(e.get("fingerprint"), str)
         }
         if fps:
-            out[name] = (scheme if isinstance(scheme, str) else None, fps)
+            out[name] = (scheme, fps)
     return out
 
 

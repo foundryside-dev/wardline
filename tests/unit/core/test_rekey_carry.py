@@ -12,8 +12,10 @@ yaml = pytest.importorskip("yaml")
 
 from wardline.core import paths  # noqa: E402
 from wardline.core.baseline import load_baseline  # noqa: E402
+from wardline.core.errors import ConfigError  # noqa: E402
 from wardline.core.judged import load_judged  # noqa: E402
 from wardline.core.rekey import (  # noqa: E402
+    _carry_loaded_store,
     carry_baseline_forward,
     carry_judged_forward,
     carry_waivers_forward,
@@ -56,6 +58,17 @@ def test_carry_baseline_preserves_fields_and_flags_orphan(tmp_path: Path) -> Non
     out.parent.mkdir(parents=True, exist_ok=True)
     _seed(out, res.document)
     assert load_baseline(out).fingerprints == frozenset({NA, NB})
+
+
+def test_carry_rejects_an_unknown_snapshot_scheme() -> None:
+    loaded = {
+        "fingerprint_scheme": "wlfp999",
+        "version": 1,
+        "entries": [{"fingerprint": A, "rule_id": "PY-WL-108", "path": "m.py", "message": "x"}],
+    }
+
+    with pytest.raises(ConfigError, match="unsupported fingerprint scheme 'wlfp999'"):
+        _carry_loaded_store(loaded, "entries", 1, REMAP)
 
 
 def test_carry_judged_preserves_full_provenance(tmp_path: Path) -> None:
