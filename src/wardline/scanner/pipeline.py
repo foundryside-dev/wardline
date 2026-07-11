@@ -5,7 +5,7 @@ from __future__ import annotations
 import ast
 import hashlib
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
@@ -298,7 +298,7 @@ class L2FunctionInput:
     param_meets: dict[str, TaintState] | None = None
     module_prefix: str | None = None
     route_body_params: frozenset[str] = frozenset()
-    route_dependency_params: frozenset[str] = frozenset()
+    route_dependency_params: dict[str, TaintState] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)

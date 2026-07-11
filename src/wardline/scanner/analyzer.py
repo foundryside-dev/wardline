@@ -70,7 +70,7 @@ _L2Record = tuple[
     str,
     bool,
     frozenset[str],
-    frozenset[str],
+    dict[str, TaintState],
 ]
 # The L2 fixed-point memo key. ``seed`` and ``method_tm`` are FIXED per entity across
 # iterations (computed once in pass 1), so the key carries only the iteration-VARYING
@@ -543,7 +543,7 @@ class WardlineAnalyzer:
             module_prefix: str | None = None,
             global_seeds: dict[str, TaintState] | None = None,
             route_body_params: frozenset[str] = frozenset(),
-            route_dependency_params: frozenset[str] = frozenset(),
+            route_dependency_params: dict[str, TaintState] | None = None,
         ) -> tuple[
             dict[int, dict[str, TaintState]],
             dict[int, dict[int | str | None, TaintState]],
@@ -562,7 +562,7 @@ class WardlineAnalyzer:
                     param_meets=param_meets,
                     module_prefix=module_prefix,
                     route_body_params=route_body_params,
-                    route_dependency_params=route_dependency_params,
+                    route_dependency_params=route_dependency_params or {},
                 )
             )
             return (
@@ -752,11 +752,18 @@ class WardlineAnalyzer:
                     route_receivers=route_receivers,
                     pydantic_models=pydantic_models,
                 )
-                route_dependency_params = route_dependency_parameters(
+                dependency_bindings = route_dependency_parameters(
                     ent.node,
                     aliases=alias_map,
                     route_receivers=route_receivers,
                 )
+                route_dependency_params = {
+                    name: project_return_taints.get(
+                        provider if provider is not None and "." in provider else f"{module}.{provider or ''}",
+                        TaintState.UNKNOWN_RAW,
+                    )
+                    for name, provider in dependency_bindings.items()
+                }
                 try:
                     method_tm = _pruned_method_taint_map(ent.node, alias_map, module, call_tm, project_return_taints)
                     if is_method:

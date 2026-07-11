@@ -23,18 +23,45 @@ def resolve_dotted(node: ast.expr, aliases: Mapping[str, str]) -> str | None:
     return None
 
 
+def _resolve_bound(node: ast.expr, aliases: Mapping[str, str], shadowed: set[str]) -> str | None:
+    root = node
+    while isinstance(root, ast.Attribute):
+        root = root.value
+    if isinstance(root, ast.Name) and root.id in shadowed:
+        return resolve_dotted(node, {})
+    return resolve_dotted(node, aliases)
+
+
+def _assigned_names(stmt: ast.stmt) -> set[str]:
+    if isinstance(stmt, ast.Assign):
+        return {target.id for target in stmt.targets if isinstance(target, ast.Name)}
+    if isinstance(stmt, ast.AnnAssign) and isinstance(stmt.target, ast.Name):
+        return {stmt.target.id}
+    return set()
+
+
 def discover_fastapi_route_receivers(tree: ast.Module, aliases: Mapping[str, str]) -> frozenset[str]:
     """Return module names bound directly to a recognized FastAPI application/router."""
     receivers: set[str] = set()
+    shadowed: set[str] = set()
     for stmt in tree.body:
-        if not (
-            isinstance(stmt, (ast.Assign, ast.AnnAssign))
-            and isinstance(stmt.value, ast.Call)
-            and resolve_dotted(stmt.value.func, aliases) in _FASTAPI_CONSTRUCTORS
-        ):
+        if isinstance(stmt, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+            receivers.discard(stmt.name)
+            shadowed.add(stmt.name)
             continue
-        targets = stmt.targets if isinstance(stmt, ast.Assign) else [stmt.target]
-        receivers.update(target.id for target in targets if isinstance(target, ast.Name))
+        targets = _assigned_names(stmt)
+        if not targets:
+            continue
+        value = stmt.value if isinstance(stmt, (ast.Assign, ast.AnnAssign)) else None
+        recognized = (
+            isinstance(value, ast.Call) and _resolve_bound(value.func, aliases, shadowed) in _FASTAPI_CONSTRUCTORS
+        )
+        for target in targets:
+            if recognized:
+                receivers.add(target)
+            else:
+                receivers.discard(target)
+            shadowed.add(target)
     return frozenset(receivers)
 
 
@@ -52,21 +79,31 @@ def discover_pydantic_models(
     known_models: frozenset[str],
 ) -> frozenset[str]:
     """Discover direct and transitive top-level ``BaseModel`` subclasses."""
-    found = set(known_models)
-    classes = [stmt for stmt in tree.body if isinstance(stmt, ast.ClassDef)]
+    found = {name for name in known_models if not name.startswith(f"{module}.")}
+    shadowed: set[str] = set()
     changed = True
     while changed:
         changed = False
-        for cls in classes:
+        for stmt in tree.body:
+            assigned = _assigned_names(stmt)
+            if assigned:
+                shadowed.update(assigned)
+                for name in assigned:
+                    found.discard(f"{module}.{name}")
+                continue
+            if not isinstance(stmt, ast.ClassDef):
+                continue
+            cls = stmt
             qualname = f"{module}.{cls.name}"
             bases = {
                 candidate
                 for base in cls.bases
-                if (candidate := _module_candidate(resolve_dotted(base, aliases), module)) is not None
+                if (candidate := _module_candidate(_resolve_bound(base, aliases, shadowed), module)) is not None
             }
             if qualname not in found and (bases & (_PYDANTIC_BASES | found)):
                 found.add(qualname)
                 changed = True
+            shadowed.add(cls.name)
     return frozenset(found)
 
 
@@ -106,15 +143,40 @@ def route_dependency_parameters(
     *,
     aliases: Mapping[str, str],
     route_receivers: frozenset[str],
-) -> frozenset[str]:
-    """Return parameters injected by ``Depends`` on a recognized FastAPI route."""
+) -> dict[str, str | None]:
+    """Return route dependency parameters mapped to their provider binding."""
     if not _is_fastapi_route(node, route_receivers):
-        return frozenset()
-    return frozenset(
-        name
-        for name, default in _parameter_defaults(node).items()
-        if isinstance(default, ast.Call) and resolve_dotted(default.func, aliases) in _DEPENDS
-    )
+        return {}
+    dependencies: dict[str, str | None] = {}
+    for name, default in _parameter_defaults(node).items():
+        if isinstance(default, ast.Call) and resolve_dotted(default.func, aliases) in _DEPENDS:
+            provider = resolve_dotted(default.args[0], aliases) if default.args else None
+            dependencies[name] = provider
+    parameters = [*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs]
+    for arg in parameters:
+        annotation = arg.annotation
+        if not isinstance(annotation, ast.Subscript) or resolve_dotted(annotation.value, aliases) != "typing.Annotated":
+            continue
+        elements = annotation.slice.elts if isinstance(annotation.slice, ast.Tuple) else [annotation.slice]
+        for metadata in elements[1:]:
+            if isinstance(metadata, ast.Call) and resolve_dotted(metadata.func, aliases) in _DEPENDS:
+                dependencies[arg.arg] = resolve_dotted(metadata.args[0], aliases) if metadata.args else None
+                break
+    return dependencies
+
+
+def _annotation_candidates(node: ast.expr, aliases: Mapping[str, str]) -> set[str]:
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
+        return _annotation_candidates(node.left, aliases) | _annotation_candidates(node.right, aliases)
+    if isinstance(node, ast.Subscript):
+        outer = resolve_dotted(node.value, aliases)
+        elements = node.slice.elts if isinstance(node.slice, ast.Tuple) else [node.slice]
+        if outer in {"typing.Annotated", "typing.Optional"}:
+            return _annotation_candidates(elements[0], aliases)
+        base = resolve_dotted(node.value, aliases)
+        return {base} if base is not None else set()
+    resolved = resolve_dotted(node, aliases)
+    return {resolved} if resolved is not None else set()
 
 
 def route_body_parameters(
@@ -132,8 +194,8 @@ def route_body_parameters(
     parameters = [*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs]
     body_params: set[str] = set()
     for arg in parameters:
-        annotation = resolve_dotted(arg.annotation, aliases) if arg.annotation else None
-        model_name = _module_candidate(annotation, module)
-        if model_name in pydantic_models and arg.arg not in dependencies:
+        annotations = _annotation_candidates(arg.annotation, aliases) if arg.annotation else set()
+        model_names = {_module_candidate(annotation, module) for annotation in annotations}
+        if model_names & pydantic_models and arg.arg not in dependencies:
             body_params.add(arg.arg)
     return frozenset(body_params)

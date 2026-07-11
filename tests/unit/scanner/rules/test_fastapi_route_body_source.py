@@ -102,6 +102,7 @@ def test_fastapi_route_model_body_fires(tmp_path: Path, name: str, src: str) -> 
             app = FastAPI()
             class Payload(BaseModel):
                 command: str
+            @trusted(level='ASSURED')
             def validated() -> Payload:
                 return Payload(command='fixed')
             @app.post('/run')
@@ -120,6 +121,7 @@ def test_fastapi_route_model_body_fires(tmp_path: Path, name: str, src: str) -> 
             api = fa.FastAPI()
             class Payload(BaseModel):
                 command: str
+            @trusted(level='ASSURED')
             def validated() -> Payload:
                 return Payload(command='fixed')
             @api.post('/run')
@@ -192,3 +194,116 @@ def test_non_body_model_parameters_stay_clean(tmp_path: Path, name: str, src: st
 )
 def test_depends_quieting_is_precisely_route_scoped(tmp_path: Path, name: str, src: str) -> None:
     assert "PY-WL-108" in _defect_rules(tmp_path, src), name
+
+
+@pytest.mark.parametrize(
+    "provider",
+    [
+        "@external_boundary\ndef supplied():\n    return 'raw'",
+        "def supplied():\n    return input()",
+    ],
+)
+def test_route_depends_uses_actual_untrusted_provider_taint(tmp_path: Path, provider: str) -> None:
+    provider = textwrap.indent(provider, "        ")
+    src = f"""
+        import os
+        from fastapi import Depends, FastAPI
+        from wardline.decorators import external_boundary, trusted
+        app = FastAPI()
+{provider}
+        @app.post('/run')
+        @trusted(level='ASSURED')
+        def run(value: str = Depends(supplied)):
+            os.system(value)
+    """
+    assert "PY-WL-108" in _defect_rules(tmp_path, src)
+
+
+@pytest.mark.parametrize(
+    ("provider_decorator", "fires"),
+    [("@external_boundary", True), ("@trusted(level='ASSURED')", False)],
+)
+def test_annotated_depends_uses_provider_taint(tmp_path: Path, provider_decorator: str, fires: bool) -> None:
+    src = f"""
+        import os
+        from typing import Annotated
+        from fastapi import Depends, FastAPI
+        from wardline.decorators import external_boundary, trusted
+        app = FastAPI()
+        {provider_decorator}
+        def supplied():
+            return 'value'
+        @app.post('/run')
+        @trusted(level='ASSURED')
+        def run(value: Annotated[str, Depends(supplied)]):
+            os.system(value)
+    """
+    assert ("PY-WL-108" in _defect_rules(tmp_path, src)) is fires
+
+
+@pytest.mark.parametrize(
+    "binding",
+    [
+        "app = FastAPI()\napp = Local()",
+        "FastAPI = Local\napp = FastAPI()",
+    ],
+)
+def test_shadowed_fastapi_bindings_do_not_classify_routes(tmp_path: Path, binding: str) -> None:
+    binding = textwrap.indent(binding, "        ")
+    src = f"""
+        import os
+        from fastapi import FastAPI
+        from pydantic import BaseModel
+        from wardline.decorators import trusted
+        class Local: pass
+{binding}
+        class Payload(BaseModel):
+            command: str
+        @app.post('/run')
+        @trusted(level='ASSURED')
+        def run(body: Payload):
+            os.system(body.command)
+    """
+    assert "PY-WL-108" not in _defect_rules(tmp_path, src)
+
+
+def test_shadowed_pydantic_base_alias_does_not_classify_model(tmp_path: Path) -> None:
+    src = """
+        import os
+        from fastapi import FastAPI
+        from pydantic import BaseModel as Model
+        from wardline.decorators import trusted
+        class Local: pass
+        app = FastAPI()
+        Model = Local
+        class Payload(Model):
+            command: str
+        @app.post('/run')
+        @trusted(level='ASSURED')
+        def run(body: Payload):
+            os.system(body.command)
+    """
+    assert "PY-WL-108" not in _defect_rules(tmp_path, src)
+
+
+@pytest.mark.parametrize(
+    "annotation",
+    ["Annotated[Payload, Body()]", "Optional[Payload]", "Payload | None", "Payload[str]"],
+)
+def test_common_route_body_annotation_forms_are_sources(tmp_path: Path, annotation: str) -> None:
+    src = f"""
+        import os
+        from typing import Annotated, Generic, Optional, TypeVar
+        from fastapi import Body, FastAPI
+        from pydantic import BaseModel
+        from wardline.decorators import trusted
+        T = TypeVar('T')
+        app = FastAPI()
+        class Payload(BaseModel, Generic[T]):
+            command: str
+        @app.post('/run')
+        @trusted(level='ASSURED')
+        def run(body: {annotation}):
+            os.system(body.command)
+    """
+    assert "PY-WL-108" in _defect_rules(tmp_path, src)
