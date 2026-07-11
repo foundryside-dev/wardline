@@ -29,6 +29,7 @@ from wardline.core.delta_scope import AffectedScope, DeltaScopeReport, ScopePars
 from wardline.core.discovery import discover, missing_source_roots
 from wardline.core.errors import ConfigError
 from wardline.core.finding import (
+    ENGINE_PATH,
     UNANALYZED_RULE_IDS,
     Finding,
     Kind,
@@ -579,9 +580,9 @@ def run_scan(
     if skip_suppression:
         # `wardline rekey` (P4) scans a project whose stores are still OLD-scheme;
         # loading them would (correctly) SCHEME_MISMATCH. Skip the store files entirely
-        # and apply EMPTY suppression — the structural transforms (esp. the lineless-
-        # DEFECT→FACT downgrade) STILL run, so the result is exactly the join population
-        # the stores hold, derived without reading the stores it is about to migrate.
+        # and apply EMPTY suppression — structural transforms (especially replacing a
+        # lineless source DEFECT with its collision-safe engine DEFECT) still run, so the
+        # result is exactly the join population the stores hold without reading them.
         findings = apply_suppressions(raw, Baseline(frozenset()), WaiverSet([]), today=today, judged=None)
         gate_population_findings = list(findings)
         gate_posture = GateSuppressionPosture.HONORS_SUPPRESSIONS
@@ -593,9 +594,9 @@ def run_scan(
         # waiver, judged) so ``suppressed=…`` is visible in output regardless of trust.
         findings = apply_suppressions(raw, baseline, waivers, today=today, judged=judged)
         # The gate population applies ZERO suppression but runs the SAME structural
-        # transforms apply_suppressions does (esp. the lineless-DEFECT→non-gating-FACT
-        # downgrade), so the only difference vs ``findings`` is the suppression sources —
-        # NOT ``list(raw)``, which would let a lineless DEFECT trip the gate. When the
+        # transforms apply_suppressions does (especially the collision-safe engine DEFECT
+        # replacement for a lineless source DEFECT), so the only difference vs
+        # ``findings`` is the suppression sources.
         if trust_suppressions:
             gate_population_findings = list(findings)
             gate_posture = GateSuppressionPosture.HONORS_SUPPRESSIONS
@@ -620,7 +621,12 @@ def run_scan(
             scoped: list[Finding] = []
             for f in candidates:
                 if f.kind is Kind.DEFECT and f.suppressed is SuppressionState.ACTIVE:
-                    is_new = (f.location.path in changed_files) or (
+                    delta_path = f.location.path
+                    if f.rule_id == "WLN-ENGINE-LINELESS-DEFECT" and f.location.path == ENGINE_PATH:
+                        original_path = f.properties.get("original_path")
+                        if isinstance(original_path, str) and original_path:
+                            delta_path = original_path
+                    is_new = (delta_path in changed_files) or (
                         f.qualname is not None and f.qualname in new_since_affected
                     )
                     if not is_new:

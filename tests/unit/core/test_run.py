@@ -1,3 +1,4 @@
+import subprocess
 import textwrap
 from dataclasses import FrozenInstanceError
 from datetime import UTC, datetime
@@ -9,7 +10,7 @@ import pytest
 from wardline.core import config as config_mod
 from wardline.core.confinement import SourceRootConfinement
 from wardline.core.errors import ConfigError
-from wardline.core.finding import FINGERPRINT_SCHEME, Finding, Kind, Location, Severity, SuppressionState
+from wardline.core.finding import ENGINE_PATH, FINGERPRINT_SCHEME, Finding, Kind, Location, Severity, SuppressionState
 from wardline.core.judged import JudgedFP, write_judged
 from wardline.core.paths import baseline_path, judged_path, waivers_path
 from wardline.core.run import (
@@ -697,6 +698,79 @@ def test_lineless_source_defect_trips_gate_via_engine_diagnostic() -> None:
     assert diagnostic.location.path == ENGINE_PATH
     assert diagnostic.kind is Kind.DEFECT
     assert gate_trips(gate_pop, Severity.ERROR) is True
+
+
+def _changed_git_project(tmp_path: Path) -> tuple[Path, str]:
+    project = tmp_path / "project"
+    project.mkdir()
+    source = project / "svc.py"
+    source.write_text("value = 1\n", encoding="utf-8")
+    subprocess.run(["git", "init", "-q"], cwd=project, check=True)
+    subprocess.run(["git", "add", "svc.py"], cwd=project, check=True)
+    subprocess.run(
+        [
+            "git",
+            "-c",
+            "user.name=Wardline Test",
+            "-c",
+            "user.email=wardline@example.invalid",
+            "commit",
+            "-qm",
+            "base",
+        ],
+        cwd=project,
+        check=True,
+    )
+    base = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=project, check=True, capture_output=True, text=True
+    ).stdout.strip()
+    source.write_text("value = 2\n", encoding="utf-8")
+    return project, base
+
+
+def test_new_since_scopes_lineless_diagnostic_by_changed_source_path(tmp_path: Path) -> None:
+    project, base = _changed_git_project(tmp_path)
+    lineless = Finding(
+        rule_id="PY-WL-101",
+        message="lineless source defect",
+        severity=Severity.ERROR,
+        kind=Kind.DEFECT,
+        location=Location(path="svc.py"),
+        fingerprint="b" * 64,
+    )
+
+    with patch("wardline.scanner.analyzer.WardlineAnalyzer.analyze", return_value=[lineless]):
+        result = run_scan(project, new_since=base)
+
+    emitted = next(f for f in result.findings if f.rule_id == "WLN-ENGINE-LINELESS-DEFECT")
+    gated = next(f for f in result.gate_population.findings if f.rule_id == "WLN-ENGINE-LINELESS-DEFECT")
+    assert emitted.location.path == gated.location.path == ENGINE_PATH
+    assert emitted.properties["original_path"] == gated.properties["original_path"] == "svc.py"
+    assert emitted.suppressed is SuppressionState.ACTIVE
+    assert gated.suppressed is SuppressionState.ACTIVE
+    assert gate_decision(result, Severity.ERROR).tripped is True
+
+
+def test_new_since_does_not_trust_original_path_on_ordinary_engine_diagnostic(tmp_path: Path) -> None:
+    project, base = _changed_git_project(tmp_path)
+    engine_diagnostic = Finding(
+        rule_id="WLN-ENGINE-PROBE",
+        message="ordinary engine diagnostic",
+        severity=Severity.ERROR,
+        kind=Kind.DEFECT,
+        location=Location(path=ENGINE_PATH),
+        fingerprint="c" * 64,
+        properties={"original_path": "svc.py"},
+    )
+
+    with patch("wardline.scanner.analyzer.WardlineAnalyzer.analyze", return_value=[engine_diagnostic]):
+        result = run_scan(project, new_since=base)
+
+    emitted = next(f for f in result.findings if f.rule_id == "WLN-ENGINE-PROBE")
+    gated = next(f for f in result.gate_population.findings if f.rule_id == "WLN-ENGINE-PROBE")
+    assert emitted.suppressed is SuppressionState.BASELINED
+    assert gated.suppressed is SuppressionState.BASELINED
+    assert gate_decision(result, Severity.ERROR).tripped is False
 
 
 def test_new_since_scopes_both_populations_and_resists_suppression(tmp_path: Path) -> None:

@@ -390,9 +390,9 @@ def _engine_defect(rule_id: str, message: str, relpath: str) -> Finding:
         message=message,
         severity=Severity.ERROR,
         kind=Kind.DEFECT,
-        # File-level under-scan defects need a concrete source anchor. A lineless,
-        # non-ENGINE_PATH DEFECT is intentionally downgraded before gate evaluation
-        # to avoid unsafe fingerprint joins, so use the stable file start.
+        # File-level under-scan defects need a concrete source anchor. A lineless
+        # source DEFECT is replaced by a gate-eligible engine diagnostic to avoid an
+        # unsafe fingerprint join, so retain the stable file start on the original.
         location=Location(path=relpath, line_start=1, line_end=1),
         fingerprint=_fp(rule_id, relpath),
         properties={"lang": "rust"},
