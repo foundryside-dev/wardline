@@ -14,7 +14,7 @@ from __future__ import annotations
 import ast
 import hashlib
 from collections.abc import Iterator
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 from wardline.core.config import WardlineConfig
 from wardline.core.confinement import SourceRootConfinement
@@ -53,7 +53,6 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
     from pathlib import Path
 
-    from wardline.scanner.taint.pydantic_discovery import ParsedPydanticModule
     from wardline.scanner.taint.summary_cache import SummaryCache
 
 
@@ -646,7 +645,7 @@ class WardlineAnalyzer:
 
         # ── L2 pass 1 — per-method var/return taints + per-class attribute summary ──
         all_classes = frozenset(c for parsed in file_meta for c in parsed.class_qualnames)
-        model_result = discover_project_pydantic_models(cast("Sequence[ParsedPydanticModule]", file_meta))
+        model_result = discover_project_pydantic_models(file_meta)
         pydantic_models = model_result.models
         if model_result.degraded_reason is not None:
             model_degraded_reason = model_result.degraded_reason

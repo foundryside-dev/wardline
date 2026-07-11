@@ -61,11 +61,20 @@ class PydanticDiscoveryBudget:
 class ParsedPydanticModule(Protocol):
     """Structural project-file input required by Pydantic discovery."""
 
-    relpath: str
-    module: str
-    tree: ast.Module
-    alias_map: dict[str, str]
-    class_qualnames: frozenset[str]
+    @property
+    def relpath(self) -> str: ...
+
+    @property
+    def module(self) -> str: ...
+
+    @property
+    def tree(self) -> ast.Module: ...
+
+    @property
+    def alias_map(self) -> dict[str, str]: ...
+
+    @property
+    def class_qualnames(self) -> frozenset[str]: ...
 
 
 type PydanticDiscoveryReason = Literal[
