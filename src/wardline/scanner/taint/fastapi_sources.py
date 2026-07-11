@@ -440,6 +440,16 @@ def discover_parameter_types(
                 names.add(node.rest)
         return names
 
+    class _TrackedBindings(dict[str, frozenset[str]]):
+        def __init__(self, history: dict[str, frozenset[str]] | None) -> None:
+            super().__init__()
+            self._history = history
+
+        def __setitem__(self, name: str, candidates: frozenset[str]) -> None:
+            super().__setitem__(name, candidates)
+            if self._history is not None:
+                self._history[name] = self._history.get(name, frozenset()) | candidates
+
     def walk_scope(
         statements: list[ast.stmt],
         *,
@@ -451,9 +461,10 @@ def discover_parameter_types(
             *,
             initial: Bindings | None = None,
             shadows: set[str] | None = None,
+            history: dict[str, frozenset[str]] | None = None,
         ) -> dict[str, frozenset[str]]:
             parent = bindings if initial is None else initial
-            branch_bindings: Bindings = ChainMap({}, parent)
+            branch_bindings: Bindings = ChainMap(_TrackedBindings(history), parent)
             for name in shadows or ():
                 branch_bindings[name] = frozenset()
             walk_scope(body, scope=scope, bindings=branch_bindings)
@@ -534,14 +545,24 @@ def discover_parameter_types(
                 bindings.update(branch(stmt.body, shadows=shadows))
                 continue
             if isinstance(stmt, (ast.Try, ast.TryStar)):
-                normal = branch(stmt.body)
+                try_history: dict[str, frozenset[str]] = {}
+                normal = branch(stmt.body, history=try_history)
                 if stmt.orelse:
                     else_delta = branch(stmt.orelse, initial=ChainMap(normal, bindings))
                     normal = {**normal, **else_delta}
                 outcomes = [normal]
+                handler_prefix = {
+                    name: candidates | bindings.get(name, frozenset()) for name, candidates in try_history.items()
+                }
                 for handler in stmt.handlers:
                     shadows = {handler.name} if handler.name is not None else set()
-                    outcomes.append(branch(handler.body, shadows=shadows))
+                    outcomes.append(
+                        branch(
+                            handler.body,
+                            initial=ChainMap(handler_prefix, bindings),
+                            shadows=shadows,
+                        )
+                    )
                 if not stmt.handlers:
                     outcomes.append({})
                 merged: dict[str, frozenset[str]] = {}

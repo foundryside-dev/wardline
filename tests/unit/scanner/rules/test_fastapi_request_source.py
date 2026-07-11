@@ -711,3 +711,22 @@ def test_compound_binding_discovery_scales_linearly() -> None:
     assert isinstance(function, ast.FunctionDef)
     assert discovered[id(function)]["req"] == ("fastapi.Request",)
     assert elapsed < 1.5
+
+
+def test_try_handler_sees_request_binding_from_completed_try_prefix(tmp_path: Path) -> None:
+    src = """
+        import os
+        from wardline.decorators import trusted
+
+        try:
+            from fastapi import Request
+            raise RuntimeError
+        except RuntimeError:
+            @trusted(level='ASSURED')
+            def h(req: Request):
+                os.system(req.query_params.get('x'))
+    """
+    rules = _defect_rules(tmp_path, src)
+    assert "WLN-ENGINE-PARSE-ERROR" not in rules
+    assert "WLN-ENGINE-FILE-FAILED" not in rules
+    assert "PY-WL-108" in rules
