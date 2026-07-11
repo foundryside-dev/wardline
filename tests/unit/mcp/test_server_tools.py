@@ -130,13 +130,14 @@ def test_scan_tool_empty_configured_root_is_not_evaluated_and_matches_advertised
     assert gate["exit_class"] == 0
     assert gate["fail_on"] == "ERROR"
     assert "no_files_scanned" in gate["reason"]
-    assert isinstance(gate["evaluated"], str) and gate["evaluated"]
+    assert isinstance(gate["evaluated"], str) and "unsuppressed" in gate["evaluated"]
 
     agent_summary = structured["agent_summary"]
     assert agent_summary["summary"]["files_scanned"] == 0
     assert agent_summary["gate"]["verdict"] == "NOT_EVALUATED"
     assert agent_summary["gate"]["tripped"] is False
     assert agent_summary["gate"]["exit_class"] == 0
+    assert agent_summary["gate"]["fail_on"] == gate["fail_on"] == "ERROR"
     assert agent_summary["gate"]["reason"] == gate["reason"]
     assert agent_summary["gate"]["evaluated"] == gate["evaluated"]
 
