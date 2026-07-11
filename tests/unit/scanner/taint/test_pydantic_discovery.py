@@ -108,6 +108,22 @@ def test_repeated_model_state_degrades_to_all_declared_classes(
     assert result.round_number == 3
 
 
+def test_equal_size_repeated_model_state_degrades_to_all_declared_classes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    parsed = _parsed("class A:\n    pass\n\nclass B:\n    pass\n", module="m")
+    states = iter((frozenset({"m.A"}), frozenset({"m.B"}), frozenset({"m.A"})))
+
+    monkeypatch.setattr(discovery, "discover_pydantic_models", lambda *args, **kwargs: next(states), raising=False)
+
+    result = discovery.discover_project_pydantic_models((parsed,))
+
+    assert result.degraded_reason == "repeated_state"
+    assert result.models == frozenset({"m.A", "m.B"})
+    assert result.model_counts_by_round == (1, 1, 1)
+    assert result.round_number == 3
+
+
 def test_round_limit_degrades_to_empty_declared_model_set(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
