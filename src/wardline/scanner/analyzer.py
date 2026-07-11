@@ -40,6 +40,7 @@ from wardline.scanner.taint.decorator_provider import (
 from wardline.scanner.taint.fastapi_sources import (
     discover_callable_aliases,
     discover_fastapi_route_receivers,
+    discover_parameter_types,
     discover_pydantic_models,
 )
 from wardline.scanner.taint.module_summariser import collect_module_global_raw_seeds, own_scope_global_names
@@ -70,6 +71,7 @@ _L2Record = tuple[
     bool,
     frozenset[str],
     dict[str, TaintState],
+    dict[str, str] | None,
 ]
 # The L2 fixed-point memo key. ``seed`` and ``method_tm`` are FIXED per entity across
 # iterations (computed once in pass 1), so the key carries only the iteration-VARYING
@@ -527,7 +529,7 @@ class WardlineAnalyzer:
 
         def _count_attribute_cells(records: list[_L2Record]) -> int:
             cells: set[tuple[str, str]] = set()
-            for ent, _seed, _tm, enclosing_class, _alias_map, _module, is_method, _body, _depends in records:
+            for ent, _seed, _tm, enclosing_class, _alias_map, _module, is_method, _body, _depends, _types in records:
                 for node in _iter_l2_body_nodes(ent.node):
                     for target in _assignment_targets(node):
                         if isinstance(target, ast.Attribute):
@@ -552,6 +554,7 @@ class WardlineAnalyzer:
             global_seeds: dict[str, TaintState] | None = None,
             route_body_params: frozenset[str] = frozenset(),
             route_dependency_params: dict[str, TaintState] | None = None,
+            parameter_type_fqns: dict[str, str] | None = None,
         ) -> tuple[
             dict[int, dict[str, TaintState]],
             dict[int, dict[int | str | None, TaintState]],
@@ -571,6 +574,7 @@ class WardlineAnalyzer:
                     module_prefix=module_prefix,
                     route_body_params=route_body_params,
                     route_dependency_params=route_dependency_params or {},
+                    parameter_type_fqns=parameter_type_fqns,
                 )
             )
             return (
@@ -685,6 +689,14 @@ class WardlineAnalyzer:
                 parsed.alias_map,
                 module=parsed.module,
                 known_models=pydantic_models,
+                is_package=parsed.relpath.rsplit("/", 1)[-1] == "__init__.py",
+            )
+            for parsed in file_meta
+        }
+        parameter_types_by_module = {
+            parsed.module: discover_parameter_types(
+                parsed.tree,
+                module=parsed.module,
                 is_package=parsed.relpath.rsplit("/", 1)[-1] == "__init__.py",
             )
             for parsed in file_meta
@@ -805,6 +817,7 @@ class WardlineAnalyzer:
                 writes: dict[str, dict[str, TaintState]] = {}
                 method_tm: dict[str, TaintState] = {}
                 route_snapshot = route_receivers_by_module[module].get(id(ent.node))
+                parameter_type_fqns = parameter_types_by_module[module].get(id(ent.node))
                 route_body_params = route_snapshot.body_parameters if route_snapshot is not None else frozenset()
                 dependency_bindings = route_snapshot.dependency_bindings if route_snapshot is not None else {}
                 route_dependency_params = {
@@ -831,6 +844,7 @@ class WardlineAnalyzer:
                             global_seeds=module_global_taints.get(module),
                             route_body_params=route_body_params,
                             route_dependency_params=route_dependency_params,
+                            parameter_type_fqns=parameter_type_fqns,
                         )
                     writes = project_attribute_writes(
                         recorded_writes, all_classes, enclosing_class if is_method else None
@@ -874,6 +888,7 @@ class WardlineAnalyzer:
                         is_method,
                         route_body_params,
                         route_dependency_params,
+                        parameter_type_fqns,
                     )
                 )
                 for target_class, cls_writes in writes.items():
@@ -893,7 +908,7 @@ class WardlineAnalyzer:
         # name; only RAW_ZONE writes are recorded (the channel propagates raw, it
         # never upgrades a module-level raw seed to clean), and seeds combine
         # least-trusted-wins with the import-time seeds.
-        for ent, _seed, _tm, _enclosing_class, _alias_map, module, _is_method, _body, _depends in l2_records:
+        for ent, _seed, _tm, _enclosing_class, _alias_map, module, _is_method, _body, _depends, _types in l2_records:
             if ent.qualname in l2_failed:
                 continue
             global_names = own_scope_global_names(ent.node)
@@ -961,6 +976,7 @@ class WardlineAnalyzer:
                 is_method,
                 route_body_params,
                 route_dependency_params,
+                parameter_type_fqns,
             ) in l2_records:
                 if ent.qualname in l2_failed:
                     continue
@@ -1003,6 +1019,7 @@ class WardlineAnalyzer:
                                 global_seeds=module_global_taints.get(module),
                                 route_body_params=route_body_params,
                                 route_dependency_params=route_dependency_params,
+                                parameter_type_fqns=parameter_type_fqns,
                             )
                         writes = project_attribute_writes(
                             recorded_writes, all_classes, enclosing_class if is_method else None

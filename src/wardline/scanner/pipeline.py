@@ -299,6 +299,7 @@ class L2FunctionInput:
     module_prefix: str | None = None
     route_body_params: frozenset[str] = frozenset()
     route_dependency_params: dict[str, TaintState] = field(default_factory=dict)
+    parameter_type_fqns: dict[str, str] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -322,6 +323,7 @@ def run_l2_function_stage(stage_input: L2FunctionInput) -> L2FunctionOutput:
             param_meets=stage_input.param_meets,
             route_body_params=stage_input.route_body_params,
             route_dependency_params=stage_input.route_dependency_params,
+            parameter_type_fqns=stage_input.parameter_type_fqns,
         ),
     )
     return L2FunctionOutput(

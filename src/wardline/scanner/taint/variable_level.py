@@ -358,6 +358,7 @@ class VariableTaintContext:
     provenance_clash: bool | None = None
     route_body_params: frozenset[str] = frozenset()
     route_dependency_params: dict[str, TaintState] = field(default_factory=dict)
+    parameter_type_fqns: dict[str, str] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -458,6 +459,7 @@ def analyze_function_variables(
             param_meets=context.param_meets,
             route_body_params=context.route_body_params,
             route_dependency_params=context.route_dependency_params,
+            parameter_type_fqns=context.parameter_type_fqns,
             provenance_clash=context.provenance_clash,
             out_var_types=return_var_types,
         )
@@ -703,6 +705,7 @@ def compute_variable_taints(
     *,
     provenance_clash: bool | None = None,
     out_var_types: dict[str, list[str]] | None = None,
+    parameter_type_fqns: dict[str, str] | None = None,
 ) -> dict[str, TaintState]:
     """Compute per-variable taint for a function body.
 
@@ -758,6 +761,7 @@ def compute_variable_taints(
             taint_map,
             route_body_params,
             route_dependency_params or {},
+            parameter_type_fqns,
         )
         _walk_body(func_node.body, function_taint, taint_map, var_taints, call_site_taints)
         # Second pass: resolve lambda BODIES against the worst taint each variable holds
@@ -800,6 +804,7 @@ def _seed_parameters(
     taint_map: dict[str, TaintState] | None = None,
     route_body_params: frozenset[str] = frozenset(),
     route_dependency_params: dict[str, TaintState] | None = None,
+    parameter_type_fqns: dict[str, str] | None = None,
 ) -> None:
     args = func_node.args
     var_types = _CURRENT_VAR_TYPES.get()
@@ -836,7 +841,11 @@ def _seed_parameters(
         var_taints[arg.arg] = seed_val
 
         if arg.annotation and var_types is not None:
-            fqn = _resolve_expr_fqn(arg.annotation, alias_map)
+            fqn = (
+                parameter_type_fqns.get(arg.arg)
+                if parameter_type_fqns is not None
+                else _resolve_expr_fqn(arg.annotation, alias_map)
+            )
             if fqn:
                 var_types[arg.arg] = [fqn]
 

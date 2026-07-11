@@ -404,3 +404,135 @@ _MUST_NOT_FIRE = {
 @pytest.mark.parametrize("name", sorted(_MUST_NOT_FIRE))
 def test_fastapi_request_source_does_not_fire(tmp_path: Path, name: str) -> None:
     assert "PY-WL-108" not in _defect_rules(tmp_path, _MUST_NOT_FIRE[name]), name
+
+
+def test_shadowed_imported_request_type_is_not_fastapi_request(tmp_path: Path) -> None:
+    src = """
+        import os
+        from fastapi import Request
+        from wardline.decorators import trusted
+
+        class Request: ...
+
+        @trusted(level='ASSURED')
+        def h(req: Request):
+            os.system(req.query_params.get('x'))
+    """
+    assert "PY-WL-108" not in _defect_rules(tmp_path, src)
+
+
+def test_rebound_fastapi_requests_module_alias_is_not_request_type(tmp_path: Path) -> None:
+    src = """
+        import os
+        import fastapi.requests as fr
+        from wardline.decorators import trusted
+
+        class Local: ...
+        fr = Local()
+
+        @trusted(level='ASSURED')
+        def h(req: fr.Request):
+            os.system(req.query_params.get('x'))
+    """
+    assert "PY-WL-108" not in _defect_rules(tmp_path, src)
+
+
+@pytest.mark.parametrize(
+    "setup_and_annotation",
+    [
+        ("import fastapi", "fastapi.Request"),
+        ("import fastapi.requests", "fastapi.requests.Request"),
+        ("import fastapi.requests as fr", "fr.Request"),
+        ("from fastapi import Request as WebRequest", "WebRequest"),
+    ],
+)
+def test_genuine_request_import_forms_stay_recognized(
+    tmp_path: Path,
+    setup_and_annotation: tuple[str, str],
+) -> None:
+    setup, annotation = setup_and_annotation
+    src = f"""
+        import os
+        {setup}
+        from wardline.decorators import trusted
+
+        @trusted(level='ASSURED')
+        def h(req: {annotation}):
+            os.system(req.query_params.get('x'))
+    """
+    assert "PY-WL-108" in _defect_rules(tmp_path, src)
+
+
+def test_request_binding_is_temporal_and_survives_later_shadow(tmp_path: Path) -> None:
+    src = """
+        import os
+        from fastapi import Request
+        from wardline.decorators import trusted
+
+        @trusted(level='ASSURED')
+        def h(req: Request):
+            os.system(req.query_params.get('x'))
+
+        class Request: ...
+    """
+    assert "PY-WL-108" in _defect_rules(tmp_path, src)
+
+
+def test_reimport_restores_request_binding(tmp_path: Path) -> None:
+    src = """
+        import os
+        from fastapi import Request
+        from wardline.decorators import trusted
+
+        class Request: ...
+        from fastapi import Request
+
+        @trusted(level='ASSURED')
+        def h(req: Request):
+            os.system(req.query_params.get('x'))
+    """
+    assert "PY-WL-108" in _defect_rules(tmp_path, src)
+
+
+@pytest.mark.parametrize("container", ["function", "class"])
+def test_lexical_scope_request_shadow_is_not_fastapi_request(tmp_path: Path, container: str) -> None:
+    if container == "function":
+        scoped = """
+            def register():
+                class Request: ...
+                @trusted(level='ASSURED')
+                def h(req: Request):
+                    os.system(req.query_params.get('x'))
+                return h
+        """
+    else:
+        scoped = """
+            class Routes:
+                class Request: ...
+                @trusted(level='ASSURED')
+                def h(req: Request):
+                    os.system(req.query_params.get('x'))
+        """
+    src = f"""
+        import os
+        from fastapi import Request
+        from wardline.decorators import trusted
+{textwrap.indent(textwrap.dedent(scoped), "        ")}
+    """
+    rules = _defect_rules(tmp_path, src)
+    assert "WLN-ENGINE-PARSE-ERROR" not in rules
+    assert "PY-WL-108" not in rules
+
+
+def test_conditional_function_keeps_static_request_resolution_fallback(tmp_path: Path) -> None:
+    src = """
+        import os
+        from fastapi import Request
+        from wardline.decorators import trusted
+
+        if True:
+            @trusted(level='ASSURED')
+            def h(req: Request):
+                os.system(req.query_params.get('x'))
+    """
+    assert "PY-WL-108" in _defect_rules(tmp_path, src)

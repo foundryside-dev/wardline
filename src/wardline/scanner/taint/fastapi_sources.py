@@ -337,6 +337,78 @@ def discover_callable_aliases(
     return aliases
 
 
+def discover_parameter_types(
+    tree: ast.Module,
+    *,
+    module: str,
+    is_package: bool = False,
+) -> dict[int, dict[str, str]]:
+    """Resolve function parameter annotations against source-ordered lexical bindings."""
+    resolved: dict[int, dict[str, str]] = {}
+
+    def walk_scope(
+        statements: list[ast.stmt],
+        *,
+        scope: str,
+        bindings: MutableMapping[str, str],
+    ) -> None:
+        for stmt in statements:
+            if isinstance(stmt, ast.Import):
+                for item in stmt.names:
+                    local = item.asname or item.name.split(".")[0]
+                    bindings[local] = item.name if item.asname is not None else local
+                continue
+            if isinstance(stmt, ast.ImportFrom):
+                base = _import_from_base(stmt, module, is_package=is_package)
+                if base is not None:
+                    for item in stmt.names:
+                        if item.name != "*":
+                            bindings[item.asname or item.name] = f"{base}.{item.name}"
+                continue
+            if isinstance(stmt, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+                qualname = f"{scope}.{stmt.name}"
+                if isinstance(stmt, ast.ClassDef):
+                    walk_scope(stmt.body, scope=qualname, bindings=ChainMap({}, bindings))
+                else:
+                    parameter_types: dict[str, str] = {}
+                    parameters = [
+                        *stmt.args.posonlyargs,
+                        *stmt.args.args,
+                        *stmt.args.kwonlyargs,
+                    ]
+                    if stmt.args.vararg is not None:
+                        parameters.append(stmt.args.vararg)
+                    if stmt.args.kwarg is not None:
+                        parameters.append(stmt.args.kwarg)
+                    for parameter in parameters:
+                        if parameter.annotation is not None:
+                            annotation = resolve_dotted(parameter.annotation, bindings)
+                            if annotation is not None:
+                                parameter_types[parameter.arg] = annotation
+                    resolved[id(stmt)] = parameter_types
+
+                    child_bindings: MutableMapping[str, str] = ChainMap({}, bindings)
+                    for parameter in parameters:
+                        child_bindings[parameter.arg] = f"{_UNKNOWN_BINDING}.{parameter.arg}"
+                    walk_scope(
+                        stmt.body,
+                        scope=f"{qualname}.<locals>",
+                        bindings=child_bindings,
+                    )
+                bindings[stmt.name] = qualname
+                continue
+            assigned = _assigned_names(stmt)
+            if not assigned:
+                continue
+            value = stmt.value if isinstance(stmt, (ast.Assign, ast.AnnAssign)) else None
+            target = resolve_dotted(value, bindings) if isinstance(value, (ast.Name, ast.Attribute)) else None
+            for name in assigned:
+                bindings[name] = target if target is not None else f"{_UNKNOWN_BINDING}.{name}"
+
+    walk_scope(tree.body, scope=module, bindings={})
+    return resolved
+
+
 def _is_fastapi_route(node: ast.FunctionDef | ast.AsyncFunctionDef, route_receivers: frozenset[str]) -> bool:
     return any(
         isinstance(dec, ast.Call)
