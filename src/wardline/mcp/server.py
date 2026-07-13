@@ -37,7 +37,7 @@ from wardline.core.filigree_emit import (
     filigree_destination,
     redact_url_for_diagnostics,
 )
-from wardline.core.finding import Finding, Severity
+from wardline.core.finding import Finding, Kind, Severity
 from wardline.core.finding_query import filter_findings
 from wardline.core.judge_run import run_judge
 from wardline.core.paths import baseline_path as baseline_file
@@ -984,6 +984,14 @@ def _scan(
         response["scope"] = result.scope.to_dict()
     _attach_legis_artifact(response, result, path, args)
     return response
+
+
+def _counts_by_kind(findings: list[Finding]) -> dict[str, int]:
+    """Count the complete finding population in canonical Kind order."""
+    counts = {kind.value: 0 for kind in Kind}
+    for finding in findings:
+        counts[finding.kind.value] += 1
+    return counts
 
 
 _SCAN_OUTPUT_SCHEMA: dict[str, Any] = {
