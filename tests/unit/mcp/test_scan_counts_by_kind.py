@@ -106,6 +106,7 @@ def test_scan_counts_by_kind_cover_complete_population_across_display_lenses(tmp
         ),
         _scan({"summary_only": True, "trust_suppressions": True}, root=tmp_path),
         _scan({"include_suppressed": False, "trust_suppressions": True}, root=tmp_path),
+        _scan({"explain": True, "trust_suppressions": True}, root=tmp_path),
     ]
     assert all(variant["summary"]["counts_by_kind"] == counts for variant in variants)
 

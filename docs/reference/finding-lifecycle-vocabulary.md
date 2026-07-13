@@ -95,7 +95,7 @@ buckets that **sum to `total`** exactly (weft-f506e5f845):
   `active` (`src/wardline/core/run.py:104`) + `baselined` (`src/wardline/core/run.py:106`)
   + `waived` (`src/wardline/core/run.py:107`) + `judged` (`src/wardline/core/run.py:108`);
 - `informational` (`src/wardline/core/run.py:114`) is **every non-defect finding**
-  (facts, metrics, classifications) — the rest of `total`.
+  (facts, classifications, metrics, and suggestions) — the rest of `total`.
 
 So `active + baselined + waived + judged + informational == total`
 (`src/wardline/core/run.py:103` for `total: int`). `unanalyzed`

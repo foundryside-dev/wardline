@@ -873,8 +873,8 @@ def _scan(
         # An unknown filter key or SEI resolution failure is agent-actionable -> isError result.
         raise ToolError(str(exc)) from exc
 
-    # Payload-shrinking controls. The `summary`/`gate` blocks always describe the WHOLE
-    # project; these only bound the returned finding BODIES (which live solely in
+    # Payload-shrinking controls. The `summary`/`gate` blocks always describe the current
+    # complete scan result; these only bound the returned finding BODIES (which live solely in
     # agent_summary now — there is no separate top-level findings array). The DEFAULT scan is
     # BOUNDED (weft-439d09fc8d): a bare call returns at most _DEFAULT_MAX_FINDINGS bodies so
     # an agent's first natural call cannot overflow its own context. full=true lifts the cap;
@@ -947,7 +947,7 @@ def _scan(
             "baselined": result.summary.baselined,
             "waived": result.summary.waived,
             "judged": result.summary.judged,
-            # Non-defect findings (facts/metrics/classifications). active+baselined+
+            # Non-defect findings (facts, classifications, metrics, and suggestions). active+baselined+
             # waived+judged+informational == total (the buckets-sum-to-total invariant,
             # weft-f506e5f845); unanalyzed is an overlay (subset of informational), not a
             # partition member.
