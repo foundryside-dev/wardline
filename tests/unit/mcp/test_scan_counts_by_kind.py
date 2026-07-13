@@ -131,9 +131,11 @@ def test_scan_counts_by_kind_schema_is_exact_and_required() -> None:
     assert "counts_by_kind" in summary_schema["required"]
 
 
-def test_scan_agent_summary_schema_remains_version_one_without_kind_counts() -> None:
-    agent_summary_schema = _SCAN_OUTPUT_SCHEMA["properties"]["agent_summary"]
+def test_nested_agent_summary_contract_is_unchanged(tmp_path: Path) -> None:
+    (tmp_path / "svc.py").write_text(_many_leaks(1), encoding="utf-8")
 
-    assert agent_summary_schema["properties"]["schema"]["enum"] == ["wardline-agent-summary-1"]
-    assert "counts_by_kind" not in agent_summary_schema["properties"]
-    assert "counts_by_kind" not in agent_summary_schema["properties"]["summary"]["properties"]
+    output = _scan({"full": True}, root=tmp_path)
+
+    assert output["agent_summary"]["schema"] == "wardline-agent-summary-1"
+    assert "counts_by_kind" not in output["agent_summary"]
+    assert "counts_by_kind" not in output["agent_summary"]["summary"]
