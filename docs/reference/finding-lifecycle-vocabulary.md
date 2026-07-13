@@ -155,10 +155,10 @@ trips when any file was discovered but never analysed; benign no-module skips
 excluded). `severity_tripped` / `unanalyzed_tripped` attribute an overall
 `tripped` to its sub-gate(s) so no consumer has to parse `reason`.
 
-The MCP `scan` gate block exposes `gate.tripped` (`src/wardline/mcp/server.py:961`),
-`gate.fail_on_unanalyzed`, `gate.verdict` (`src/wardline/mcp/server.py:965`),
+The MCP `scan` gate block exposes `gate.tripped` (`src/wardline/mcp/server.py:962`),
+`gate.fail_on_unanalyzed`, `gate.verdict` (`src/wardline/mcp/server.py:966`),
 `gate.severity_tripped`, `gate.unanalyzed_tripped`, `would_trip_at`, `reason`,
-`evaluated`, and `migration_hint`, opened at `src/wardline/mcp/server.py:960`
+`evaluated`, and `migration_hint`, opened at `src/wardline/mcp/server.py:961`
 (`"gate": {`); the agent-summary mirrors them at
 `src/wardline/core/agent_summary.py:145` (`tripped`) and
 `src/wardline/core/agent_summary.py:148` (`verdict`). The CLI prints
@@ -203,7 +203,7 @@ How each concept appears on each surface:
 | informational (summary) | (the remainder of `total`) | `informational` (`run.py:114`) | `informational` (`server.py:954`) | `informational` (`agent_summary.py:141`) | facts/metrics |
 | informational (display) | n/a | n/a | n/a | `informational` display array (`agent_summary.py:172`) — non-defect, non-engine-fact findings (metrics, classifications, suggestions, non-engine facts); excludes `engine_facts` which has its own display slot | facts/metrics |
 | under-scan | `N file(s) could not be analyzed` | `unanalyzed` (`run.py:122`) | `unanalyzed` (`server.py:958`) | `unanalyzed` (`agent_summary.py:142`) | `WLN-ENGINE-*` facts |
-| gate verdict | exit code + `--fail-on` | (`gate_population`, `run.py:169`; `GateDecision`, `run.py:201`, `verdict` `run.py:211`) | `gate` (`server.py:960`), `gate.tripped` (`server.py:961`), `gate.verdict` (`server.py:965`) | `gate.tripped` (`agent_summary.py:145`), `gate.verdict` (`agent_summary.py:148`) | not emitted to Filigree |
+| gate verdict | exit code + `--fail-on` | (`gate_population`, `run.py:169`; `GateDecision`, `run.py:201`, `verdict` `run.py:211`) | `gate` (`server.py:961`), `gate.tripped` (`server.py:962`), `gate.verdict` (`server.py:966`) | `gate.tripped` (`agent_summary.py:145`), `gate.verdict` (`agent_summary.py:148`) | not emitted to Filigree |
 
 The unsuppressed gate population is built from `Baseline(frozenset())`
 (`src/wardline/core/run.py:594`).
