@@ -82,16 +82,20 @@ first, suppressed debt, engine facts, integration status, a pagination
 
 `summary.counts_by_kind` is a required object with exactly five nonnegative
 integer fields, emitted in canonical order. Wardline includes zero-valued fields
-for kinds absent from the result, and the five values sum to `summary.total`:
+for kinds absent from the result, and the five values sum to `summary.total`.
+For example, this response excerpt shows four findings:
 
 ```json
 {
-  "counts_by_kind": {
-    "defect": 2,
-    "fact": 1,
-    "classification": 0,
-    "metric": 1,
-    "suggestion": 0
+  "summary": {
+    "total": 4,
+    "counts_by_kind": {
+      "defect": 2,
+      "fact": 1,
+      "classification": 0,
+      "metric": 1,
+      "suggestion": 0
+    }
   }
 }
 ```

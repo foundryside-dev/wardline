@@ -253,8 +253,9 @@ Resources expose the trust vocabulary, rule catalog, config, and config schema.
 The `wardline:loop` prompt documents the intended
 scan → explain → fix-at-the-boundary → rescan cycle.
 
-`scan` payload controls only bound the returned finding bodies. The
-`summary`/`gate` blocks describe the current complete scan result:
+The `scan` display controls below affect only the returned finding-body
+projection. The `summary`/`gate` blocks describe the current complete scan
+result:
 
 - `where` — a conjunctive read-lens (keys: `rule_id`, `qualname`, `severity`,
   `suppression`, `kind`, `path_glob`, `sink`, `tier`) that filters the
