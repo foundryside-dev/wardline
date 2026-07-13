@@ -956,6 +956,7 @@ def _scan(
             # source root — benign no-module skips are excluded). Surfaced so the
             # silent under-scan reaches the agent, not just the human-facing stderr.
             "unanalyzed": result.summary.unanalyzed,
+            "counts_by_kind": _counts_by_kind(result.findings),
         },
         "gate": {
             "tripped": decision.tripped,
@@ -1005,25 +1006,51 @@ _SCAN_OUTPUT_SCHEMA: dict[str, Any] = {
         },
         "summary": {
             "type": "object",
-            "description": "Whole-project finding counts. active+baselined+waived+judged+informational == total; "
-            "unanalyzed is an overlay, not a partition member.",
+            "description": "Whole-scan finding counts for the current scan result. "
+            "active+baselined+waived+judged+informational == total; unanalyzed is an overlay, not a partition member.",
             "properties": {
-                "total": {"type": "integer", "description": "Every finding (defects + facts/metrics)."},
+                "total": {
+                    "type": "integer",
+                    "description": "Every finding (defects, facts, classifications, metrics, and suggestions).",
+                },
                 "active": {"type": "integer", "description": "Non-suppressed defects."},
                 "baselined": {"type": "integer"},
                 "waived": {"type": "integer"},
                 "judged": {"type": "integer"},
                 "informational": {
                     "type": "integer",
-                    "description": "All non-defect findings (facts, metrics, classifications).",
+                    "description": "All non-defect findings (facts, classifications, metrics, and suggestions).",
                 },
                 "unanalyzed": {
                     "type": "integer",
                     "description": "Files discovered but never analysed (parse errors / too-deep / missing source "
                     "roots); overlay count.",
                 },
+                "counts_by_kind": {
+                    "type": "object",
+                    "description": "Whole-scan finding counts by canonical finding kind, including active and "
+                    "suppressed findings.",
+                    "properties": {
+                        "defect": {"type": "integer", "minimum": 0},
+                        "fact": {"type": "integer", "minimum": 0},
+                        "classification": {"type": "integer", "minimum": 0},
+                        "metric": {"type": "integer", "minimum": 0},
+                        "suggestion": {"type": "integer", "minimum": 0},
+                    },
+                    "required": ["defect", "fact", "classification", "metric", "suggestion"],
+                    "additionalProperties": False,
+                },
             },
-            "required": ["total", "active", "baselined", "waived", "judged", "informational", "unanalyzed"],
+            "required": [
+                "total",
+                "active",
+                "baselined",
+                "waived",
+                "judged",
+                "informational",
+                "unanalyzed",
+                "counts_by_kind",
+            ],
             "additionalProperties": False,
         },
         "gate": {

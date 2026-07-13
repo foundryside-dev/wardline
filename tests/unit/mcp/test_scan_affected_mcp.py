@@ -75,6 +75,8 @@ def test_inline_entity_list_scopes_analysis(tmp_path: Path) -> None:
     # Only the affected entity's finding is displayed; the co-located other.py one is dropped.
     shown = {e["qualname"] for e in out["agent_summary"]["active_defects"]}
     assert shown == {"svc.leaky"}
+    assert sum(out["summary"]["counts_by_kind"].values()) == out["summary"]["total"]
+    assert out["summary"]["counts_by_kind"]["defect"] == 1
 
 
 def test_inline_worklist_envelope_scopes_analysis(tmp_path: Path) -> None:

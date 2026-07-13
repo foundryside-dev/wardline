@@ -3513,7 +3513,7 @@
       },
       "summary": {
         "additionalProperties": false,
-        "description": "Whole-project finding counts. active+baselined+waived+judged+informational == total; unanalyzed is an overlay, not a partition member.",
+        "description": "Whole-scan finding counts for the current scan result. active+baselined+waived+judged+informational == total; unanalyzed is an overlay, not a partition member.",
         "properties": {
           "active": {
             "description": "Non-suppressed defects.",
@@ -3522,15 +3522,49 @@
           "baselined": {
             "type": "integer"
           },
+          "counts_by_kind": {
+            "additionalProperties": false,
+            "description": "Whole-scan finding counts by canonical finding kind, including active and suppressed findings.",
+            "properties": {
+              "classification": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "defect": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "fact": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "metric": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "suggestion": {
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "defect",
+              "fact",
+              "classification",
+              "metric",
+              "suggestion"
+            ],
+            "type": "object"
+          },
           "informational": {
-            "description": "All non-defect findings (facts, metrics, classifications).",
+            "description": "All non-defect findings (facts, classifications, metrics, and suggestions).",
             "type": "integer"
           },
           "judged": {
             "type": "integer"
           },
           "total": {
-            "description": "Every finding (defects + facts/metrics).",
+            "description": "Every finding (defects, facts, classifications, metrics, and suggestions).",
             "type": "integer"
           },
           "unanalyzed": {
@@ -3548,7 +3582,8 @@
           "waived",
           "judged",
           "informational",
-          "unanalyzed"
+          "unanalyzed",
+          "counts_by_kind"
         ],
         "type": "object"
       }
