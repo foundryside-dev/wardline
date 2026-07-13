@@ -69,16 +69,39 @@ evaluates the **unsuppressed** population, so a repo-controlled
 baseline/waiver/judged annotates a finding but does not clear it; pass
 `trust_suppressions: true` for the trusted-local behaviour.
 
-**Returns:** `files_scanned`, a whole-project `summary`
-(`total`/`active`/`baselined`/`waived`/`judged`/`informational`/`unanalyzed`), a
-`gate` block (`tripped`, `fail_on`, `exit_class` 0/1, `verdict`
-NOT_EVALUATED/PASSED/FAILED, `would_trip_at`, sub-gate attribution), `loomweave`
-/ `filigree` raw write/emit blocks (null when unconfigured), and the stable
-`agent_summary` block (schema `wardline-agent-summary-1`): active defects first,
-suppressed debt, engine facts, integration status, a pagination `truncation`
-descriptor, and gate-aware `next_actions`. The finding bodies are **bounded by
-default** (≤25) so a first call cannot overflow context; `full: true` lifts the
-cap and `offset` pages the rest.
+**Returns:** `files_scanned`, a `summary` for the current complete scan result
+(`total`/`active`/`baselined`/`waived`/`judged`/`informational`/`unanalyzed` plus
+`counts_by_kind`), a `gate` block (`tripped`, `fail_on`, `exit_class` 0/1,
+`verdict` NOT_EVALUATED/PASSED/FAILED, `would_trip_at`, sub-gate attribution),
+`loomweave` / `filigree` raw write/emit blocks (null when unconfigured), and the
+stable `agent_summary` block (schema `wardline-agent-summary-1`): active defects
+first, suppressed debt, engine facts, integration status, a pagination
+`truncation` descriptor, and gate-aware `next_actions`. The finding bodies are
+**bounded by default** (≤25) so a first call cannot overflow context; setting
+`full: true` lifts the cap and `offset` pages the rest.
+
+`summary.counts_by_kind` is a required object with exactly five nonnegative
+integer fields, emitted in canonical order. Wardline includes zero-valued fields
+for kinds absent from the result, and the five values sum to `summary.total`:
+
+```json
+{
+  "counts_by_kind": {
+    "defect": 2,
+    "fact": 1,
+    "classification": 0,
+    "metric": 1,
+    "suggestion": 0
+  }
+}
+```
+
+These counts include active and suppressed findings. Body controls (`where`,
+`offset`, `max_findings`, `summary_only`, `include_suppressed`, and `explain`)
+do not change them. For an affected/delta scan, they describe that affected
+scan result; read `scope.gate_authority` to distinguish an advisory delta from
+a gate-of-record full fallback. The nested `agent_summary` remains schema
+`wardline-agent-summary-1` and does not contain `counts_by_kind`.
 
 Read-only. When a Filigree URL is configured the scan also POSTs findings to it,
 fail-soft (an unreachable sibling or rejected payload is reported in the

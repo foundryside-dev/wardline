@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **MCP `scan.summary.counts_by_kind` publishes the canonical finding-kind
+  distribution.** This required additive top-level summary object always emits
+  `defect`, `fact`, `classification`, `metric`, and `suggestion`, zero-fills
+  absent kinds, includes suppressed findings, and sums to `summary.total`.
+  Display filtering, pagination, body suppression, and summary-only mode do not
+  change the counts; the nested `wardline-agent-summary-1` contract remains
+  unchanged.
+
 ## [1.3.0] - 2026-07-03
 
 ### Added

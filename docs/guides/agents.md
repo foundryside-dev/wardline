@@ -253,12 +253,12 @@ Resources expose the trust vocabulary, rule catalog, config, and config schema.
 The `wardline:loop` prompt documents the intended
 scan → explain → fix-at-the-boundary → rescan cycle.
 
-`scan` payload controls (the `summary`/`gate` blocks always describe the whole
-project — these only bound the returned finding bodies):
+`scan` payload controls only bound the returned finding bodies. The
+`summary`/`gate` blocks describe the current complete scan result:
 
 - `where` — a conjunctive read-lens (keys: `rule_id`, `qualname`, `severity`,
-  `suppression`, `kind`, `path_glob`, `sink`, `tier`) that filters **both** the
-  `findings` list and the `agent_summary` arrays.
+  `suppression`, `kind`, `path_glob`, `sink`, `tier`) that filters the
+  `agent_summary` finding arrays.
 - `summary_only: true` — counts + gate only, no finding bodies. The smallest
   "did the gate pass?" payload.
 - `include_suppressed: false` — drop suppressed (baselined/waived/judged) bodies;
@@ -267,7 +267,15 @@ project — these only bound the returned finding bodies):
 - `explain: true` — inline each active defect's provenance; capped at 10 by
   default (raise/lower with `max_findings`).
 
-Every cut is reported in the response `truncation` block (`findings_total`,
+Read `summary.counts_by_kind` for the complete kind distribution. It always has
+exactly `defect`, `fact`, `classification`, `metric`, and `suggestion` in that
+canonical order, zero-fills missing kinds, includes active and suppressed
+findings, and sums to `summary.total`. The controls above, plus `offset`, do not
+change it. For an affected scan it counts the affected scan result; use
+`scope.gate_authority` to tell an advisory delta from a gate-of-record full
+fallback.
+
+Every cut is reported in `agent_summary.truncation` (`findings_total`,
 `findings_returned`, `findings_truncated`, `explanations_truncated`) so a bounded
 payload never reads as "covered everything."
 
