@@ -1,0 +1,3 @@
+## 2024-12-05 - Optimize AST traversal using explicit stack
+**Learning:** For hot-path AST traversal, `yield from` recursion and `ast.iter_child_nodes` have significant overhead. Iterating through `current._fields` in reverse order inside an explicit stack logic is measurably faster while preserving lazy evaluation. Eager list-appending computes the whole subtree unnecessarily when early matches could exist.
+**Action:** When building hot-path static analysis functions traversing Python ASTs, use an explicit stack combined with `yield`. Iterate `_fields` in reverse, append lists in reverse, and retain `isinstance(node, ast.AST)` checks to avoid `AttributeError`s.
