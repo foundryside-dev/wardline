@@ -1,5 +1,5 @@
 {
   "corpus_version": 6,
   "fingerprint_scheme": "wlfp2",
-  "reason": "call-site full-span discriminator"
+  "reason": "Explicit stack optimization in iter_calls_in_function_body"
 }
