@@ -7,3 +7,8 @@
 **Vulnerability:** The static analyzer was missing `yaml.unsafe_load` and `yaml.full_load` in its `_SERIALISATION_SINKS` mapping, potentially leading to false negatives when tracking untrusted data flowing into these dangerous deserialization functions.
 **Learning:** Even if functions are listed in rule specifications (like `_SINK_SPECS`), they also need to be properly categorized in the core taint propagation logic (`_SERIALISATION_SINKS`) to ensure the analyzer correctly sheds validation provenance (converting output to `UNKNOWN_RAW`).
 **Prevention:** When adding new sinks to rule definitions, always verify if they need to be added to core propagation mappings like `_SERIALISATION_SINKS` or `_PROPAGATING_BUILTINS`.
+
+## 2025-02-15 - Prevent Untrusted Data Leakage via Default Parameters
+**Vulnerability:** Untrusted data could leak into `@trusted` functions when evaluating default parameter expressions in `_seed_parameters` during L2 taint analysis because they inherited `function_taint`.
+**Learning:** Default parameters in Python are evaluated at function definition time (module scope), so their baseline taint state should be completely independent of the function's runtime caller taint.
+**Prevention:** When evaluating default parameter expressions in L2 taint analysis, always evaluate them with a clean base state (`TaintState.INTEGRAL`) rather than inheriting the function's calling taint.
