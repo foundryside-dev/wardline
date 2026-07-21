@@ -615,10 +615,10 @@ def _resolve_lambda_body_at_call_inner(
     default_taints: dict[str, TaintState] = {}
     defaulted_params = positional_params[len(positional_params) - len(args.defaults) :]
     for param, default in zip(defaulted_params, args.defaults, strict=True):
-        default_taints[param.arg] = _resolve_expr(default, function_taint, taint_map, scope)
+        default_taints[param.arg] = _resolve_expr(default, TaintState.INTEGRAL, taint_map, scope)
     for param, kw_default in zip(args.kwonlyargs, args.kw_defaults, strict=True):
         if kw_default is not None:
-            default_taints[param.arg] = _resolve_expr(kw_default, function_taint, taint_map, scope)
+            default_taints[param.arg] = _resolve_expr(kw_default, TaintState.INTEGRAL, taint_map, scope)
 
     def _omitted_seed(param_name: str) -> TaintState:
         default = default_taints.get(param_name)
@@ -767,12 +767,12 @@ def _seed_parameters(
         param_idx = total_pos_args - num_defaults + i
         if 0 <= param_idx < len(all_pos_params):
             param_name = all_pos_params[param_idx].arg
-            default_taints[param_name] = _resolve_expr(default_expr, function_taint, taint_map or {}, {})
+            default_taints[param_name] = _resolve_expr(default_expr, TaintState.INTEGRAL, taint_map or {}, {})
 
     # Map keyword-only parameter defaults
     for param, kw_default_expr in zip(args.kwonlyargs, args.kw_defaults, strict=True):
         if kw_default_expr is not None:
-            default_taints[param.arg] = _resolve_expr(kw_default_expr, function_taint, taint_map or {}, {})
+            default_taints[param.arg] = _resolve_expr(kw_default_expr, TaintState.INTEGRAL, taint_map or {}, {})
 
     def handle_arg(arg: ast.arg) -> None:
         fallback = default_taints.get(arg.arg, function_taint)
