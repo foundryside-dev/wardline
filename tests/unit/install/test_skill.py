@@ -12,7 +12,14 @@ def test_install_skill_creates_both_targets(tmp_path: Path) -> None:
     for base in (".claude", ".agents"):
         skill = tmp_path / base / "skills" / "wardline-gate" / "SKILL.md"
         assert skill.is_file()
-        assert "name: wardline-gate" in skill.read_text(encoding="utf-8")
+        guidance = skill.read_text(encoding="utf-8")
+        assert "name: wardline-gate" in guidance
+        assert "`scan_job_start`" in guidance
+        sheet_path = skill.parent / "references" / "mcp-safe-scans.md"
+        assert sheet_path.is_file()
+        sheet = sheet_path.read_text(encoding="utf-8")
+        assert "`strict_defaults` is **false by default**" in sheet
+        assert "`summary_only` and `max_findings` bound the response" in sheet
 
 
 def test_reinstall_overwrites(tmp_path: Path) -> None:
