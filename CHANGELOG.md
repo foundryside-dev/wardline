@@ -147,7 +147,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   project root, source reads are pinned to the validated file via a descriptor
   bound to its verified inode with every directory hop verified, and validated
   symlink targets are pinned — closing resolve-then-read (TOCTOU) substitution
-  windows.
+  windows. Discovery now hands downstream the **canonical** path that passed
+  confinement and deduplicates a file reachable through both its symlink and its
+  real path, so a later retarget of a mutable symlink cannot redirect analysis.
+  Note this re-keys findings on in-root symlinked source files (they now anchor
+  at the target path) — see UPGRADING.md.
 - **FastAPI `Request` binding discovery is order- and scope-correct.** Bindings
   are tracked in source order, respect shadowing and provider taint, resolve in
   compound scopes, are retained across branches and `try` handlers, stop at

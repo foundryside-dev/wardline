@@ -32,6 +32,17 @@ unchanged path and clearing the gate, and `WLN-ENGINE-PYDANTIC-DISCOVERY-LIMIT`
 now counts as an incomplete-analysis signal that survives delta filtering —
 an under-analyzed scan can no longer quietly read as a complete one.
 
+**An in-root symlinked `*.py` source file is now reported at its canonical
+target.** Discovery hands downstream the resolved path that passed confinement
+(so a later retarget of a mutable symlink cannot redirect analysis) and
+deduplicates a file reachable through both its symlink and its real path. If
+your tree has an in-root `alias.py -> real.py`, findings previously anchored at
+`alias.py` now anchor at `real.py`. Because the path participates in the
+fingerprint, that **re-keys** those findings: any baseline/waiver/judged entry
+for them must be regenerated (`wardline baseline update`). Out-of-root symlink
+targets were skipped before and still are. This affects symlinked source files
+only.
+
 **Pre-1.4 attestation bundles no longer re-derive byte-identically.** The signed
 `wardline-attest-2` payload gained a required `sei_diagnostics` key, so
 `wardline attest --verify <bundle> --reproduce` on a bundle built by 1.3.x
