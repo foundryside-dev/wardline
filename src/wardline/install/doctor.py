@@ -30,7 +30,7 @@ from wardline.core.http import WeftHttp
 from wardline.core.paths import legacy_sibling_dir, sibling_state_dir, weft_config_path, weft_state_dir
 from wardline.core.safe_paths import safe_project_path, safe_read_text_if_regular, safe_write_text
 from wardline.filigree.config import load_filigree_token
-from wardline.install.block import inject_block
+from wardline.install.block import claude_md_redirects_to_agents_md, inject_block_for_project
 from wardline.install.detect import (
     _detect_filigree,
     _detect_loomweave,
@@ -259,6 +259,27 @@ def _has_instruction_block(path: Path) -> bool:
     if not path.is_file():
         return False
     return "wardline:instructions:" in path.read_text(encoding="utf-8", errors="replace")
+
+
+def _check_claude_md(root: Path) -> CheckResult:
+    """Health of the CLAUDE.md instruction block, respecting a C-20 redirect.
+
+    Three states, not two. When CLAUDE.md is merely an @-import of AGENTS.md the
+    block belongs in AGENTS.md alone, so its *absence* from CLAUDE.md is healthy
+    — reporting "missing" there would send `--repair` to re-inject a block the
+    project deliberately does not want. A legacy block still sitting in a
+    redirecting CLAUDE.md is the unhealthy case: duplicate guidance that drifts,
+    which `--repair` migrates out.
+
+    The row is kept (rather than dropped) under a redirect, and says why: doctor
+    output is a human checklist, and a silently absent line reads as an omission.
+    """
+    present = _has_instruction_block(root / "CLAUDE.md")
+    if claude_md_redirects_to_agents_md(root):
+        if present:
+            return CheckResult("CLAUDE.md", False, "stale block; CLAUDE.md redirects to AGENTS.md — migrate it")
+        return CheckResult("CLAUDE.md", True, "not required (redirects to AGENTS.md)")
+    return CheckResult("CLAUDE.md", present, "configured" if present else "missing")
 
 
 def _has_skill(root: Path, base: str) -> bool:
@@ -1111,9 +1132,7 @@ def machine_readable_doctor(
 def check_install(root: Path) -> list[CheckResult]:
     """Return install health checks without mutating the project."""
     return [
-        CheckResult("CLAUDE.md", _has_instruction_block(root / "CLAUDE.md"), "configured")
-        if _has_instruction_block(root / "CLAUDE.md")
-        else CheckResult("CLAUDE.md", False, "missing"),
+        _check_claude_md(root),
         CheckResult("AGENTS.md", _has_instruction_block(root / "AGENTS.md"), "configured")
         if _has_instruction_block(root / "AGENTS.md")
         else CheckResult("AGENTS.md", False, "missing"),
@@ -1132,9 +1151,12 @@ def check_install(root: Path) -> list[CheckResult]:
 def repair_install(root: Path) -> dict[str, str]:
     """Repair agent-install artifacts and return per-check repair status."""
     statuses: dict[str, str] = {}
-    for filename in ("CLAUDE.md", "AGENTS.md"):
-        inject_block(root / filename)
-        statuses[filename] = "repaired"
+    # Redirect-aware (C-20): under a CLAUDE.md -> AGENTS.md redirect this
+    # migrates the legacy block out of CLAUDE.md rather than re-injecting it. A
+    # conservative refusal from remove_block is surfaced verbatim — reporting
+    # "repaired" for a no-op would be a false all-clear.
+    for ok, filename, message in inject_block_for_project(root):
+        statuses[filename] = "repaired" if ok else f"refused: {message}"
     install_skill(root)
     statuses[".claude skill"] = "repaired"
     statuses[".agents skill"] = "repaired"

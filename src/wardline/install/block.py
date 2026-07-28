@@ -22,9 +22,12 @@ import tempfile
 from pathlib import Path
 
 from wardline.core.errors import WardlineError
-from wardline.core.safe_paths import safe_project_file
+from wardline.core.safe_paths import safe_project_file, safe_read_text_if_regular
 
 logger = logging.getLogger(__name__)
+
+CLAUDE_MD = "CLAUDE.md"
+AGENTS_MD = "AGENTS.md"
 
 _BLOCK_VERSION = "1"
 
@@ -98,18 +101,23 @@ def _first_real_foreign_block_pos(content: str, search_from: int) -> int:
     return boundary if boundary is not None else len(content)
 
 
-def _first_own_open_fence_pos(content: str) -> int:
-    """Index of wardline's *own* top-level open instruction fence, or -1 if none.
+def _own_open_fence_positions(content: str) -> list[int]:
+    """Indices of wardline's *own* top-level open instruction fences, in order.
 
     A wardline open marker quoted *inside* a co-resident sibling block (a worked
     example, documentation) is textually identical to a real one, so a bare regex
     anchor would splice there and gut the sibling. This walks fences in document
-    order, tracking the foreign block we are currently inside, and only returns a
+    order, tracking the foreign block we are currently inside, and only reports a
     wardline open fence found at top level (not enclosed by an unclosed foreign
     block). An unclosed foreign block therefore shields any wardline marker
-    beyond it: we decline to claim content we cannot prove is ours, and the
-    caller falls back to an append (which deletes nothing).
+    beyond it: we decline to claim content we cannot prove is ours.
+
+    The list *length* is the number of distinct wardline blocks. More than one is
+    a split brain — two divergent copies of the guidance — which the injector
+    tolerates when it cannot canonicalise across a sibling's block (it warns and
+    leaves the stale copy), and which :func:`remove_block` refuses to guess at.
     """
+    positions: list[int] = []
     inside_foreign: str | None = None
     for m in _INSTR_FENCE_RE.finditer(content):
         ns = m.group("ns").lower()
@@ -119,10 +127,40 @@ def _first_own_open_fence_pos(content: str) -> int:
                 inside_foreign = None
             continue
         if ns == _OWN_NS and not is_close:
-            return m.start()
+            positions.append(m.start())
+            continue
         if ns != _OWN_NS and not is_close:
             inside_foreign = ns
-    return -1
+    return positions
+
+
+def _first_own_open_fence_pos(content: str) -> int:
+    """Index of wardline's first *own* top-level open instruction fence, or -1.
+
+    The caller falls back to an append (which deletes nothing) on -1. See
+    :func:`_own_open_fence_positions` for the foreign-shielding rules.
+    """
+    positions = _own_open_fence_positions(content)
+    return positions[0] if positions else -1
+
+
+def _first_any_foreign_fence_pos(content: str, search_from: int) -> int:
+    """Index of the first *any* foreign instruction fence at/after *search_from*.
+
+    Strictly more conservative than :func:`_first_real_foreign_block_pos`: a
+    *lone* foreign open or a stray foreign close is a boundary here, where the
+    injector absorbs it. Only :func:`remove_block` uses this. The injector can
+    always fall back to an append — which deletes nothing — so it may safely
+    treat an unmatched foreign marker as our own content. Removal has no such
+    fallback: a mis-bounded delete eats a sibling's block, so it stops at any
+    foreign fence at all. Own-namespace fences are absorbed either way.
+
+    Returns ``len(content)`` when no foreign fence follows (bound at EOF).
+    """
+    for m in _INSTR_FENCE_RE.finditer(content, search_from):
+        if m.group("ns").lower() != _OWN_NS:
+            return m.start()
+    return len(content)
 
 
 def _canonicalise_tail(tail: str) -> tuple[str, bool]:
@@ -256,3 +294,199 @@ def inject_block(file_path: Path) -> str:
         return "unchanged"
     _atomic_write_text(file_path, candidate)
     return "updated"
+
+
+def remove_block(file_path: Path) -> tuple[bool, str]:
+    """Remove wardline's own instruction block from *file_path*, or refuse.
+
+    The delete-side mirror of :func:`inject_block`, and deliberately more
+    conservative than it. Injection can always fall back to an append — which
+    deletes nothing — so it may safely bound a malformed block at a foreign
+    fence. Removal has no such fallback: a mis-bounded delete eats a sibling's
+    block. So every case where ownership is not *provable* is a no-op that
+    deletes nothing:
+
+    - no own top-level open fence → nothing to remove (success, no write);
+    - own marker shielded inside an unclosed foreign block → not ours, no-op;
+    - own close marker missing, or sitting beyond a foreign fence → refuse;
+    - more than one own block (split brain) → refuse, matching the injector's
+      "resolve it by hand" posture rather than guessing which copy to drop.
+
+    Returns ``(ok, message)`` rather than raising: a conservative refusal is a
+    deliberate outcome that callers must *surface*, not an error that should
+    abort an install. Only genuine unsafety (a symlinked target) raises.
+    """
+    file_path = safe_project_file(file_path.parent, file_path, label=file_path.name)
+    if not file_path.exists():
+        return True, f"no wardline block in {file_path.name}"
+    try:
+        content = file_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        return False, f"could not read {file_path.name}: {exc}"
+
+    positions = _own_open_fence_positions(content)
+    if not positions:
+        return True, f"no wardline block in {file_path.name}"
+    if len(positions) > 1:
+        return False, (
+            f"{file_path.name} has {len(positions)} wardline instruction blocks "
+            "(split brain); refusing to guess which copy to remove — resolve it by hand"
+        )
+
+    start = positions[0]
+    own_end = content.find(_END_MARKER, start)
+    foreign = _first_any_foreign_fence_pos(content, start + len(f"<!-- {_OWN_NS}:instructions"))
+    if own_end == -1 or own_end >= foreign:
+        return False, (
+            f"the wardline instruction block in {file_path.name} is unclosed or its close "
+            "marker sits beyond another tool's block; refusing to delete across a boundary "
+            "we cannot prove is ours"
+        )
+
+    # Excise, then tidy only at the seam. The injector appends as
+    # "\n" + block + "\n", so a naive cut leaves a doubled blank line; trimming
+    # newlines on each side of the seam restores the single blank line without
+    # touching blank runs elsewhere in the file.
+    head = content[:start].rstrip("\n")
+    tail = content[own_end + len(_END_MARKER) :].lstrip("\n")
+    remainder = head + "\n\n" + tail if (head and tail) else (head or tail)
+
+    if not remainder.strip():
+        # The file held nothing but wardline's block — i.e. exactly what
+        # inject_block creates for a missing file. Removing it is the symmetric
+        # inverse of that create; leaving a blank file behind would also trip the
+        # refuse-to-empty guard in _atomic_write_text.
+        file_path.unlink()
+        return True, f"removed {file_path.name} (it held nothing but the wardline block)"
+
+    if not remainder.endswith("\n"):
+        remainder += "\n"
+    _atomic_write_text(file_path, remainder)
+    return True, f"removed the wardline block from {file_path.name}"
+
+
+# ---------------------------------------------------------------------------
+# CLAUDE.md -> AGENTS.md redirect routing (C-20)
+# ---------------------------------------------------------------------------
+
+# A line that is *solely* an @-import of AGENTS.md. Anchored both ends against
+# the stripped line, so `See @AGENTS.md for details` (not solely an import) and
+# `@AGENTS.md.bak` (a different file) both correctly fail to match. Case-
+# insensitive, covering `@agents.md` / `@AGENTS.MD`. The `./` is matched as a
+# unit so the `@./AGENTS.md` spelling works while an absolute `@/AGENTS.md` does
+# NOT — that names a different path, and treating it as a redirect would stop us
+# maintaining the block this CLAUDE.md actually carries.
+_AGENTS_REDIRECT_RE = re.compile(r"^@(?:\./)?AGENTS\.md$", re.IGNORECASE)
+
+
+def _mask_managed_blocks(content: str) -> str:
+    """Blank every managed instruction block, preserving line structure.
+
+    Characters inside any tool's block — wardline's own as well as a sibling's —
+    become spaces while newlines survive, so a caller can scan line-anchored
+    markers without seeing text a block merely *quotes*. An unclosed block masks
+    to EOF: we cannot prove where it ends, so we decline to read anything past it
+    as free-standing project prose.
+
+    Known limitation, accepted as spec and shared with the sibling
+    implementations: masking covers managed blocks only, so an ``@AGENTS.md``
+    example inside a plain markdown fence still reads as a redirect. Uniform
+    behaviour across the federation beats a wardline-only refinement here.
+    """
+    out = list(content)
+    inside: str | None = None
+    block_start = 0
+    for m in _INSTR_FENCE_RE.finditer(content):
+        ns = m.group("ns").lower()
+        is_close = bool(m.group("close"))
+        if inside is None:
+            if not is_close:
+                inside = ns
+                block_start = m.start()
+            continue
+        if is_close and ns == inside:
+            close_end = content.find("-->", m.start())
+            close_end = len(content) if close_end == -1 else close_end + len("-->")
+            for i in range(block_start, close_end):
+                if out[i] != "\n":
+                    out[i] = " "
+            inside = None
+    if inside is not None:
+        for i in range(block_start, len(content)):
+            if out[i] != "\n":
+                out[i] = " "
+    return "".join(out)
+
+
+def claude_md_redirects_to_agents_md(project_root: Path) -> bool:
+    """Whether ``CLAUDE.md`` is merely a redirect to ``AGENTS.md`` (C-20).
+
+    True when, *outside* every managed instruction block, ``CLAUDE.md`` carries a
+    line that is solely an @-import of ``AGENTS.md``. Such a project keeps one
+    source of agent context, so wardline maintains its block in ``AGENTS.md``
+    only (see :func:`instruction_targets`).
+
+    Anything we cannot read as a plain project file — absent, unreadable, not
+    valid UTF-8, a symlink, a non-regular file, or outside the project root —
+    reads as *no* redirect, so the caller keeps the existing dual-write
+    behaviour. Failing safe here costs a redundant block; failing open would
+    silently stop maintaining the block a project actually reads.
+    """
+    content = safe_read_text_if_regular(project_root, project_root / CLAUDE_MD, label=CLAUDE_MD)
+    if content is None:
+        return False
+    return any(_AGENTS_REDIRECT_RE.match(line.strip()) for line in _mask_managed_blocks(content).splitlines())
+
+
+def instruction_targets(project_root: Path) -> tuple[list[str], list[str]]:
+    """Return ``(write_to, migrate_off)`` agent-context filenames for a project.
+
+    Normally wardline dual-writes ``CLAUDE.md`` and ``AGENTS.md`` and migrates
+    nothing. When ``CLAUDE.md`` only redirects to ``AGENTS.md`` the block belongs
+    in ``AGENTS.md`` alone, and any legacy block left in ``CLAUDE.md`` is listed
+    for migration — a redirect already supplies that content, so a second copy is
+    duplicate guidance that drifts.
+    """
+    if claude_md_redirects_to_agents_md(project_root):
+        return [AGENTS_MD], [CLAUDE_MD]
+    return [CLAUDE_MD, AGENTS_MD], []
+
+
+def inject_block_for_project(
+    project_root: Path,
+    *,
+    claude_md: bool = True,
+    agents_md: bool = True,
+) -> list[tuple[bool, str, str]]:
+    """Install/refresh wardline's block across a project's agent-context files.
+
+    The redirect-aware (C-20) counterpart of :func:`inject_block`, which it
+    delegates to unchanged for each selected file. Migration runs first, so a
+    redirecting project never briefly carries two blocks. Returns one
+    ``(ok, filename, message)`` per action taken.
+
+    ``claude_md`` / ``agents_md`` mirror the CLI's ``--no-claude-md`` /
+    ``--no-agents-md`` opt-outs, which the normative sibling implementations do
+    not have. Two judgment calls follow from them, both chosen so an opt-out can
+    never *destroy* guidance:
+
+    - Under a redirect, ``--no-claude-md`` means "do not touch CLAUDE.md", so it
+      suppresses the migration (the only CLAUDE.md action left).
+    - A migration only runs when the write that replaces it actually ran. With
+      ``--no-agents-md`` under a redirect, migrating would delete the block from
+      CLAUDE.md while nothing wrote it to AGENTS.md, leaving the project with no
+      block at all — an opt-out must skip work, not erase it.
+    """
+    write_to, migrate_off = instruction_targets(project_root)
+    allowed = {CLAUDE_MD: claude_md, AGENTS_MD: agents_md}
+    wrote = [name for name in write_to if allowed[name]]
+
+    results: list[tuple[bool, str, str]] = []
+    for filename in migrate_off:
+        if not allowed[filename] or not wrote:
+            continue
+        ok, message = remove_block(project_root / filename)
+        results.append((ok, filename, message))
+    for filename in wrote:
+        results.append((True, filename, inject_block(project_root / filename)))
+    return results
