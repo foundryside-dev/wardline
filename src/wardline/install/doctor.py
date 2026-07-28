@@ -30,7 +30,7 @@ from wardline.core.http import WeftHttp
 from wardline.core.paths import legacy_sibling_dir, sibling_state_dir, weft_config_path, weft_state_dir
 from wardline.core.safe_paths import safe_project_path, safe_read_text_if_regular, safe_write_text
 from wardline.filigree.config import load_filigree_token
-from wardline.install.block import claude_md_redirects_to_agents_md, inject_block_for_project
+from wardline.install.block import claude_md_redirects_to_agents_md, has_own_block, inject_block_for_project
 from wardline.install.detect import (
     _detect_filigree,
     _detect_loomweave,
@@ -256,9 +256,15 @@ def _check_gitignore(proj: Path, *, fix: bool) -> DoctorCheck:
 
 
 def _has_instruction_block(path: Path) -> bool:
-    if not path.is_file():
-        return False
-    return "wardline:instructions:" in path.read_text(encoding="utf-8", errors="replace")
+    """Whether wardline's own managed block is present in *path*.
+
+    Delegates to :func:`wardline.install.block.has_own_block` so doctor's DETECTOR is
+    the exact inverse of the installer's WRITER — same fence walker, same
+    foreign-shielding rules. This was a bare substring test, which disagreed with the
+    writers whenever a sibling's block quoted wardline's marker; see ``has_own_block``
+    for the two failure modes that produced.
+    """
+    return has_own_block(path)
 
 
 def _check_claude_md(root: Path) -> CheckResult:

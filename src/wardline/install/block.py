@@ -144,6 +144,36 @@ def _first_own_open_fence_pos(content: str) -> int:
     return positions[0] if positions else -1
 
 
+def has_own_block(file_path: Path) -> bool:
+    """Whether *file_path* carries wardline's own top-level instruction block.
+
+    The READ side of :func:`inject_block` / :func:`remove_block`, and it must walk
+    fences exactly as they do. A bare ``"wardline:instructions:" in content`` substring
+    test does NOT: it also matches a marker a *sibling's* managed block merely quotes,
+    which :func:`_own_open_fence_positions` deliberately declines to claim. Two symmetric
+    failures follow from that disagreement, both observed before this became one
+    function (wardline release-1.4.0 review, H2):
+
+    - **False present.** A detector that sees a quoted marker reports a block the
+      writers cannot find, so ``doctor --repair`` runs :func:`remove_block`, which
+      correctly no-ops, and the check stays red on the next pass — forever, with no
+      operator action that clears it.
+    - **False absent.** The inverse reading — reporting a block as *configured* when
+      the only marker is inside a sibling's block and wardline's own is genuinely
+      missing — is a false all-clear.
+
+    Total by construction: a missing, unreadable, or non-regular file reads as *no
+    block*. Doctor must be able to diagnose a file it cannot read.
+    """
+    try:
+        if not file_path.is_file():
+            return False
+        content = file_path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return False
+    return bool(_own_open_fence_positions(content))
+
+
 def _first_any_foreign_fence_pos(content: str, search_from: int) -> int:
     """Index of the first *any* foreign instruction fence at/after *search_from*.
 

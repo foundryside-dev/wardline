@@ -123,6 +123,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   read a different file than the scan did).
 ### Fixed
 
+- **An empty `Annotated[()]` / `Optional[()]` annotation no longer aborts the
+  whole scan.** `_annotation_candidates` unwrapped the first subscript element
+  without checking there was one, so a syntactically valid empty subscript on a
+  FastAPI route parameter raised `IndexError`. Route-receiver discovery runs
+  outside the per-file `try`, so that one file took the **entire project** down
+  with it — zero findings, in violation of the per-file isolation the analyzer
+  documents. An empty subscript is now recorded as an *uninterpretable*
+  annotation, not an absent one: skipping it would have left
+  `route_body_parameters` unable to seed the parameter, i.e. fail **open** on an
+  annotation wardline could not read. Pinned by a scan-level isolation test (a
+  bad file beside a clean one; the clean file's defect still fires) and by
+  fail-closed pins for `typing.Annotated`, `typing_extensions.Annotated`, and
+  `typing.Optional`.
+- **`wardline doctor --repair` converges again, and no longer reports a block
+  that is not there.** Doctor detected its managed instruction block with a bare
+  `"wardline:instructions:"` substring test while `inject_block` / `remove_block`
+  walk fences and deliberately decline to claim a marker a *sibling's* managed
+  block merely quotes. The two disagreed in both directions: a sibling block
+  quoting the marker made doctor report a stale block the writers could not find,
+  so `--repair` no-opped, reported success, and the check stayed red on every
+  subsequent pass with no operator action that could clear it; without a redirect
+  the same input read as a false `configured` while wardline's own block was
+  genuinely missing. Detection now goes through one shared `has_own_block`
+  predicate that uses the same fence walker as the writers, so the detector is the
+  exact inverse of the writer. The `CLAUDE.md` and `AGENTS.md` rows both gain the
+  correction.
 - **A lineless source `DEFECT` can no longer leave the gate population.** The
   generic DEFECT→FACT downgrade is replaced by an explicit (currently empty)
   allowlist plus a deterministic `WLN-ENGINE-LINELESS-DEFECT` engine diagnostic
