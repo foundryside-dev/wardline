@@ -76,7 +76,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   analysis.
 - **The `attest` bundle carries per-boundary SEI diagnostics.** The signed
   `wardline-attest-2` payload gains a required `sei_diagnostics` array
-  (`qualname`, `reason`, `auth_status`, in boundary order) alongside
+  (`qualname`, `reason`, `auth_status`, in boundary order — i.e. sorted by qualname) alongside
   `sei_source`, so a Loomweave identity that failed to resolve says *why* — an
   auth rejection reads as "fix the token", never as "entity does not exist".
   The addition is additive on the wire (consumers read named keys), but because
@@ -129,10 +129,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   for every other case. The diagnostic keeps the original severity and `DEFECT`
   kind (so it is gate-eligible), preserves the original rule id, path,
   fingerprint, and kind in its properties, and derives a collision-safe
-  fingerprint. It is scoped by its original source path so `--new-since` delta
-  attribution still resolves it to the right file instead of `<engine>`. The
-  allowlist ships empty by design — this is a fail-closed guard, not a fix for a
-  rule known to emit lineless defects today.
+  fingerprint. The diagnostic itself anchors at `<engine>` (it has no line to
+  anchor to), but it carries `original_path`, which `--new-since` delta
+  attribution reads so the finding is still attributed to the right source file
+  rather than to `<engine>`. The allowlist ships empty by design — this is a
+  fail-closed guard, not a fix for a rule known to emit lineless defects today.
 - **A malformed source binding fails closed in delta scans.** A reserved
   diagnostic whose binding cannot prove which delta owns it keeps its ACTIVE
   state instead of being treated as an unchanged `<engine>` path and clearing
