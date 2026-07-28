@@ -195,9 +195,7 @@ def _register_filigree_server(monkeypatch, cfg_home: Path, *, port: int, prefix:
     monkeypatch.setattr("wardline.core.config._filigree_server_config_path", lambda: server_json)
 
 
-def test_machine_readable_doctor_rejects_unpinned_env_url_when_server_scope_exists(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_machine_readable_doctor_rejects_unpinned_env_url_when_server_scope_exists(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("WARDLINE_FILIGREE_URL", "http://localhost:9229/api/weft/scan-results")
     _register_filigree_server(
         monkeypatch,
