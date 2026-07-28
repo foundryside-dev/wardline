@@ -148,7 +148,9 @@ OpenRouter) and needs no extra.
 wardline install
 ```
 
-This injects a hash-fenced instruction block into `CLAUDE.md`/`AGENTS.md`,
+This injects a hash-fenced instruction block into `CLAUDE.md`/`AGENTS.md` (or
+into `AGENTS.md` alone, migrating any legacy `CLAUDE.md` block out, when
+`CLAUDE.md` is merely an `@AGENTS.md` redirect),
 installs the `wardline-gate` skill, merges a `wardline` entry into `.mcp.json`,
 writes Codex's `~/.codex/config.toml` MCP entry, detects Loomweave/Filigree
 siblings, mints an attest signing key, and adds pre-commit hook config. Agents

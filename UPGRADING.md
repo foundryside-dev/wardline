@@ -2,6 +2,63 @@
 
 Migration notes for changes that can alter a previously-green run. Newest first.
 
+## To v1.4 — wider FastAPI coverage; lineless defects gate; `ScanResult` API change
+
+**Precise FastAPI request-input coverage can surface new findings.** Exact nested
+`Request` members are now recognised as untrusted sources, and route body
+parameters typed with a project Pydantic model are seeded as tainted (ordinary
+`BaseModel` parameters, `Depends(...)` provider results, and non-route functions
+are deliberately *not* seeded). A FastAPI project that scanned green may now
+report real defects on those paths. **What to do:** fix them at the boundary, or
+— if you must defer — mind the secure default: the gate evaluates the
+*unsuppressed* population, so scope CI with `--new-since <merge-base>` rather
+than relying on a committed baseline.
+
+**A lineless source `DEFECT` now gates instead of being downgraded away.**
+Previously a source-level DEFECT arriving without a start line was silently
+downgraded to a non-gating FACT (to avoid an unsafe fingerprint join). It is now
+replaced by a deterministic `WLN-ENGINE-LINELESS-DEFECT` engine diagnostic that
+**keeps the original severity and `DEFECT` kind** — so it is gate-eligible —
+while carrying the original rule id, path, fingerprint, and kind in its
+properties under a collision-safe fingerprint. The downgrade allowlist ships
+empty by design: no shipping rule is known to emit a lineless DEFECT today, so
+this is primarily a fail-closed guard against a future one silently leaving the
+gate population. If your scan does hit it, the diagnostic is a real
+under-analysis signal, not noise.
+
+**Two related fail-closed changes.** A delta scan whose source binding is
+malformed now keeps the finding ACTIVE rather than treating `<engine>` as an
+unchanged path and clearing the gate, and `WLN-ENGINE-PYDANTIC-DISCOVERY-LIMIT`
+now counts as an incomplete-analysis signal that survives delta filtering —
+an under-analyzed scan can no longer quietly read as a complete one.
+
+**Pre-1.4 attestation bundles no longer re-derive byte-identically.** The signed
+`wardline-attest-2` payload gained a required `sei_diagnostics` key, so
+`wardline attest --verify <bundle> --reproduce` on a bundle built by 1.3.x
+reports `reproduced: false` with `mismatches: ["sei_diagnostics"]`.
+`signature_valid` is **unaffected** — the recorded signature still verifies, and
+consumers that read named keys (including Warpline's `parse_attest_bundle`) are
+unaffected. **What to do:** rebuild the bundle under 1.4.0 if you gate on
+`--reproduce`.
+
+**`wardline doctor` flags an unpinned Filigree emit URL.** A configured Filigree
+URL that is not project-scoped now reports an error with a source-specific
+remedy (run `wardline doctor --repair` to rewrite `.mcp.json`, unset/repoint
+`WARDLINE_FILIGREE_URL`, or fix the `--filigree-url` flag) instead of passing as
+`ok`. Server-mode Filigree fail-closes unscoped writes, so this was a silent
+misconfiguration.
+
+**In-process API: `ScanResult.gate_findings` is gone.** Embedders that read or
+construct `ScanResult` directly must use the mandatory frozen
+`ScanResult.gate_population`, which carries an immutable finding **tuple** plus a
+closed `GateSuppressionPosture` (`UNSUPPRESSED` / `HONORS_SUPPRESSIONS`), instead
+of the old nullable `gate_findings` sentinel. Read
+`result.gate_population.findings`, `result.gate_population.posture`, or the
+`result.gate_population.honors_suppressions` convenience property. Note the
+findings are a tuple, not a list, so `isinstance(..., list)` checks must be
+relaxed. The CLI, MCP, JSONL/SARIF, Legis-artifact, and
+Filigree/Loomweave wires are unchanged — this affects Python callers only.
+
 ## To v1.3 — federation transports refuse redirects; signing fails closed
 
 **Redirects are never followed on credential-bearing transports**

@@ -646,6 +646,12 @@ Options:
   --help            Show this message and exit.
 ```
 
+When `CLAUDE.md` is merely an `@AGENTS.md` redirect the instruction block is
+maintained in `AGENTS.md` alone and any legacy `CLAUDE.md` block is migrated out;
+`--no-claude-md` then also suppresses that migration (an opt-out skips work, it
+never erases it). See
+[Redirected `CLAUDE.md`](../guides/agents.md#redirected-claudemd).
+
 For what the install writes and how agents consume it, see
 [Using Wardline with your coding agent](../guides/agents.md).
 
