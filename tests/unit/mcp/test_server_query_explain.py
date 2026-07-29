@@ -55,15 +55,6 @@ def test_where_summary_and_gate_describe_whole_project(tmp_path):
     assert filtered["gate"] == full["gate"]
 
 
-def test_scan_summary_has_c16_lead_fields(tmp_path):
-    (tmp_path / "svc.py").write_text(_many_leaks(5), encoding="utf-8")
-    out = _scan({"max_findings": 1, "fail_on": "ERROR"}, tmp_path)
-
-    assert out["summary"]["counts_by_kind"]["defect"] >= 1
-    assert out["summary"]["completeness"] == "partial"
-    assert out["summary"]["advisory"]["action"].startswith("request next_offset")
-
-
 def test_where_unknown_key_is_toolerror(tmp_path):
     (tmp_path / "svc.py").write_text(_SRC, encoding="utf-8")
     with pytest.raises(ToolError, match="unknown filter key"):

@@ -18,7 +18,6 @@ from wardline.core.run import GateDecision, ScanResult
 SCHEMA = "wardline-agent-summary-1"
 
 _SEVERITY_ORDER = {"CRITICAL": 0, "ERROR": 1, "WARN": 2, "INFO": 3, "NONE": 4}
-_CANONICAL_KIND_KEYS = tuple(k.value for k in Kind)
 
 
 def _is_engine_fact(f: Finding) -> bool:
@@ -41,67 +40,6 @@ def _default_filigree_status() -> dict[str, Any]:
 
 def _default_loomweave_status() -> dict[str, Any]:
     return default_loomweave_write_status()
-
-
-def counts_by_kind(findings: list[Finding]) -> dict[str, int]:
-    counts = {kind: 0 for kind in _CANONICAL_KIND_KEYS}
-    unknown = 0
-    for finding in findings:
-        kind = finding.kind.value if isinstance(finding.kind, Kind) else str(finding.kind)
-        if kind in counts:
-            counts[kind] += 1
-        else:
-            unknown += 1
-    if unknown:
-        counts["unknown"] = unknown
-    return counts
-
-
-def scan_lead_summary_fields(
-    result: ScanResult,
-    gate: GateDecision,
-    *,
-    findings_truncated: bool,
-) -> dict[str, Any]:
-    resolution = compute_resolution_posture(result.findings)
-    advisory: dict[str, str] | None = None
-    confidence = "high"
-    if findings_truncated:
-        advisory = {
-            "reason": "page truncated",
-            "action": "request next_offset or raise max_findings",
-        }
-        confidence = "moderate"
-    elif result.files_scanned == 0:
-        advisory = {
-            "reason": "no files scanned",
-            "action": "scan a path containing supported source files",
-        }
-        confidence = "low"
-    elif result.scope is not None and result.scope.gate_authority != "gate-of-record":
-        advisory = {
-            "reason": "affected scope is advisory, not gate-authoritative",
-            "action": "run a full scan or --new-since for a gate",
-        }
-        confidence = "low"
-    elif resolution.inert:
-        advisory = {
-            "reason": "taint gate is inert",
-            "action": "annotate trust boundaries or bind a Wardline trust vocabulary pack",
-        }
-        confidence = "low"
-    elif gate.fail_on is None:
-        advisory = {
-            "reason": "severity gate was not evaluated",
-            "action": "pass --fail-on ERROR or the desired threshold to enforce the gate",
-        }
-        confidence = "moderate"
-    return {
-        "counts_by_kind": counts_by_kind(result.findings),
-        "completeness": "partial" if advisory is not None else "complete",
-        "confidence": confidence,
-        "advisory": advisory,
-    }
 
 
 @dataclass(frozen=True, slots=True)
@@ -184,28 +122,25 @@ class AgentSummary:
         suppressed = [_finding_entry(f, include_next=False) for f in shown_suppressed]
         engine_facts = [_finding_entry(f, include_next=False) for f in shown_facts]
         informational = [_finding_entry(f, include_next=False) for f in shown_informational]
-        summary = {
-            "files_scanned": self.result.files_scanned,
-            "total_findings": self.result.summary.total,
-            "active_defects": count_active,
-            "suppressed_findings": count_suppressed,
-            "engine_facts": count_facts,
-            "baselined": self.result.summary.baselined,
-            "waived": self.result.summary.waived,
-            "judged": self.result.summary.judged,
-            # summary.informational counts ALL non-defect findings (engine facts included);
-            # the display array ``informational`` below covers only non-engine non-defects.
-            # engine_facts has its own display array, so the display split is:
-            #   active_defects + suppressed_findings + engine_facts + informational(display)
-            #   == total_findings (within the display_findings contract).
-            "informational": self.result.summary.informational,
-            "unanalyzed": self.result.summary.unanalyzed,
-        }
-        summary.update(scan_lead_summary_fields(self.result, self.gate, findings_truncated=findings_truncated))
-        resolution = compute_resolution_posture(self.result.findings)
         return {
             "schema": SCHEMA,
-            "summary": summary,
+            "summary": {
+                "files_scanned": self.result.files_scanned,
+                "total_findings": self.result.summary.total,
+                "active_defects": count_active,
+                "suppressed_findings": count_suppressed,
+                "engine_facts": count_facts,
+                "baselined": self.result.summary.baselined,
+                "waived": self.result.summary.waived,
+                "judged": self.result.summary.judged,
+                # summary.informational counts ALL non-defect findings (engine facts included);
+                # the display array ``informational`` below covers only non-engine non-defects.
+                # engine_facts has its own display array, so the display split is:
+                #   active_defects + suppressed_findings + engine_facts + informational(display)
+                #   == total_findings (within the display_findings contract).
+                "informational": self.result.summary.informational,
+                "unanalyzed": self.result.summary.unanalyzed,
+            },
             "gate": {
                 "tripped": self.gate.tripped,
                 "fail_on": self.gate.fail_on,
@@ -225,7 +160,7 @@ class AgentSummary:
             # nothing and a --fail-on gate over it passes green while checking nothing.
             # Counts are always whole-project (independent of the displayed/paginated
             # arrays), so a filtered view never hides an inert verdict.
-            "resolution": resolution.to_dict(),
+            "resolution": compute_resolution_posture(self.result.findings).to_dict(),
             "active_defects": active_defects,
             "suppressed_findings": suppressed,
             "engine_facts": engine_facts,

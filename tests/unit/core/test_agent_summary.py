@@ -64,9 +64,6 @@ def test_agent_summary_active_defects_first_and_stable(tmp_path: Path) -> None:
     assert first["summary"]["active_defects"] == 1
     assert first["summary"]["suppressed_findings"] == 0
     assert first["summary"]["engine_facts"] >= 0
-    assert first["summary"]["counts_by_kind"]["defect"] >= 1
-    assert first["summary"]["completeness"] in {"complete", "partial"}
-    assert "advisory" in first["summary"]
     defect = first["active_defects"][0]
     assert {
         "fingerprint",

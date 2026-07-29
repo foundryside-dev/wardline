@@ -2,12 +2,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from wardline.core.agent_summary import counts_by_kind
 from wardline.core.baseline import write_baseline
 from wardline.core.finding import Finding, Kind, Location, Severity, SuppressionState
 from wardline.core.paths import baseline_path
 from wardline.core.run import run_scan
-from wardline.mcp.server import _SCAN_OUTPUT_SCHEMA, _scan
+from wardline.mcp.server import _SCAN_OUTPUT_SCHEMA, _counts_by_kind, _scan
 
 
 def _many_leaks(count: int) -> str:
@@ -52,7 +51,7 @@ def test_counts_by_kind_uses_canonical_order_and_counts_suppressed_findings() ->
         _finding(Kind.DEFECT, 5, suppressed=SuppressionState.BASELINED),
     ]
 
-    counts = counts_by_kind(findings)
+    counts = _counts_by_kind(findings)
 
     assert list(counts) == [kind.value for kind in Kind]
     assert counts == {
@@ -66,7 +65,7 @@ def test_counts_by_kind_uses_canonical_order_and_counts_suppressed_findings() ->
 
 
 def test_counts_by_kind_zero_fills_absent_kinds() -> None:
-    counts = counts_by_kind([_finding(Kind.FACT, 0)])
+    counts = _counts_by_kind([_finding(Kind.FACT, 0)])
 
     assert counts == {
         "defect": 0,
@@ -115,29 +114,29 @@ def test_scan_counts_by_kind_cover_complete_population_across_display_lenses(tmp
 def test_scan_counts_by_kind_schema_is_exact_and_required() -> None:
     summary_schema = _SCAN_OUTPUT_SCHEMA["properties"]["summary"]
 
-    # The C-16 lead-summary shape: open integer map (an "unknown" bucket is legal),
-    # frozen here so a schema drift is a deliberate re-pin, not an accident.
     assert summary_schema["properties"]["counts_by_kind"] == {
         "type": "object",
-        "description": "Finding counts grouped by kind for the full scan result.",
-        "additionalProperties": {"type": "integer"},
+        "description": (
+            "Whole-scan finding counts by canonical finding kind, including active and suppressed findings."
+        ),
+        "properties": {
+            "defect": {"type": "integer", "minimum": 0},
+            "fact": {"type": "integer", "minimum": 0},
+            "classification": {"type": "integer", "minimum": 0},
+            "metric": {"type": "integer", "minimum": 0},
+            "suggestion": {"type": "integer", "minimum": 0},
+        },
+        "required": ["defect", "fact", "classification", "metric", "suggestion"],
+        "additionalProperties": False,
     }
-    for key in ("counts_by_kind", "completeness", "confidence", "advisory"):
-        assert key in summary_schema["required"], key
+    assert "counts_by_kind" in summary_schema["required"]
 
 
-def test_nested_agent_summary_carries_the_lead_summary_additively(tmp_path: Path) -> None:
-    # C-16: the nested agent summary gained the self-qualifying lead fields
-    # (counts_by_kind / completeness / confidence / advisory) ADDITIVELY —
-    # the schema tag is deliberately unchanged, same posture as attest's
-    # sei_diagnostics. A tag bump here is a contract decision, not drift.
+def test_nested_agent_summary_contract_is_unchanged(tmp_path: Path) -> None:
     (tmp_path / "svc.py").write_text(_many_leaks(1), encoding="utf-8")
 
     output = _scan({"full": True}, root=tmp_path)
 
     assert output["agent_summary"]["schema"] == "wardline-agent-summary-1"
     assert "counts_by_kind" not in output["agent_summary"]
-    nested = output["agent_summary"]["summary"]
-    for key in ("counts_by_kind", "completeness", "confidence", "advisory"):
-        assert key in nested, key
-    assert sum(nested["counts_by_kind"].values()) == output["summary"]["total"]
+    assert "counts_by_kind" not in output["agent_summary"]["summary"]
