@@ -175,6 +175,24 @@ _RETURN_BOUNDARY_LEAK = {
             q = req.query_params.get('x')
             return q
     """,
+    "query_params_then_unreachable_rebind": """
+        from wardline.decorators import trusted
+        from fastapi import Request
+
+        @trusted(level='ASSURED')
+        def extract(req: Request):
+            return req.query_params.get('x')
+            req = None
+    """,
+    "await_json_then_unreachable_rebind": """
+        from wardline.decorators import trusted
+        from fastapi import Request
+
+        @trusted(level='ASSURED')
+        async def extract(req: Request):
+            return await req.json()
+            req = None
+    """,
 }
 
 
