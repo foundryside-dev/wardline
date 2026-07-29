@@ -1,0 +1,3 @@
+## 2026-07-29 - Optimize _collect_return_paths recursion
+**Learning:** Replaced `list(ast.iter_child_nodes(...))` with a direct iterator using `ast.iter_child_nodes(...)` in heavily recursed AST traversal functions like `_collect_return_paths` and `_assignment_callee`. This prevents unnecessary list allocations in the critical path of the analysis engine without changing traversal semantics.
+**Action:** When recursing over AST child nodes using `ast.iter_child_nodes`, pass the generator directly instead of eagerly realizing it into a list unless indexed access or multiple passes are explicitly required.
