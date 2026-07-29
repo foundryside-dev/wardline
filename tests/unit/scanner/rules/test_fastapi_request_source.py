@@ -206,6 +206,70 @@ _RETURN_BOUNDARY_LEAK = {
             q = req.query_params.get('x')
             return q
     """,
+    "query_params_return_before_unreachable_rebind": """
+        from wardline.decorators import trusted
+        from fastapi import Request
+
+        @trusted(level='ASSURED')
+        def extract(req: Request):
+            return req.query_params.get('x')
+            req = None
+    """,
+    "await_json_return_before_unreachable_rebind": """
+        from wardline.decorators import trusted
+        from fastapi import Request
+
+        @trusted(level='ASSURED')
+        async def extract(req: Request):
+            return await req.json()
+            req = None
+    """,
+    "conditional_return_before_rebind": """
+        from wardline.decorators import trusted
+        from fastapi import Request
+
+        @trusted(level='ASSURED')
+        def extract(req: Request, enabled: bool):
+            if enabled:
+                return req.query_params.get('x')
+            req = None
+            return 'disabled'
+    """,
+    "loop_return_snapshot_survives_fixpoint_revisit": """
+        from wardline.decorators import external_boundary, trusted
+        from fastapi import Request
+
+        @external_boundary
+        def read_raw():
+            return 'raw'
+
+        @trusted(level='ASSURED')
+        def extract(req: Request, xs):
+            x = 1
+            for _ in xs:
+                return req.query_params.get('x')
+                req = None
+                x = read_raw()
+            return 'disabled'
+    """,
+    "yield_query_params_before_unreachable_rebind": """
+        from wardline.decorators import trusted
+        from fastapi import Request
+
+        @trusted(level='ASSURED')
+        def extract(req: Request):
+            yield req.query_params.get('x')
+            req = None
+    """,
+    "yield_from_stream_before_unreachable_rebind": """
+        from wardline.decorators import trusted
+        from fastapi import Request
+
+        @trusted(level='ASSURED')
+        def extract(req: Request):
+            yield from req.stream()
+            req = None
+    """,
 }
 
 
@@ -221,6 +285,19 @@ def test_undecorated_handler_returning_request_source_is_quiet(tmp_path: Path) -
         from fastapi import Request
 
         def extract(req: Request):
+            return req.query_params.get('x')
+    """
+    assert "PY-WL-101" not in _defect_rules(tmp_path, src)
+
+
+def test_request_rebound_before_return_is_not_treated_as_request_source(tmp_path: Path) -> None:
+    src = """
+        from wardline.decorators import trusted
+        from fastapi import Request
+
+        @trusted(level='ASSURED')
+        def extract(req: Request):
+            req = None
             return req.query_params.get('x')
     """
     assert "PY-WL-101" not in _defect_rules(tmp_path, src)

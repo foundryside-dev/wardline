@@ -236,6 +236,9 @@ _CURRENT_CALL_SITE_ARG_TAINTS: contextvars.ContextVar[dict[int, dict[int | str |
 _CURRENT_VAR_TYPES: contextvars.ContextVar[dict[str, list[str]] | None] = contextvars.ContextVar(
     "_CURRENT_VAR_TYPES", default=None
 )
+_CURRENT_VAR_TYPE_SNAPSHOTS: contextvars.ContextVar[dict[int, dict[str, list[str]]] | None] = contextvars.ContextVar(
+    "_CURRENT_VAR_TYPE_SNAPSHOTS", default=None
+)
 
 # Side channel for attribute-write recording DURING the main statement walk —
 # ``{receiver_key: {attr: least_trusted write taint}}`` where receiver_key is a
@@ -448,7 +451,7 @@ def analyze_function_variables(
     token_args = _CURRENT_CALL_SITE_ARG_TAINTS.set(call_site_arg_taints)
     token_module = _CURRENT_MODULE_PREFIX.set(context.module_prefix)
     try:
-        return_var_types: dict[str, list[str]] = {}
+        return_var_type_snapshots: dict[int, dict[str, list[str]]] = {}
         variable_taints = compute_variable_taints(
             func_node,
             function_taint,
@@ -461,9 +464,10 @@ def analyze_function_variables(
             route_dependency_params=context.route_dependency_params,
             parameter_type_fqns=context.parameter_type_fqns,
             provenance_clash=context.provenance_clash,
-            out_var_types=return_var_types,
+            out_var_type_snapshots=return_var_type_snapshots,
         )
-        # Re-establish ONLY the request-source receiver types for the return-taint VALUE pass.
+        # Re-establish ONLY the request-source receiver types from each return statement's
+        # flow-sensitive snapshot for the return-taint VALUE pass.
         # compute_variable_taints resets _CURRENT_VAR_TYPES on exit, so a helper that DIRECTLY
         # returns a request-source expression (``return req.query_params.get('x')``) would
         # otherwise compute a CLEAN return taint — a false negative the local-var form does not
@@ -472,23 +476,14 @@ def analyze_function_variables(
         # FQNs (and their candidates) so the GENERAL typed-receiver dispatch stays inert in the
         # return pass — zero blast radius on non-request ``return typed.method()`` resolution.
         # Scoped to compute_return_taint (the value pass); compute_return_callee is explain-only.
-        return_request_types: dict[str, list[str]] = {}
-        for name, fqns in return_var_types.items():
-            request_fqns = [f for f in fqns if f in _REQUEST_SOURCE_TYPES]
-            if request_fqns:
-                return_request_types[name] = request_fqns
-        token_rt_types = _CURRENT_VAR_TYPES.set(return_request_types) if return_request_types else None
-        try:
-            return_taint = compute_return_taint(
-                func_node,
-                function_taint,
-                dict(taint_map),
-                variable_taints,
-                call_site_taints,
-            )
-        finally:
-            if token_rt_types is not None:
-                _CURRENT_VAR_TYPES.reset(token_rt_types)
+        return_taint = compute_return_taint(
+            func_node,
+            function_taint,
+            dict(taint_map),
+            variable_taints,
+            call_site_taints,
+            return_var_type_snapshots,
+        )
         # compute_return_callee is PROVENANCE-ONLY: _assignment_callee re-resolves
         # every direct-call assignment RHS against the FINAL var_taints, and letting
         # that re-resolution record would COMBINE post-call taint into the at-call
@@ -504,6 +499,7 @@ def analyze_function_variables(
                 dict(taint_map),
                 dict(variable_taints),
                 call_site_taints,
+                return_var_type_snapshots,
             )
         finally:
             _CURRENT_CALL_SITE_ARG_TAINTS.reset(token_no_record)
@@ -704,7 +700,7 @@ def compute_variable_taints(
     route_dependency_params: dict[str, TaintState] | None = None,
     *,
     provenance_clash: bool | None = None,
-    out_var_types: dict[str, list[str]] | None = None,
+    out_var_type_snapshots: dict[int, dict[str, list[str]]] | None = None,
     parameter_type_fqns: dict[str, tuple[str, ...]] | None = None,
 ) -> dict[str, TaintState]:
     """Compute per-variable taint for a function body.
@@ -734,6 +730,8 @@ def compute_variable_taints(
         param_meets: optional parameter meets mapping param_name -> TaintState to
             seed parameters with instead of function_taint.
         provenance_clash: set True to use provenance-clash semantics.
+        out_var_type_snapshots: optional out-dict recording request-receiver type
+            candidates as they are on entry to each statement.
 
     Returns:
         ``{variable_name: TaintState}`` for every assigned variable and parameter
@@ -746,6 +744,7 @@ def compute_variable_taints(
     if provenance_clash is not None:
         token_clash = _PROVENANCE_CLASH.set(provenance_clash)
     token_types = _CURRENT_VAR_TYPES.set({})
+    token_type_snapshots = _CURRENT_VAR_TYPE_SNAPSHOTS.set(out_var_type_snapshots)
     token_lambdas = _CURRENT_LAMBDA_BINDINGS.set({})
     if alias_map is not None:
         token = _CURRENT_ALIAS_MAP.set(alias_map)
@@ -776,18 +775,12 @@ def compute_variable_taints(
         if call_site_taints is not None:
             worst = _worst_ever_var_taints(call_site_taints, var_taints)
             _resolve_lambda_bodies(func_node, function_taint, taint_map, worst)
-        # Expose the resolved receiver-TYPE map (param annotations + ``x = Type()``
-        # rebinds) for callers that re-establish it for the return-taint pass, where the
-        # type-gated source seeds would otherwise be blind (the contextvar is reset below).
-        if out_var_types is not None:
-            current_types = _CURRENT_VAR_TYPES.get()
-            if current_types is not None:
-                out_var_types.update(current_types)
         return var_taints
     finally:
         if token_clash is not None:
             _PROVENANCE_CLASH.reset(token_clash)
         _CURRENT_VAR_TYPES.reset(token_types)
+        _CURRENT_VAR_TYPE_SNAPSHOTS.reset(token_type_snapshots)
         _CURRENT_LAMBDA_BINDINGS.reset(token_lambdas)
         if token is not None:
             _CURRENT_ALIAS_MAP.reset(token)
@@ -1416,6 +1409,33 @@ def _walk_body(
         _process_stmt(stmt, function_taint, taint_map, var_taints, call_site_taints)
 
 
+def _return_like_nodes_in_statement(
+    stmt: ast.stmt,
+) -> tuple[ast.Return | ast.Yield | ast.YieldFrom, ...]:
+    """Return return/yield nodes evaluated by *stmt*, excluding child statements.
+
+    ``Yield`` and ``YieldFrom`` are expressions, so their identity differs from the
+    enclosing statement recorded by the normal statement snapshot channel. Control-flow
+    bodies are walked separately with their branch-local receiver types; descending into
+    them here would let an outer pre-branch type contaminate a return after a rebind.
+    """
+    if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+        return ()
+
+    found: list[ast.Return | ast.Yield | ast.YieldFrom] = []
+
+    def visit(node: ast.AST, *, root: bool = False) -> None:
+        if not root and isinstance(node, (ast.stmt, ast.Lambda)):
+            return
+        if isinstance(node, (ast.Return, ast.Yield, ast.YieldFrom)):
+            found.append(node)
+        for child in ast.iter_child_nodes(node):
+            visit(child)
+
+    visit(stmt, root=True)
+    return tuple(found)
+
+
 def _process_stmt(
     stmt: ast.stmt,
     function_taint: TaintState,
@@ -1435,6 +1455,22 @@ def _process_stmt(
         # A sink rule reads this for a sink call's enclosing statement.
         _charge_l2_work(len(var_taints), "statement_snapshot")
         call_site_taints[id(stmt)] = dict(var_taints)
+    type_snapshots = _CURRENT_VAR_TYPE_SNAPSHOTS.get()
+    return_like_nodes = _return_like_nodes_in_statement(stmt) if type_snapshots is not None else ()
+    if type_snapshots is not None and return_like_nodes:
+        current_var_types = _CURRENT_VAR_TYPES.get() or {}
+        _charge_l2_work(len(current_var_types), "statement_type_snapshot")
+        request_types = {
+            name: request_fqns
+            for name, fqns in current_var_types.items()
+            if (request_fqns := [fqn for fqn in fqns if fqn in _REQUEST_SOURCE_TYPES])
+        }
+        if request_types:
+            for node in return_like_nodes:
+                snapshot = type_snapshots.setdefault(id(node), {})
+                for name, fqns in request_types.items():
+                    candidates = snapshot.setdefault(name, [])
+                    candidates.extend(fqn for fqn in fqns if fqn not in candidates)
 
     if isinstance(stmt, ast.Assign):
         _handle_assign(stmt, function_taint, taint_map, var_taints)
@@ -2466,6 +2502,7 @@ def compute_return_taint(
     taint_map: dict[str, TaintState],
     var_taints: dict[str, TaintState],
     return_snapshots: dict[int, dict[str, TaintState]] | None = None,
+    receiver_type_snapshots: dict[int, dict[str, list[str]]] | None = None,
 ) -> TaintState | None:
     """Compute the *actual* taint a function returns (least-trusted of all paths).
 
@@ -2481,7 +2518,15 @@ def compute_return_taint(
     (the function's anchored *body* taint, pinned to its declaration).
     """
     returns: list[tuple[TaintState, str | None, ast.expr]] = []
-    _collect_return_paths(list(func_node.body), function_taint, taint_map, var_taints, returns, return_snapshots)
+    _collect_return_paths(
+        list(func_node.body),
+        function_taint,
+        taint_map,
+        var_taints,
+        returns,
+        return_snapshots,
+        receiver_type_snapshots,
+    )
     if not returns:
         return None
     result = returns[0][0]
@@ -2496,6 +2541,7 @@ def compute_return_callee(
     taint_map: dict[str, TaintState],
     var_taints: dict[str, TaintState],
     return_snapshots: dict[int, dict[str, TaintState]] | None = None,
+    receiver_type_snapshots: dict[int, dict[str, list[str]]] | None = None,
 ) -> str | None:
     """Identify the callee that contributes a function's *actual* (least-trusted)
     return taint — the property ``explain_finding`` reports for a PY-WL-101 sink.
@@ -2521,7 +2567,15 @@ def compute_return_callee(
     beyond one hop stay ``None`` (the N-hop walk lives in the Loomweave stored-fact path).
     """
     returns: list[tuple[TaintState, str | None, ast.expr]] = []
-    _collect_return_paths(list(func_node.body), function_taint, taint_map, var_taints, returns, return_snapshots)
+    _collect_return_paths(
+        list(func_node.body),
+        function_taint,
+        taint_map,
+        var_taints,
+        returns,
+        return_snapshots,
+        receiver_type_snapshots,
+    )
     if not returns:
         return None
     worst = returns[0][0]
@@ -2600,6 +2654,7 @@ def _collect_return_paths(
     var_taints: dict[str, TaintState],
     out: list[tuple[TaintState, str | None, ast.expr]],
     return_snapshots: dict[int, dict[str, TaintState]] | None = None,
+    receiver_type_snapshots: dict[int, dict[str, list[str]]] | None = None,
 ) -> None:
     """Recurse the AST collecting ``(taint, callee_or_None, value_node)`` for each
     value-bearing return, descending into ALL children EXCEPT nested ``FunctionDef``/
@@ -2622,7 +2677,13 @@ def _collect_return_paths(
             continue
         if isinstance(node, (ast.Return, ast.Yield, ast.YieldFrom)) and node.value is not None:
             snapshot = return_snapshots.get(id(node)) if return_snapshots is not None else None
-            taint = _resolve_expr(node.value, function_taint, taint_map, dict(snapshot or var_taints))
+            type_snapshot = receiver_type_snapshots.get(id(node), {}) if receiver_type_snapshots is not None else None
+            token_types = _CURRENT_VAR_TYPES.set(type_snapshot) if type_snapshot is not None else None
+            try:
+                taint = _resolve_expr(node.value, function_taint, taint_map, dict(snapshot or var_taints))
+            finally:
+                if token_types is not None:
+                    _CURRENT_VAR_TYPES.reset(token_types)
             out.append((taint, _return_callee(node.value), node.value))
         _collect_return_paths(
             list(ast.iter_child_nodes(node)),
@@ -2631,4 +2692,5 @@ def _collect_return_paths(
             var_taints,
             out,
             return_snapshots,
+            receiver_type_snapshots,
         )
