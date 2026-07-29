@@ -706,6 +706,8 @@ def _changed_git_project(tmp_path: Path) -> tuple[Path, str]:
     source = project / "svc.py"
     source.write_text("value = 1\n", encoding="utf-8")
     subprocess.run(["git", "init", "-q"], cwd=project, check=True)
+    subprocess.run(["git", "config", "user.name", "Wardline Test"], cwd=project, check=True)
+    subprocess.run(["git", "config", "user.email", "wardline@example.invalid"], cwd=project, check=True)
     subprocess.run(["git", "add", "svc.py"], cwd=project, check=True)
     subprocess.run(
         [
