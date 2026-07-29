@@ -11,13 +11,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **MCP `scan.summary.counts_by_kind` publishes the canonical finding-kind
-  distribution.** This required additive top-level summary object always emits
-  `defect`, `fact`, `classification`, `metric`, and `suggestion`, zero-fills
-  absent kinds, includes suppressed findings, and sums to `summary.total`.
-  Display filtering, pagination, body suppression, and summary-only mode do not
-  change the counts; the nested `wardline-agent-summary-1` contract remains
-  unchanged.
+- **MCP scan summaries are self-qualifying (Weft convention C-16).** The
+  `scan.summary` block gains a required additive lead-summary set:
+  `counts_by_kind` (canonical finding-kind distribution — zero-fills absent
+  kinds, includes suppressed findings, sums to `summary.total`, tolerates an
+  `unknown` bucket via an open integer-map schema), plus `completeness`,
+  `confidence`, and `advisory` so an agent can trust a first-contact response
+  without row-counting. Display filtering, pagination, body suppression, and
+  summary-only mode do not change the counts. The nested
+  `wardline-agent-summary-1` payload carries the same lead fields ADDITIVELY —
+  its schema tag is deliberately unchanged.
 - **Redirect-aware agent-instruction installer (Weft convention C-20).**
   `wardline install` now detects a `CLAUDE.md` that is solely an `@AGENTS.md` /
   `@./AGENTS.md` import and maintains its managed instruction block in
@@ -231,6 +234,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   full `summary.counts_by_kind` contract (required, five canonical keys,
   zero-filled, sums to `total`, unaffected by display controls) with a worked
   response excerpt.
+- Pre-train consolidation additions (merged after the PR #124 review): the
+  wardline-gate skill's MCP-safe-scans guidance relocated verbatim to
+  `references/mcp-safe-scans.md` within the C-20 budget, and the seam-health
+  probe implementation plan (`docs/superpowers/plans/`) landed alongside its
+  design spec. The C-16 lead-summary feature above also merged in this pass
+  (via `codex/c16-scan-summary`) rather than in the reviewed release branch;
+  conformance golden re-frozen from the merged surface (blob `a74e3e7d`).
 - `docs/guides/agents.md`: corrects the `scan` payload-control description — the
   `where` lens filters the `agent_summary` finding arrays, and cuts are reported
   in `agent_summary.truncation`.
