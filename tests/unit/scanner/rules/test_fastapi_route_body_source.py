@@ -1167,7 +1167,7 @@ def test_empty_subscript_annotation_is_unknown_not_absent(alias_target: str, ann
     must record `_UNKNOWN_ANNOTATION` rather than yielding an empty candidate set:
     route_body_parameters seeds a body parameter when the annotation is unknown OR names
     a project model, so an empty set would silently DECLINE to seed an annotation we
-    could not read — fail-open on attacker-controlled input. (wardline-release-1.4.0)
+    could not read — fail-open on attacker-controlled input. (wardline-release-1.5.0)
     """
     alias = alias_target.rsplit(".", 1)[1]
     tree = ast.parse(f"x: {annotation_src}")
@@ -1196,7 +1196,7 @@ def test_empty_subscript_annotation_seeds_the_body_fail_closed(tmp_path: Path) -
 def test_empty_subscript_annotation_does_not_abort_the_whole_scan(tmp_path: Path) -> None:
     """One unreadable file must never take the scan down with it (per-file isolation).
 
-    Regression pin for the release-1.4.0 review finding: `_annotation_candidates` took
+    Regression pin for the release-1.5.0 review finding: `_annotation_candidates` took
     `elements[0]` unguarded, and the route-receiver discovery that reaches it runs in a
     comprehension OUTSIDE any per-file try, so a single `Annotated[()]` raised IndexError
     out of `run_scan` and the WHOLE project produced zero findings. The invariant under

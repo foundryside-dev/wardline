@@ -152,7 +152,7 @@ def has_own_block(file_path: Path) -> bool:
     test does NOT: it also matches a marker a *sibling's* managed block merely quotes,
     which :func:`_own_open_fence_positions` deliberately declines to claim. Two symmetric
     failures follow from that disagreement, both observed before this became one
-    function (wardline release-1.4.0 review, H2):
+    function (wardline release-1.5.0 review, H2):
 
     - **False present.** A detector that sees a quoted marker reports a block the
       writers cannot find, so ``doctor --repair`` runs :func:`remove_block`, which

@@ -92,7 +92,7 @@ A bundle is a JSON object with schema `"wardline-attest-2"`:
 | `posture` | object | The full [assurance posture](assurance-posture.md) object from `wardline assure` |
 | `boundaries` | list | One entry per declared trust boundary, sorted by qualname |
 | `sei_source` | string | `"loomweave"` if a Loomweave store resolved ≥1 SEI; `"unavailable"` otherwise |
-| `sei_diagnostics` | list | One entry (`qualname`, `reason`, `auth_status`) per boundary whose identity did **not** resolve, in boundary order (i.e. sorted by qualname, the same key `boundaries` uses) — so an unresolved SEI says *why* (an auth rejection is `auth_status` 401/403, never a claim that the entity does not exist). Empty list when every boundary resolved or no client was supplied. **Added in 1.4.0**; a bundle built by an earlier version has no such key, so `--reproduce` on it reports `reproduced: false` / `mismatches: ["sei_diagnostics"]` while `signature_valid` stays true |
+| `sei_diagnostics` | list | One entry (`qualname`, `reason`, `auth_status`) per boundary whose identity did **not** resolve, in boundary order (i.e. sorted by qualname, the same key `boundaries` uses) — so an unresolved SEI says *why* (an auth rejection is `auth_status` 401/403, never a claim that the entity does not exist). Empty list when every boundary resolved or no client was supplied. **Added in 1.5.0**; a bundle built by an earlier version has no such key, so `--reproduce` on it reports `reproduced: false` / `mismatches: ["sei_diagnostics"]` while `signature_valid` stays true |
 
 ### Boundary fields
 

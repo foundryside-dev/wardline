@@ -22,12 +22,12 @@ clean at a commit*. **Wardline is the trust authority; warpline never declares c
 - `payload.commit`: the git HEAD the full scan ran against (`dirty` refused at build).
 - `payload.attested_at`: the BUILD date (analysis freshness) — **NOT** a resolution time.
 - `payload.sei_diagnostics[]`: `{qualname, reason, auth_status}` — **added in wardline
-  1.4.0**, additive. One entry per boundary whose Loomweave identity did NOT resolve, in
+  1.5.0**, additive. One entry per boundary whose Loomweave identity did NOT resolve, in
   boundary order (i.e. sorted by qualname, the same key `boundaries[]` uses); empty when every boundary resolved or no client was supplied. It is
   diagnostic-only: a consumer MUST NOT derive a verdict from it (an unresolved SEI already
   surfaces as `sei: null` / `content_hash: null` → not-proven-clean). Warpline reads named
   keys, so the addition is consumer-safe; because the key lives inside the signed payload,
-  `wardline attest --verify --reproduce` on a pre-1.4.0 bundle reports
+  `wardline attest --verify --reproduce` on a pre-1.5.0 bundle reports
   `reproduced: false` / `mismatches: ["sei_diagnostics"]` while `signature_valid` stays
   true. The schema tag is deliberately unchanged — the contract is additive, not versioned.
 

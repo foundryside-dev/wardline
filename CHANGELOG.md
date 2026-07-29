@@ -7,20 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.4.0] - 2026-07-29
+## [1.5.0] - 2026-07-31
 
 ### Added
 
-- **MCP scan summaries are self-qualifying (Weft convention C-16).** The
-  `scan.summary` block gains a required additive lead-summary set:
-  `counts_by_kind` (canonical finding-kind distribution — zero-fills absent
-  kinds, includes suppressed findings, sums to `summary.total`, tolerates an
-  `unknown` bucket via an open integer-map schema), plus `completeness`,
-  `confidence`, and `advisory` so an agent can trust a first-contact response
-  without row-counting. Display filtering, pagination, body suppression, and
-  summary-only mode do not change the counts. The nested
-  `wardline-agent-summary-1` payload carries the same lead fields ADDITIVELY —
-  its schema tag is deliberately unchanged.
+- **MCP `scan.summary.counts_by_kind` publishes the canonical finding-kind
+  distribution.** This required additive top-level summary object always emits
+  `defect`, `fact`, `classification`, `metric`, and `suggestion`, zero-fills
+  absent kinds, includes suppressed findings, and sums to `summary.total`.
+  Display filtering, pagination, body suppression, and summary-only mode do not
+  change the counts; the nested `wardline-agent-summary-1` contract remains
+  unchanged.
 - **Redirect-aware agent-instruction installer (Weft convention C-20).**
   `wardline install` now detects a `CLAUDE.md` that is solely an `@AGENTS.md` /
   `@./AGENTS.md` import and maintains its managed instruction block in
@@ -126,6 +123,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   read a different file than the scan did).
 ### Fixed
 
+- **FastAPI `Request` sources retain their type at each return path.** A later
+  receiver rebind no longer erases the request type from an earlier direct
+  `return`, `yield`, or `yield from`, which previously let raw request data leave
+  a trusted producer without `PY-WL-101`. Return-path snapshots are
+  flow-sensitive, union request candidates across loop fixpoint revisits, and
+  feed both the returned taint and its contributing-callee provenance. A rebind
+  that occurs *before* the return remains quiet. Resolver caches are invalidated
+  so a stale pre-fix CLEAN summary cannot survive the upgrade.
 - **An empty `Annotated[()]` / `Optional[()]` annotation no longer aborts the
   whole scan.** `_annotation_candidates` unwrapped the first subscript element
   without checking there was one, so a syntactically valid empty subscript on a
@@ -238,9 +243,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   wardline-gate skill's MCP-safe-scans guidance relocated verbatim to
   `references/mcp-safe-scans.md` within the C-20 budget, and the seam-health
   probe implementation plan (`docs/superpowers/plans/`) landed alongside its
-  design spec. The C-16 lead-summary feature above also merged in this pass
-  (via `codex/c16-scan-summary`) rather than in the reviewed release branch;
-  conformance golden re-frozen from the merged surface (blob `a74e3e7d`).
+  design spec. The broader C-16 prototype was independently reviewed and
+  reverted before release; the approved top-level-only `counts_by_kind`
+  contract and its closed five-key schema remain.
 - `docs/guides/agents.md`: corrects the `scan` payload-control description — the
   `where` lens filters the `agent_summary` finding arrays, and cuts are reported
   in `agent_summary.truncation`.
@@ -1825,8 +1830,8 @@ for Python — enterprise-class trust-boundary analysis at small-team weight.
 - **Packaging** — MIT-licensed; optional extras `scanner` (config + CLI) and
   `weft` (HTTP integrations).
 
-[Unreleased]: https://github.com/foundryside-dev/wardline/compare/v1.4.0...HEAD
-[1.4.0]: https://github.com/foundryside-dev/wardline/compare/v1.3.0...v1.4.0
+[Unreleased]: https://github.com/foundryside-dev/wardline/compare/v1.5.0...HEAD
+[1.5.0]: https://github.com/foundryside-dev/wardline/compare/v1.3.0...v1.5.0
 [1.3.0]: https://github.com/foundryside-dev/wardline/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/foundryside-dev/wardline/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/foundryside-dev/wardline/compare/v1.0.7...v1.1.0

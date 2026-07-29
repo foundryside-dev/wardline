@@ -462,7 +462,7 @@ def test_doctor_repair_surfaces_a_conservative_refusal(tmp_path: Path) -> None:
 
 
 # --------------------------------------------------------------------------------------
-# The detector must be the exact inverse of the writer (release-1.4.0 review, H2).
+# The detector must be the exact inverse of the writer (release-1.5.0 review, H2).
 #
 # doctor used a bare ``"wardline:instructions:" in content`` substring test while
 # inject_block / remove_block walk fences via _own_open_fence_positions, which declines

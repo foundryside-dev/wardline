@@ -2,7 +2,7 @@
 
 Migration notes for changes that can alter a previously-green run. Newest first.
 
-## To v1.4 — wider FastAPI coverage; lineless defects gate; `ScanResult` API change
+## To v1.5 — wider FastAPI coverage; lineless defects gate; `ScanResult` API change
 
 **Precise FastAPI request-input coverage can surface new findings.** Exact nested
 `Request` members are now recognised as untrusted sources, and route body
@@ -13,6 +13,11 @@ report real defects on those paths. **What to do:** fix them at the boundary, or
 — if you must defer — mind the secure default: the gate evaluates the
 *unsuppressed* population, so scope CI with `--new-since <merge-base>` rather
 than relying on a committed baseline.
+
+Return analysis is also flow-sensitive for typed `Request` receivers. A direct
+`return`, `yield`, or `yield from` that reads raw request data is no longer hidden
+by a later receiver rebind, including a loop fixpoint revisit. This can surface
+new `PY-WL-101` findings at trusted producers that previously scanned clean.
 
 **A lineless source `DEFECT` now gates instead of being downgraded away.**
 Previously a source-level DEFECT arriving without a start line was silently
@@ -43,13 +48,13 @@ for them must be regenerated (`wardline baseline update`). Out-of-root symlink
 targets were skipped before and still are. This affects symlinked source files
 only.
 
-**Pre-1.4 attestation bundles no longer re-derive byte-identically.** The signed
+**Pre-1.5 attestation bundles no longer re-derive byte-identically.** The signed
 `wardline-attest-2` payload gained a required `sei_diagnostics` key, so
 `wardline attest --verify <bundle> --reproduce` on a bundle built by 1.3.x
 reports `reproduced: false` with `mismatches: ["sei_diagnostics"]`.
 `signature_valid` is **unaffected** — the recorded signature still verifies, and
 consumers that read named keys (including Warpline's `parse_attest_bundle`) are
-unaffected. **What to do:** rebuild the bundle under 1.4.0 if you gate on
+unaffected. **What to do:** rebuild the bundle under 1.5.0 if you gate on
 `--reproduce`.
 
 **`wardline doctor` flags an unpinned Filigree emit URL.** A configured Filigree

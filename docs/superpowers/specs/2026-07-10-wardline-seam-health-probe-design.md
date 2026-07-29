@@ -1,7 +1,7 @@
 # Wardline Seam-Health Probe Design
 
-**Status:** approved design — ready for implementation planning  
-**Date:** 2026-07-10  
+**Status:** approved design — ready for implementation planning
+**Date:** 2026-07-10
 **Product record:** PDR-0002 / PRD-0002 / `wardline-c66f62894b`
 
 ## Caveman summary
