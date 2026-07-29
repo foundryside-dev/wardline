@@ -109,7 +109,10 @@ a gate-of-record full fallback. The nested `agent_summary` remains schema
 
 Read-only. When a Filigree URL is configured the scan also POSTs findings to it,
 fail-soft (an unreachable sibling or rejected payload is reported in the
-`filigree` block, never fails the scan).
+`filigree` block, never fails the scan). After a transport attempt that block
+carries `chunks_landed` — how many chunks Filigree actually accepted — so a
+mid-batch failure is legible on the machine surface and never reads as
+"nothing landed".
 
 ## `scan_job_start`
 

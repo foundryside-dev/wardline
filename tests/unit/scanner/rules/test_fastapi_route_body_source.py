@@ -10,6 +10,7 @@ import pytest
 
 from wardline.core.config import WardlineConfig
 from wardline.core.finding import Kind, Severity
+from wardline.core.run import run_scan
 from wardline.scanner import analyzer as analyzer_module
 from wardline.scanner.analyzer import WardlineAnalyzer
 from wardline.scanner.taint.fastapi_sources import _annotation_candidates, discover_fastapi_route_receivers
@@ -1149,3 +1150,92 @@ def test_pydantic_discovery_budget_cap_is_visible_in_diagnostic(
         "absolute_cap_applied": True,
     }
     assert "required=5100000" in finding.message
+
+
+@pytest.mark.parametrize(
+    ("alias_target", "annotation_src"),
+    [
+        ("typing.Annotated", "Annotated[()]"),
+        ("typing_extensions.Annotated", "Annotated[()]"),
+        ("typing.Optional", "Optional[()]"),
+    ],
+)
+def test_empty_subscript_annotation_is_unknown_not_absent(alias_target: str, annotation_src: str) -> None:
+    """An empty `Annotated[()]` / `Optional[()]` must read as UNINTERPRETABLE, never as nothing.
+
+    There is no inner type to unwrap, so the unwrap branch has no element to take. It
+    must record `_UNKNOWN_ANNOTATION` rather than yielding an empty candidate set:
+    route_body_parameters seeds a body parameter when the annotation is unknown OR names
+    a project model, so an empty set would silently DECLINE to seed an annotation we
+    could not read — fail-open on attacker-controlled input. (wardline-release-1.4.0)
+    """
+    alias = alias_target.rsplit(".", 1)[1]
+    tree = ast.parse(f"x: {annotation_src}")
+    annotation = tree.body[0].annotation  # type: ignore[attr-defined]
+
+    assert _annotation_candidates(annotation, {alias: alias_target}) == {"<unknown-annotation>"}
+
+
+def test_empty_subscript_annotation_seeds_the_body_fail_closed(tmp_path: Path) -> None:
+    """The unreadable annotation still seeds the route body, so the sink defect fires."""
+    src = """
+        import os
+        from typing import Annotated
+        from fastapi import FastAPI
+        from wardline.decorators import trusted
+        app = FastAPI()
+        @app.post('/run')
+        @trusted(level='ASSURED')
+        def run(body: Annotated[()]):
+            os.system(body.command)
+    """
+
+    assert "PY-WL-108" in _defect_rules(tmp_path, src)
+
+
+def test_empty_subscript_annotation_does_not_abort_the_whole_scan(tmp_path: Path) -> None:
+    """One unreadable file must never take the scan down with it (per-file isolation).
+
+    Regression pin for the release-1.4.0 review finding: `_annotation_candidates` took
+    `elements[0]` unguarded, and the route-receiver discovery that reaches it runs in a
+    comprehension OUTSIDE any per-file try, so a single `Annotated[()]` raised IndexError
+    out of `run_scan` and the WHOLE project produced zero findings. The invariant under
+    test is the one `WardlineAnalyzer` documents: a file that cannot be analyzed is
+    recorded, and every other file is still analyzed.
+    """
+    (tmp_path / "bad.py").write_text(
+        textwrap.dedent(
+            """
+            from typing import Annotated
+            from fastapi import FastAPI
+            app = FastAPI()
+            @app.post('/x')
+            def handler(body: Annotated[()]):
+                return None
+            """
+        ),
+        encoding="utf-8",
+    )
+    (tmp_path / "good.py").write_text(
+        textwrap.dedent(
+            """
+            import os
+            from fastapi import FastAPI
+            from pydantic import BaseModel
+            from wardline.decorators import trusted
+            app = FastAPI()
+            class Payload(BaseModel):
+                command: str
+            @app.post('/run')
+            @trusted(level='ASSURED')
+            def run(body: Payload):
+                os.system(body.command)
+            """
+        ),
+        encoding="utf-8",
+    )
+
+    result = run_scan(tmp_path)
+
+    assert result.files_scanned == 2
+    assert "PY-WL-108" in {f.rule_id for f in result.findings if f.kind is Kind.DEFECT}

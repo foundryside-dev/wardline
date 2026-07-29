@@ -19,6 +19,7 @@ import pytest
 from wardline.core.errors import WardlineError
 from wardline.install.block import (
     claude_md_redirects_to_agents_md,
+    has_own_block,
     inject_block,
     inject_block_for_project,
     instruction_targets,
@@ -458,3 +459,83 @@ def test_doctor_repair_surfaces_a_conservative_refusal(tmp_path: Path) -> None:
 
     assert statuses["CLAUDE.md"].startswith("refused:")
     assert "split brain" in statuses["CLAUDE.md"]
+
+
+# --------------------------------------------------------------------------------------
+# The detector must be the exact inverse of the writer (release-1.4.0 review, H2).
+#
+# doctor used a bare ``"wardline:instructions:" in content`` substring test while
+# inject_block / remove_block walk fences via _own_open_fence_positions, which declines
+# to claim a marker a SIBLING's block merely quotes. The two disagreed, in both
+# directions. A sibling block that quotes wardline's marker in its body is not
+# hypothetical: it is what a sibling's own documentation of the C-4 convention looks
+# like.
+# --------------------------------------------------------------------------------------
+
+_FOREIGN_QUOTING_OUR_MARKER = (
+    "<!-- filigree:instructions:v3.0:abcd1234 -->\n"
+    f"filigree documents the shared fence convention, e.g. {_OPEN}\n"
+    "<!-- /filigree:instructions -->"
+)
+
+
+def test_quoted_marker_in_a_sibling_block_is_not_our_block(tmp_path: Path) -> None:
+    """The shared predicate must agree with the fence walker, not with a substring."""
+    path = _write(tmp_path / "CLAUDE.md", f"# Project\n\n{_FOREIGN_QUOTING_OUR_MARKER}\n")
+
+    assert "wardline:instructions:" in path.read_text(encoding="utf-8")
+    assert has_own_block(path) is False
+
+
+def test_has_own_block_is_total_on_unreadable_targets(tmp_path: Path) -> None:
+    """Doctor must be able to diagnose a file it cannot read, not crash on it."""
+    assert has_own_block(tmp_path / "absent.md") is False
+    assert has_own_block(tmp_path) is False  # a directory, not a regular file
+
+
+def test_repair_converges_when_a_sibling_block_quotes_our_marker(tmp_path: Path) -> None:
+    """Case (a): redirect + quoted marker must not leave doctor permanently red.
+
+    Before the fix this was a non-converging loop: the substring detector reported a
+    stale block, ``repair_install`` called ``remove_block``, the fence walker found no
+    OWN block so removal correctly no-opped, nothing on disk changed, and the next check
+    reported the same stale block — forever, while the repair reported success.
+    """
+    _write(tmp_path / "CLAUDE.md", f"{_REDIRECT}\n{_FOREIGN_QUOTING_OUR_MARKER}\n")
+
+    # Healthy on the FIRST pass: wardline has no block here, and under a redirect its
+    # absence from CLAUDE.md is the desired state.
+    first = _claude_row(tmp_path)
+    assert first.ok is True
+    assert "not required" in first.message
+
+    repair_install(tmp_path)
+
+    # ...and still healthy after a repair: idempotent, not oscillating.
+    assert _claude_row(tmp_path).ok is True
+    # The sibling's block is untouched (weft C-4).
+    assert _FOREIGN_QUOTING_OUR_MARKER in (tmp_path / "CLAUDE.md").read_text(encoding="utf-8")
+
+
+def test_no_redirect_with_a_quoted_marker_is_not_a_false_all_clear(tmp_path: Path) -> None:
+    """Case (b): the inverse reading — 'configured' while our block is genuinely absent."""
+    _write(tmp_path / "CLAUDE.md", f"# Project\n\n{_FOREIGN_QUOTING_OUR_MARKER}\n")
+
+    row = _claude_row(tmp_path)
+
+    assert row.ok is False, "a sibling's quoted marker must never read as our block"
+    assert row.message == "missing"
+
+    # And a repair genuinely fixes it — the loop converges in one pass.
+    repair_install(tmp_path)
+    assert _claude_row(tmp_path) == CheckResult("CLAUDE.md", True, "configured")
+    assert _FOREIGN_QUOTING_OUR_MARKER in (tmp_path / "CLAUDE.md").read_text(encoding="utf-8")
+
+
+def test_agents_md_row_uses_the_same_fence_walker(tmp_path: Path) -> None:
+    """The AGENTS.md row shares the predicate, so it gains the same honesty."""
+    _write(tmp_path / "AGENTS.md", f"# Project\n\n{_FOREIGN_QUOTING_OUR_MARKER}\n")
+
+    row = next(check for check in check_install(tmp_path) if check.name == "AGENTS.md")
+
+    assert row == CheckResult("AGENTS.md", False, "missing")

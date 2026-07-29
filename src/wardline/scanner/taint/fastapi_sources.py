@@ -737,6 +737,15 @@ def _annotation_candidates(node: ast.expr, aliases: Mapping[str, str]) -> set[st
             outer = resolve_dotted(current.value, aliases)
             elements = current.slice.elts if isinstance(current.slice, ast.Tuple) else [current.slice]
             if outer in _ANNOTATED or outer == "typing.Optional":
+                if not elements:
+                    # `Annotated[()]` / `Optional[()]`: syntactically valid, but there is
+                    # no inner type to unwrap. Record it as UNINTERPRETABLE rather than
+                    # skipping it — an empty candidate set would leave
+                    # route_body_parameters unable to seed the parameter, i.e. fail OPEN
+                    # on an annotation we could not read. Same posture as the
+                    # unparseable-string-annotation branch above.
+                    candidates.add(_UNKNOWN_ANNOTATION)
+                    continue
                 worklist.append(elements[0])
             else:
                 if outer is not None:

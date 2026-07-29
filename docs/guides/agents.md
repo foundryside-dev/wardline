@@ -28,7 +28,10 @@ If you have not installed Wardline yet, start with
 `wardline install` wires wardline into a project's agent context in one step:
 
 - injects a small, hash-fenced block into `CLAUDE.md` and `AGENTS.md` pointing
-  the agent at the gate and the loop;
+  the agent at the gate and the loop — **except** when `CLAUDE.md` is merely an
+  `@AGENTS.md` redirect, in which case the block is maintained in `AGENTS.md`
+  alone and any legacy `CLAUDE.md` block is migrated out (see
+  [Redirected `CLAUDE.md`](#redirected-claudemd) below);
 - installs the `wardline-gate` skill into `.claude/skills/` and `.agents/skills/`;
 - merges a `wardline` entry into `.mcp.json` (preserving any existing servers);
 - writes a global Codex MCP entry in `~/.codex/config.toml`;
@@ -72,6 +75,24 @@ config — so the `.mcp.json` entry stays a stdio `wardline mcp --root .` comman
 with no URL in its args.
 The Codex entry is global, so it runs `wardline mcp` without `--root` and lets
 Codex launch it from the active workspace.
+
+### Redirected `CLAUDE.md`
+
+A project whose `CLAUDE.md` is *solely* an `@AGENTS.md` (or `@./AGENTS.md`)
+import keeps one source of agent context, so wardline maintains its block in
+`AGENTS.md` alone and migrates any legacy `CLAUDE.md` block out. The redirect is
+detected only after every managed block — wardline's own and any sibling's — is
+masked, so a marker a block merely quotes is never read as project prose. One
+accepted limitation, shared verbatim with the sibling Weft tools: a fenced
+markdown *example* of `@AGENTS.md` still reads as a redirect.
+
+Detection fails **safe**: a `CLAUDE.md` that is absent, unreadable, non-UTF-8,
+non-regular, symlinked, or escaping the project root reads as *no* redirect, so
+the ordinary dual-write happens. `--no-claude-md` suppresses the migration
+entirely (an opt-out skips work, it never erases it), and a migration runs only
+when the write that replaces it actually ran. `wardline doctor` reports the
+`CLAUDE.md` block as "not required" under a redirect, flags a surviving block as
+one to migrate, and `--repair` migrates rather than re-injecting.
 
 Check the wiring later with:
 
