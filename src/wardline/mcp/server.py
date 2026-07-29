@@ -37,7 +37,7 @@ from wardline.core.filigree_emit import (
     filigree_destination,
     redact_url_for_diagnostics,
 )
-from wardline.core.finding import Finding, Kind, Severity
+from wardline.core.finding import Finding, Severity
 from wardline.core.finding_query import filter_findings
 from wardline.core.judge_run import run_judge
 from wardline.core.paths import baseline_path as baseline_file
@@ -939,6 +939,12 @@ def _scan(
                 explanations_truncated = True
         agent_summary["truncation"]["explanations_truncated"] = explanations_truncated
 
+    scan_lead_summary = {
+        "counts_by_kind": agent_summary["summary"]["counts_by_kind"],
+        "completeness": agent_summary["summary"]["completeness"],
+        "confidence": agent_summary["summary"]["confidence"],
+        "advisory": agent_summary["summary"]["advisory"],
+    }
     response: dict[str, Any] = {
         "files_scanned": result.files_scanned,
         "summary": {
@@ -956,7 +962,7 @@ def _scan(
             # source root — benign no-module skips are excluded). Surfaced so the
             # silent under-scan reaches the agent, not just the human-facing stderr.
             "unanalyzed": result.summary.unanalyzed,
-            "counts_by_kind": _counts_by_kind(result.findings),
+            **scan_lead_summary,
         },
         "gate": {
             "tripped": decision.tripped,
@@ -987,12 +993,38 @@ def _scan(
     return response
 
 
-def _counts_by_kind(findings: list[Finding]) -> dict[str, int]:
-    """Count the complete finding population in canonical Kind order."""
-    counts = {kind.value: 0 for kind in Kind}
-    for finding in findings:
-        counts[finding.kind.value] += 1
-    return counts
+_SCAN_LEAD_SUMMARY_PROPERTIES: dict[str, Any] = {
+    "counts_by_kind": {
+        "type": "object",
+        "description": "Finding counts grouped by kind for the full scan result.",
+        "additionalProperties": {"type": "integer"},
+    },
+    "completeness": {
+        "type": "string",
+        "enum": ["complete", "partial"],
+        "description": "Whether this scan response is self-contained or needs a follow-up page or stronger run.",
+    },
+    "confidence": {
+        "type": "string",
+        "description": "Agent-facing confidence in the summary's usefulness for next-step planning.",
+    },
+    "advisory": {
+        "description": "Actionable next step when completeness is partial; null when complete.",
+        "oneOf": [
+            {"type": "null"},
+            {
+                "type": "object",
+                "properties": {
+                    "reason": {"type": "string"},
+                    "action": {"type": "string"},
+                },
+                "required": ["reason", "action"],
+                "additionalProperties": False,
+            },
+        ],
+    },
+}
+_SCAN_LEAD_SUMMARY_REQUIRED = ["counts_by_kind", "completeness", "confidence", "advisory"]
 
 
 _SCAN_OUTPUT_SCHEMA: dict[str, Any] = {
@@ -1026,20 +1058,7 @@ _SCAN_OUTPUT_SCHEMA: dict[str, Any] = {
                     "description": "Files discovered but never analysed (parse errors / too-deep / missing source "
                     "roots); overlay count.",
                 },
-                "counts_by_kind": {
-                    "type": "object",
-                    "description": "Whole-scan finding counts by canonical finding kind, including active and "
-                    "suppressed findings.",
-                    "properties": {
-                        "defect": {"type": "integer", "minimum": 0},
-                        "fact": {"type": "integer", "minimum": 0},
-                        "classification": {"type": "integer", "minimum": 0},
-                        "metric": {"type": "integer", "minimum": 0},
-                        "suggestion": {"type": "integer", "minimum": 0},
-                    },
-                    "required": ["defect", "fact", "classification", "metric", "suggestion"],
-                    "additionalProperties": False,
-                },
+                **_SCAN_LEAD_SUMMARY_PROPERTIES,
             },
             "required": [
                 "total",
@@ -1049,7 +1068,7 @@ _SCAN_OUTPUT_SCHEMA: dict[str, Any] = {
                 "judged",
                 "informational",
                 "unanalyzed",
-                "counts_by_kind",
+                *_SCAN_LEAD_SUMMARY_REQUIRED,
             ],
             "additionalProperties": False,
         },
@@ -1222,6 +1241,7 @@ _SCAN_OUTPUT_SCHEMA: dict[str, Any] = {
                             "excludes them).",
                         },
                         "unanalyzed": {"type": "integer"},
+                        **_SCAN_LEAD_SUMMARY_PROPERTIES,
                     },
                     "required": [
                         "files_scanned",
@@ -1234,6 +1254,7 @@ _SCAN_OUTPUT_SCHEMA: dict[str, Any] = {
                         "judged",
                         "informational",
                         "unanalyzed",
+                        *_SCAN_LEAD_SUMMARY_REQUIRED,
                     ],
                     "additionalProperties": False,
                 },
