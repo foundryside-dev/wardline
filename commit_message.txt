@@ -1,0 +1,13 @@
+⚡ Bolt: [performance improvement]
+
+💡 What:
+Modified AST traversal functions (`_assignment_callee` and `_collect_return_paths`) in `src/wardline/scanner/taint/variable_level.py` to accept `Iterable[ast.AST]` and removed the eager materialization of `ast.iter_child_nodes()` into a list. Also replaced `list(func_node.body)` with `func_node.body`.
+
+🎯 Why:
+AST traversal functions were eagerly materializing generators (like `ast.iter_child_nodes()`) into lists, which increases memory allocation overhead without benefit since the generators were only iterated over. This change follows the guidelines to optimize memory usage by using standard iterators.
+
+📊 Impact:
+Reduces memory allocation overhead during AST traversal, improving performance for large codebases.
+
+🔬 Measurement:
+Run `make ci` and verify there is no change in test behavior while preserving tests, linting, formatting and type checking. Memory allocations should be reduced.
