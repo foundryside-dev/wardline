@@ -1,0 +1,3 @@
+## 2024-03-24 - AST Iteration Allocation Overhead
+**Learning:** In the static analysis tools processing large ASTs recursively, eagerly materializing `ast.iter_child_nodes()` or `func_node.body` into lists (e.g., `list(ast.iter_child_nodes(node))`) introduces significant unnecessary memory allocation and garbage collection overhead. Since the traversal functions `_collect_return_paths` and `_assignment_callee` only iterate through the children exactly once, this eager list conversion is completely avoidable.
+**Action:** Always accept `Iterable[ast.AST]` in recursive AST walker functions and pass the generator directly (`ast.iter_child_nodes()`) to avoid O(N) list allocation overhead at every node depth.
