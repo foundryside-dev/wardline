@@ -310,6 +310,7 @@ _SURFACE_CORE = frozenset(
         "agent_summary",
         "decorator_coverage",
         "judge",
+        "judge_transport",
         "judge_run",
         "triage",
         "rekey",
