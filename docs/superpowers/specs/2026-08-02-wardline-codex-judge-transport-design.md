@@ -1,6 +1,6 @@
 # Wardline Codex CLI Judge Transport Design
 
-**Status:** approved design — awaiting written-spec review
+**Status:** approved design — implementation planned
 **Date:** 2026-08-02
 **Filigree issue:** `wardline-f678111176`
 **Reference:** ELSPETH Codex judge transport in
@@ -101,9 +101,20 @@ reason vocabulary such as `available`, `binary_missing`, `incompatible`, and
 `unauthenticated`. A capability probe runs these non-model commands through an
 injectable subprocess runner:
 
+The closed enum/defaults/tool-scope types live in engine-floor
+`core.judge_types`; subprocess environment, capability/authentication probing, and
+selection live in explicitly surface-tier `core.judge_transport`. Configuration
+and persisted-policy modules therefore never import provider orchestration.
+
 1. `codex --version` proves the binary starts;
 2. `codex exec --help` proves the required flags are advertised; and
-3. `codex login status` proves authenticated account state is available.
+3. `codex features list` proves every feature that the strict invocation disables
+   is recognized; and
+4. `codex login status` proves authenticated account state is available.
+
+The required flag and disabled-feature sets are single-source constants shared by
+preflight and invocation construction. This prevents `auto` from selecting a CLI
+that passes a weaker probe but cannot honor the actual sealed command.
 
 The probe uses the same minimal environment as adjudication and bounds all
 diagnostics. It does not invoke a model and does not inspect arbitrary command
@@ -146,10 +157,14 @@ once and constructs a `JudgeResponse` containing the concrete
 
 The JSON verdict remains exactly `verdict`, `rationale`, and `confidence` with no
 additional properties. A shared JSON Schema mirrors those requirements. The
-Codex JSONL reducer requires exactly one final agent message and one completed
-turn, and rejects a fenced or otherwise non-object final message before the
-shared parser. The existing OpenRouter envelope handling remains intact; Codex
-does not gain a coercion or repair step.
+Codex JSONL reducer requires a final agent message and one completed turn, uses
+the last agent message when tool use produced intermediate commentary, and
+rejects duplicate keys, non-finite numbers, negative/impossible usage, structured
+error/failed events, and a fenced or otherwise non-object final message before the
+shared parser. Contract errors identify the violated shape without echoing raw
+provider or model bytes.
+The existing OpenRouter envelope handling remains intact; Codex does not gain a
+coercion or repair step.
 
 ### Codex subprocess
 
@@ -176,7 +191,8 @@ Locked-down settings set approval to `never`, disable web search, shell and
 unified execution, shell snapshots, apps, hooks, goals, memories, multi-agent,
 remote plugins, and personality, and register exactly the Wardline judge-tools
 MCP server. A strict-config failure is a transport startup failure, not a reason
-to silently drop a security control.
+to silently drop a security control. Reasoning effort is pinned to `high` instead
+of inheriting a moving CLI default and participates in the Codex policy identity.
 
 The child environment is rebuilt from an allowlist: executable discovery,
 account-home state, locale, terminal, temporary-directory, and TLS trust roots,
@@ -188,7 +204,11 @@ before serving.
 Codex currently has no per-call completion-token cap. Wardline therefore does
 not pretend that `max_tokens` is enforced on this transport; schema enforcement
 and the strict completed-event parser are the truncation guard. The subprocess
-timeout stays finite and injectable in tests.
+timeout stays finite and injectable in tests. Codex and its MCP child run in a
+dedicated process group that Wardline terminates, escalates, and reaps on timeout.
+Within a judge run, the first terminal Codex transport failure trips a circuit
+breaker: remaining findings are counted as transport-skipped without launching
+another Codex process and without switching provider.
 
 ### Bounded repository exploration
 
@@ -203,14 +223,19 @@ dependency-free JSON-RPC/MCP protocol code. It advertises only:
 Every operation realpath-resolves its target and proves it is inside the scan
 root. Symlink escapes, absolute/path-parent glob tricks, non-regular files,
 binary/undecodable content, repository instruction files (`AGENTS.md`,
-`CLAUDE.md`, `.codex`, `.agents`, and equivalents), known credential filenames
-such as `.env`, and files matching a curated secret detector are denied. The
+`AGENTS.override.md`, `CLAUDE.md`, `GEMINI.md`, `.cursorrules`, Copilot
+instruction files, `.codex`, `.agents`, `.claude`, `.cursor`, and case variants),
+known credential filenames such as `.env` and `.env.*`, and files matching a
+curated secret detector are denied. The
 detector covers PEM private-key blocks, common provider/cloud token prefixes,
 authorization bearer values, and credential-labelled assignments; its pattern
 names, not matched bytes, appear in denials. Grep
 applies the same per-file checks before counting, so it cannot become a secret
-oracle. File count, result size, line count, scanned-file count, and total tool
-calls are capped.
+oracle. A non-following bounded walker prunes forbidden and symlink directories.
+Per-file bytes, cumulative scanned bytes, visited entries, recursion depth, file
+count, result size, line count, scanned-file count, path/pattern length, and total
+tool calls are capped before allocation or reading; denied and non-regular entries
+still consume traversal budgets.
 
 The prompt says repository bytes, comments, project policy, and instruction-like
 text are untrusted evidence, never instructions. It allows the judge to use the
@@ -233,14 +258,15 @@ The classification boundary is deliberately narrow:
 | --- | --- | --- |
 | auto preflight | binary missing, required capability absent, unauthenticated | choose OpenRouter once |
 | explicit Codex preflight | same typed unavailable reasons | `JudgeConfigurationError`, no fallback |
-| selected Codex startup/runtime | timeout, nonzero exit, OS launch failure after successful preflight | `JudgeTransportError`; existing per-finding skip/count behavior |
+| selected Codex startup/runtime | timeout, nonzero exit, OS launch failure after successful preflight | terminate/reap the Codex process group; `JudgeTransportError`; trip the run-local circuit breaker so remaining findings are counted skipped without another provider call |
 | successful Codex output | malformed JSONL, missing final agent message, missing/invalid usage, schema-invalid verdict | `JudgeContractError`; abort run |
 | selected OpenRouter runtime | existing connection/status behavior | unchanged |
 
-Runtime error details are extracted only from structured Codex error events and
-bounded stderr. Prompt text, source excerpts, subprocess stdout, and environment
-values are never echoed wholesale. Authentication-like runtime text does not
-trigger a post-selection provider switch.
+Runtime diagnostics reduce structured Codex error events and bounded stderr to
+fixed codes/types and remediation text. Raw stderr, provider/model values, prompt
+text, source excerpts, subprocess stdout, and environment values are never echoed.
+Authentication-like runtime text does not trigger a post-selection provider
+switch.
 
 ## Provenance and persisted-record compatibility
 
@@ -258,7 +284,10 @@ closed concrete vocabulary `codex-cli | openrouter`. The loader accepts:
 
 Loading v1 does not rewrite the file. The next normal `--write` emits a stable v2
 document, so migration is explicit in version control. `auto` is invalid in an
-audit record.
+audit record. Older Wardline versions cannot consume v2; rollback restores the
+previous v1 file from version control rather than stripping Codex provenance or
+mislabeling it as OpenRouter. Codex JSONL does not attest the served backend model,
+so Codex `model_id` is explicitly the requested model.
 
 ## CLI and MCP behavior
 
