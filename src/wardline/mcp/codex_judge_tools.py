@@ -9,12 +9,12 @@ from __future__ import annotations
 
 import argparse
 import fnmatch
-import heapq
 import json
 import os
 import re
 import stat
 from collections.abc import Mapping, Sequence
+from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any, NoReturn, TypeGuard
@@ -57,21 +57,24 @@ _SENSITIVE_ENVIRONMENT_NAMES = frozenset(
         "ANTHROPIC_API_KEY",
         "AWS_ACCESS_KEY_ID",
         "AWS_SECRET_ACCESS_KEY",
-        "AWS_SESSION_TOKEN",
-        "AZURE_OPENAI_API_KEY",
-        "GEMINI_API_KEY",
-        "GH_TOKEN",
-        "GITHUB_TOKEN",
-        "GOOGLE_API_KEY",
+        "GOOGLE_APPLICATION_CREDENTIALS",
+        "LEGIS_ARTIFACT_KEY",
         "OPENAI_API_KEY",
         "OPENROUTER_API_KEY",
         "WARDLINE_OPENROUTER_API_KEY",
+        "WEFT_FEDERATION_TOKEN",
     }
 )
 
 _PEM_PRIVATE_KEY_RE = re.compile(r"-----BEGIN (?:[A-Z0-9 ]+ )?PRIVATE KEY-----")
 _AUTHORIZATION_BEARER_RE = re.compile(r"(?i)\bauthorization\s*:\s*bearer\s+([A-Za-z0-9._~+/=-]{20,})")
-_PROVIDER_TOKEN_RE = re.compile(r"\b((?:sk|pk|rk)-[A-Za-z0-9_-]{20,})\b")
+_PROVIDER_TOKEN_RE = re.compile(
+    r"\b((?:(?:sk|pk|rk)-[A-Za-z0-9_-]{20,}"
+    r"|AKIA[A-Z0-9]{16}"
+    r"|ghp_[A-Za-z0-9]{20,}"
+    r"|github_pat_[A-Za-z0-9_]{20,}"
+    r"|AIza[A-Za-z0-9_-]{20,}))\b"
+)
 _CREDENTIAL_ASSIGNMENT_RE = re.compile(
     r"(?im)\b(?:api[_-]?key|client[_-]?secret|password|passwd|secret|token)\b"
     r"\s*[:=]\s*[\"']?([^\s\"'#,;]{8,})"
@@ -215,46 +218,56 @@ def _secret_pattern(text: str) -> str | None:
     return None
 
 
+def _open_anchored_file(context: _Context, path: Path) -> int:
+    """Open ``path`` component-by-component beneath a held repository root."""
+    relative = _relative_to_root(context, path)
+    parts = relative.parts
+    if not parts or any(part in ("", ".", "..") for part in parts):
+        _fail("file path must identify a regular file")
+    if _is_denied_relative(relative):
+        _fail("file path denied")
+
+    common_flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+    directory_flags = common_flags | getattr(os, "O_DIRECTORY", 0)
+    directory_fd = -1
+    try:
+        directory_fd = os.open(context.scope.root, directory_flags)
+        if not stat.S_ISDIR(os.fstat(directory_fd).st_mode):
+            _fail("repository root is unavailable")
+        for component in parts[:-1]:
+            next_fd = os.open(component, directory_flags, dir_fd=directory_fd)
+            previous_fd = directory_fd
+            directory_fd = next_fd
+            os.close(previous_fd)
+        return os.open(parts[-1], common_flags, dir_fd=directory_fd)
+    except ValueError:
+        raise
+    except OSError:
+        _fail("file is unavailable")
+    finally:
+        if directory_fd >= 0:
+            with suppress(OSError):
+                os.close(directory_fd)
+
+
 def _safe_text(
     context: _Context,
     path: Path,
     accounting: _Accounting | None = None,
 ) -> str:
     """Read one regular, in-root file with race-aware size and content checks."""
-    try:
-        relative = _relative_to_root(context, path)
-        if _is_denied_relative(relative):
-            _fail("file path denied")
-        if path.is_symlink():
-            _fail("symlink paths are denied")
-        before = path.stat()
-    except ValueError:
-        raise
-    except OSError:
-        _fail("file is unavailable")
-    if not stat.S_ISREG(before.st_mode):
-        _fail("file path must identify a regular file")
-    if before.st_size > _MAX_FILE_BYTES:
-        _fail("file exceeds size limit")
-
     if accounting is not None:
         if accounting.scanned_files >= _MAX_SCANNED_FILES:
             accounting.truncated = True
             raise _BudgetStop
         remaining = _MAX_TOTAL_SCANNED_BYTES - accounting.scanned_bytes
-        if remaining <= 0 or before.st_size > remaining:
+        if remaining <= 0:
             accounting.truncated = True
             raise _BudgetStop
     else:
         remaining = _MAX_FILE_BYTES
 
-    flags = os.O_RDONLY
-    flags |= getattr(os, "O_CLOEXEC", 0)
-    flags |= getattr(os, "O_NOFOLLOW", 0)
-    try:
-        descriptor = os.open(path, flags)
-    except OSError:
-        _fail("file is unavailable")
+    descriptor = _open_anchored_file(context, path)
     try:
         opened = os.fstat(descriptor)
         if not stat.S_ISREG(opened.st_mode):
@@ -279,12 +292,11 @@ def _safe_text(
         os.close(descriptor)
 
     if accounting is not None:
-        if len(data) > remaining:
-            accounting.scanned_bytes += remaining
-            accounting.truncated = True
-            raise _BudgetStop
         accounting.scanned_files += 1
         accounting.scanned_bytes += len(data)
+        if len(data) > remaining:
+            accounting.truncated = True
+            raise _BudgetStop
     if len(data) > _MAX_FILE_BYTES:
         _fail("file exceeds size limit")
     if b"\x00" in data:
@@ -327,15 +339,24 @@ def _directory_entries(directory: Path, accounting: _Accounting) -> list[os.DirE
     if remaining <= 0:
         accounting.truncated = True
         raise _BudgetStop
+    entries: list[os.DirEntry[str]] = []
     try:
         with os.scandir(directory) as iterator:
-            entries = heapq.nsmallest(remaining + 1, iterator, key=lambda item: item.name)
+            for _index in range(remaining):
+                try:
+                    entries.append(next(iterator))
+                except StopIteration:
+                    break
+            if len(entries) == remaining:
+                try:
+                    next(iterator)
+                except StopIteration:
+                    pass
+                else:
+                    accounting.truncated = True
     except OSError:
         return []
-    if len(entries) > remaining:
-        accounting.truncated = True
-        entries.pop()
-    return entries
+    return sorted(entries, key=lambda item: item.name)
 
 
 def _walk_files(

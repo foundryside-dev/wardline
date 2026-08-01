@@ -21,8 +21,12 @@ from wardline.mcp.codex_judge_tools import (
     _MAX_TOTAL_SCANNED_BYTES,
     _MAX_WALK_DEPTH,
     _MAX_WALK_ENTRIES,
+    _SENSITIVE_ENVIRONMENT_NAMES,
+    _Accounting,
     _assert_keyless_environment,
+    _BudgetStop,
     _Context,
+    _directory_entries,
     _glob_files,
     _grep_files,
     _read_file,
@@ -275,17 +279,52 @@ def test_safe_text_rejects_file_that_grows_between_stat_and_read(
     real_open = tools_module.os.open
     grown = False
 
-    def _grow_then_open(path: object, flags: int) -> int:
+    def _grow_then_open(
+        path: object,
+        flags: int,
+        mode: int = 0o777,
+        *,
+        dir_fd: int | None = None,
+    ) -> int:
         nonlocal grown
         if not grown:
             grown = True
             target.write_bytes(b"a" * (_MAX_FILE_BYTES + 1))
-        return real_open(path, flags)
+        if dir_fd is None:
+            return real_open(path, flags, mode)
+        return real_open(path, flags, mode, dir_fd=dir_fd)
 
     monkeypatch.setattr(tools_module.os, "open", _grow_then_open)
 
     with pytest.raises(ValueError, match="size"):
         _safe_text(_ctx(tmp_path), target)
+
+
+def test_safe_text_growth_charges_detection_byte_and_scanned_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    target = tmp_path / "growing.txt"
+    target.write_bytes(b"1234")
+    accounting = _Accounting()
+    monkeypatch.setattr(tools_module, "_MAX_TOTAL_SCANNED_BYTES", 4)
+    real_read = tools_module.os.read
+    grown = False
+
+    def _grow_then_read(descriptor: int, size: int) -> bytes:
+        nonlocal grown
+        if not grown:
+            grown = True
+            target.write_bytes(b"12345")
+        return real_read(descriptor, size)
+
+    monkeypatch.setattr(tools_module.os, "read", _grow_then_read)
+
+    with pytest.raises(_BudgetStop):
+        _safe_text(_ctx(tmp_path), target, accounting)
+
+    assert accounting.scanned_files == 1
+    assert accounting.scanned_bytes == 5
+    assert accounting.truncated is True
 
 
 @pytest.mark.parametrize(
@@ -348,6 +387,41 @@ def test_obvious_placeholder_and_test_credentials_remain_readable(tmp_path: Path
     result = _read_file(_ctx(tmp_path), {"file_path": "security_fixture.py"})
 
     assert content in result
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        'aws_access_key_id = "AKIA1234567890ABCDEF"',
+        'token = "ghp_abcdefghijklmnopqrstuvwxyz0123456789"',
+        'token = "github_pat_abcdefghijklmnopqrstuvwxyz_0123456789"',
+        'google_key = "AIzaSyabcdefghijklmnopqrstuvwxyz012345"',
+    ],
+)
+def test_common_cloud_and_provider_tokens_are_denied_without_value_echo(tmp_path: Path, content: str) -> None:
+    path = tmp_path / "provider.txt"
+    path.write_text(content, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="provider_token") as exc_info:
+        _read_file(_ctx(tmp_path), {"file_path": "provider.txt"})
+
+    assert content not in str(exc_info.value)
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        'aws_access_key_id = "AKIATESTPLACEHOLDER1"',
+        'token = "ghp_test_placeholder_abcdefghijklmnopqrstuvwxyz"',
+        'token = "github_pat_test_placeholder_abcdefghijklmnopqrstuvwxyz"',
+        'google_key = "AIzaTestPlaceholderabcdefghijklmnopqrstuvwxyz"',
+    ],
+)
+def test_common_provider_placeholder_tokens_remain_readable(tmp_path: Path, content: str) -> None:
+    path = tmp_path / "provider-fixture.txt"
+    path.write_text(content, encoding="utf-8")
+
+    assert content in _read_file(_ctx(tmp_path), {"file_path": "provider-fixture.txt"})
 
 
 def test_grep_is_literal_and_never_returns_matching_content(tmp_path: Path) -> None:
@@ -497,14 +571,93 @@ def test_visited_entry_cap_counts_denied_and_nonregular_before_filtering(
 ) -> None:
     monkeypatch.setattr(tools_module, "_MAX_WALK_ENTRIES", 2)
     (tmp_path / ".env").write_text("denied", encoding="utf-8")
+    (tmp_path / "AGENTS.md").write_text("denied", encoding="utf-8")
     (tmp_path / "directory").mkdir()
-    (tmp_path / "z.py").write_text("safe", encoding="utf-8")
 
     result = _json(_glob_files(_ctx(tmp_path), {"pattern": "*"}))
 
     assert result["files"] == []
     assert result["visited_entries"] == 2
     assert result["truncated"] is True
+
+
+def test_directory_enumeration_retains_only_bounded_prefix_and_one_peek(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(tools_module, "_MAX_WALK_ENTRIES", 2)
+    pulls = 0
+
+    class _FakeEntry:
+        def __init__(self, name: str) -> None:
+            self.name = name
+
+    class _FakeScandir:
+        def __init__(self) -> None:
+            self._names = iter(["z.py", "a.py", "y.py", "b.py", "x.py"])
+
+        def __enter__(self) -> _FakeScandir:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def __iter__(self) -> _FakeScandir:
+            return self
+
+        def __next__(self) -> _FakeEntry:
+            nonlocal pulls
+            pulls += 1
+            return _FakeEntry(next(self._names))
+
+    monkeypatch.setattr(tools_module.os, "scandir", lambda _path: _FakeScandir())
+    accounting = _Accounting()
+
+    entries = _directory_entries(tmp_path, accounting)
+
+    assert [entry.name for entry in entries] == ["a.py", "z.py"]
+    assert pulls == 3
+    assert accounting.visited_entries == 0
+    assert accounting.truncated is True
+
+
+def test_ancestor_swap_to_outside_symlink_never_reads_outside_bytes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "root"
+    ancestor = root / "ancestor"
+    ancestor.mkdir(parents=True)
+    (ancestor / "target.txt").write_text("inside bytes", encoding="utf-8")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    outside_content = "outside bytes were read"
+    (outside / "target.txt").write_text(outside_content, encoding="utf-8")
+    parked = root / "parked"
+    real_open = tools_module.os.open
+    swapped = False
+
+    def _swap_then_open(
+        path: object,
+        flags: int,
+        mode: int = 0o777,
+        *,
+        dir_fd: int | None = None,
+    ) -> int:
+        nonlocal swapped
+        raw = str(path)
+        if not swapped and (raw == "ancestor" or raw.endswith("/ancestor/target.txt")):
+            swapped = True
+            ancestor.rename(parked)
+            ancestor.symlink_to(outside, target_is_directory=True)
+        if dir_fd is None:
+            return real_open(path, flags, mode)
+        return real_open(path, flags, mode, dir_fd=dir_fd)
+
+    monkeypatch.setattr(tools_module.os, "open", _swap_then_open)
+
+    with pytest.raises(ValueError) as exc_info:
+        _read_file(_ctx(root), {"file_path": "ancestor/target.txt"})
+
+    assert outside_content not in str(exc_info.value)
 
 
 def test_walk_depth_cap_is_bounded_and_marks_truncated(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -633,6 +786,29 @@ def test_sensitive_environment_check_names_keys_not_values() -> None:
     assert "WARDLINE_OPENROUTER_API_KEY" in message
     assert "SAFE" not in message
     assert secret not in message
+
+
+def test_sensitive_environment_vocabulary_is_exact() -> None:
+    expected = frozenset(
+        {
+            "WARDLINE_OPENROUTER_API_KEY",
+            "OPENROUTER_API_KEY",
+            "OPENAI_API_KEY",
+            "ANTHROPIC_API_KEY",
+            "AWS_ACCESS_KEY_ID",
+            "AWS_SECRET_ACCESS_KEY",
+            "GOOGLE_APPLICATION_CREDENTIALS",
+            "WEFT_FEDERATION_TOKEN",
+            "LEGIS_ARTIFACT_KEY",
+        }
+    )
+    assert expected == _SENSITIVE_ENVIRONMENT_NAMES
+
+
+@pytest.mark.parametrize("name", sorted(_SENSITIVE_ENVIRONMENT_NAMES))
+def test_every_sensitive_environment_key_is_rejected_even_when_empty(name: str) -> None:
+    with pytest.raises(RuntimeError, match=name):
+        _assert_keyless_environment({name: ""})
 
 
 def test_main_refuses_sensitive_environment_before_server_start(
