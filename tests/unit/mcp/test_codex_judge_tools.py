@@ -716,6 +716,26 @@ def test_yaml_placeholders_and_credential_metadata_remain_readable(tmp_path: Pat
 
 
 @pytest.mark.parametrize(
+    ("filename", "content"),
+    [
+        ("config.json", '{"password": "placeholder-password", "user": "alice"}'),
+        ("config.yaml", "password: ${DATABASE_PASSWORD}"),
+        ("config.yaml", "api_key: ${OPENAI_API_KEY}"),
+        ("config.yaml", "token: null"),
+        ("config.yaml", "secret: false"),
+        ("config.yaml", "password: none"),
+        ("config.yaml", "token: true"),
+        ("config.yaml", "secret: ~"),
+        ("notes.txt", "The password: must be at least twelve characters."),
+    ],
+)
+def test_structured_safe_scalars_and_prose_remain_readable(tmp_path: Path, filename: str, content: str) -> None:
+    (tmp_path / filename).write_text(content, encoding="utf-8")
+
+    assert content in _read_file(_ctx(tmp_path), {"file_path": filename})
+
+
+@pytest.mark.parametrize(
     "filename",
     ["config.json", "config.toml", "config.sh", "config.data", "config"],
 )

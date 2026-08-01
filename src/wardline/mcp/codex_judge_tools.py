@@ -117,10 +117,12 @@ _CREDENTIAL_ASSIGNMENT_RE = re.compile(
     r"(?:\"(?P<wrapped_double>[^\"\r\n]{8,})\"|'(?P<wrapped_single>[^'\r\n]{8,})')[ \t]*\)"
     r"|(?P<bare>[A-Za-z0-9][A-Za-z0-9._~+/=-]{7,})(?![A-Za-z0-9._~+/=(\[]))"
 )
+_CREDENTIAL_STRUCTURE_PREFIX_PATTERN = r"(?:^[ \t]*(?:-[ \t]+)?|(?<=[{,])[ \t]*)"
 _CREDENTIAL_SCALAR_RE = re.compile(
-    rf"(?imx){_CREDENTIAL_LABEL_PATTERN}"
+    rf"(?imx){_CREDENTIAL_STRUCTURE_PREFIX_PATTERN}{_CREDENTIAL_LABEL_PATTERN}"
     rf"[ \t]*[:=][ \t]*(?P<scalar>[^\r\n#]{{1,{_MAX_PATTERN_CHARS}}})"
 )
+_SAFE_CREDENTIAL_SCALAR_RE = re.compile(r"^(?:\$\{[A-Z_][A-Z0-9_]{0,127}\}|(?i:null|none|true|false)|~)$")
 _PLACEHOLDER_RE = re.compile(
     r"(?i)^(?:<?your(?:[-_][a-z0-9]+)*(?:_here)?>?"
     r"|(?:placeholder|example|dummy|redacted|fake|test|changeme)(?:$|[-_].*)"
@@ -341,7 +343,7 @@ def _normalized_scalar(value: str) -> str:
     for index, character in enumerate(candidate[1:], start=1):
         if character == quote and not escaped:
             remainder = candidate[index + 1 :].strip()
-            if not remainder or all(marker in ",}]" for marker in remainder):
+            if not remainder or remainder[0] in ",}]":
                 return candidate[1:index]
             break
         escaped = character == "\\" and not escaped
@@ -375,7 +377,7 @@ def _secret_pattern(text: str, *, source_suffix: str) -> str | None:
     if source_suffix not in _SOURCE_REFERENCE_SUFFIXES:
         for credential in _CREDENTIAL_SCALAR_RE.finditer(text):
             value = _normalized_scalar(credential.group("scalar"))
-            if value and not _placeholder(value):
+            if value and not _placeholder(value) and _SAFE_CREDENTIAL_SCALAR_RE.fullmatch(value) is None:
                 return "credential_assignment"
     return None
 
