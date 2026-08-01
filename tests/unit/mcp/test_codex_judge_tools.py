@@ -735,6 +735,59 @@ def test_structured_safe_scalars_and_prose_remain_readable(tmp_path: Path, filen
     assert content in _read_file(_ctx(tmp_path), {"file_path": filename})
 
 
+def test_flow_map_later_credential_is_denied_without_value_echo(tmp_path: Path) -> None:
+    content = '{password: "placeholder-password", api_key: correct horse battery staple}'
+    literal = "correct horse battery staple"
+    (tmp_path / "config.yaml").write_text(content, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="credential_assignment") as exc_info:
+        _read_file(_ctx(tmp_path), {"file_path": "config.yaml"})
+
+    message = str(exc_info.value)
+    assert literal not in message
+    assert content not in message
+
+
+@pytest.mark.parametrize(
+    ("filename", "content"),
+    [
+        ("config.json", '{"password": null, "user": "alice"}'),
+        ("config.yaml", "password: ${DATABASE_PASSWORD:-changeme}"),
+        ("config.yaml", "password: ${DATABASE_PASSWORD-changeme}"),
+        ("config.yaml", "password: ${DATABASE_PASSWORD:-null}"),
+        ("notes.txt", "The password: contains uppercase characters."),
+    ],
+)
+def test_composed_safe_scalars_and_prose_remain_readable(tmp_path: Path, filename: str, content: str) -> None:
+    (tmp_path / filename).write_text(content, encoding="utf-8")
+
+    assert content in _read_file(_ctx(tmp_path), {"file_path": filename})
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        "password: ${DATABASE_PASSWORD:-production-secret-value}",
+        "password: ${database_password}",
+        "password: ${DATABASE_PASSWORD:?required}",
+    ],
+)
+def test_arbitrary_credential_substitutions_are_denied_without_value_echo(tmp_path: Path, content: str) -> None:
+    (tmp_path / "config.yaml").write_text(content, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="credential_assignment") as exc_info:
+        _read_file(_ctx(tmp_path), {"file_path": "config.yaml"})
+
+    assert content not in str(exc_info.value)
+
+
+def test_supported_source_declaration_reference_remains_readable(tmp_path: Path) -> None:
+    content = "const api_key = settings.api_key"
+    (tmp_path / "configuration.ts").write_text(content, encoding="utf-8")
+
+    assert content in _read_file(_ctx(tmp_path), {"file_path": "configuration.ts"})
+
+
 @pytest.mark.parametrize(
     "filename",
     ["config.json", "config.toml", "config.sh", "config.data", "config"],

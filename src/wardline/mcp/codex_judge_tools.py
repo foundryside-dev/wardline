@@ -108,21 +108,20 @@ _CREDENTIAL_LABEL_PATTERN = (
     r"(?:secret[._-]access[._-]key|api[._-]?key|client[._-]?secret|password|passwd|secret|token)"
     r"[\"']?(?![A-Za-z0-9_])"
 )
-_CREDENTIAL_ASSIGNMENT_RE = re.compile(
-    rf"(?imx){_CREDENTIAL_LABEL_PATTERN}"
-    r"[ \t]*[:=][ \t]*(?:"
-    r"\"(?P<double>[^\"\r\n]{8,})\""
-    r"|'(?P<single>[^'\r\n]{8,})'"
-    r"|(?:secretstr|secretbytes|secretvalue|secret)\([ \t]*"
-    r"(?:\"(?P<wrapped_double>[^\"\r\n]{8,})\"|'(?P<wrapped_single>[^'\r\n]{8,})')[ \t]*\)"
-    r"|(?P<bare>[A-Za-z0-9][A-Za-z0-9._~+/=-]{7,})(?![A-Za-z0-9._~+/=(\[]))"
+_CREDENTIAL_KEY_RE = re.compile(
+    rf"(?imx)(?:"
+    rf"^[ \t]*(?:-[ \t]+)?(?:(?P<declaration>const|let|var|final|readonly)[ \t]+)?"
+    rf"|(?<!\$\{{)(?<=[{{,])[ \t]*"
+    rf"){_CREDENTIAL_LABEL_PATTERN}[ \t]*(?P<delimiter>[:=])"
 )
-_CREDENTIAL_STRUCTURE_PREFIX_PATTERN = r"(?:^[ \t]*(?:-[ \t]+)?|(?<=[{,])[ \t]*)"
-_CREDENTIAL_SCALAR_RE = re.compile(
-    rf"(?imx){_CREDENTIAL_STRUCTURE_PREFIX_PATTERN}{_CREDENTIAL_LABEL_PATTERN}"
-    rf"[ \t]*[:=][ \t]*(?P<scalar>[^\r\n#]{{1,{_MAX_PATTERN_CHARS}}})"
+_SAFE_CREDENTIAL_SENTINEL_RE = re.compile(r"(?i)^(?:null|none|true|false|~)$")
+_CREDENTIAL_SUBSTITUTION_RE = re.compile(
+    r"^\$\{[A-Z_][A-Z0-9_]{0,127}(?:(?P<operator>:-|-)(?P<default>[^{}]{1,128}))?\}$"
 )
-_SAFE_CREDENTIAL_SCALAR_RE = re.compile(r"^(?:\$\{[A-Z_][A-Z0-9_]{0,127}\}|(?i:null|none|true|false)|~)$")
+_SECRET_WRAPPER_RE = re.compile(
+    rf"(?is)^(?:secretstr|secretbytes|secretvalue|secret)[ \t]*\("
+    rf"(?P<argument>[^\r\n]{{0,{_MAX_PATTERN_CHARS}}})\)$"
+)
 _PLACEHOLDER_RE = re.compile(
     r"(?i)^(?:<?your(?:[-_][a-z0-9]+)*(?:_here)?>?"
     r"|(?:placeholder|example|dummy|redacted|fake|test|changeme)(?:$|[-_].*)"
@@ -334,22 +333,93 @@ def _source_reference(value: str) -> bool:
     )
 
 
-def _normalized_scalar(value: str) -> str:
-    candidate = value.strip()
+def _exact_quoted_value(candidate: str) -> str | None:
     if len(candidate) < 2 or candidate[0] not in ('"', "'"):
-        return candidate
+        return None
     quote = candidate[0]
     escaped = False
     for index, character in enumerate(candidate[1:], start=1):
         if character == quote and not escaped:
-            remainder = candidate[index + 1 :].strip()
-            if not remainder or remainder[0] in ",}]":
+            if index == len(candidate) - 1:
                 return candidate[1:index]
-            break
+            return None
         escaped = character == "\\" and not escaped
         if character != "\\":
             escaped = False
-    return candidate
+    return None
+
+
+def _normalized_credential_scalar(value: str) -> tuple[str, bool]:
+    candidate = value.strip()
+    quoted = _exact_quoted_value(candidate)
+    if quoted is not None:
+        return quoted, True
+    wrapper = _SECRET_WRAPPER_RE.fullmatch(candidate)
+    if wrapper is None:
+        return candidate, False
+    argument = wrapper.group("argument").strip()
+    quoted = _exact_quoted_value(argument)
+    return (quoted, True) if quoted is not None else (argument, False)
+
+
+def _scan_credential_scalar(text: str, start: int) -> str:
+    limit = min(len(text), start + _MAX_PATTERN_CHARS)
+    while start < limit and text[start] in " \t":
+        start += 1
+    index = start
+    quote: str | None = None
+    escaped = False
+    square_depth = 0
+    brace_depth = 0
+    parenthesis_depth = 0
+    while index < limit:
+        character = text[index]
+        if quote is not None:
+            if escaped:
+                escaped = False
+            elif character == "\\":
+                escaped = True
+            elif character == quote:
+                quote = None
+            index += 1
+            continue
+        if character in ('"', "'"):
+            quote = character
+        elif character == "[":
+            square_depth += 1
+        elif character == "{":
+            brace_depth += 1
+        elif character == "(":
+            parenthesis_depth += 1
+        elif character == "]":
+            if square_depth:
+                square_depth -= 1
+            elif not (brace_depth or parenthesis_depth):
+                break
+        elif character == "}":
+            if brace_depth:
+                brace_depth -= 1
+            elif not (square_depth or parenthesis_depth):
+                break
+        elif character == ")":
+            if parenthesis_depth:
+                parenthesis_depth -= 1
+            elif not (square_depth or brace_depth):
+                break
+        elif not (square_depth or brace_depth or parenthesis_depth) and character in ",#\r\n":
+            break
+        index += 1
+    return text[start:index].strip()
+
+
+def _safe_credential_scalar(value: str) -> bool:
+    if _placeholder(value) or _SAFE_CREDENTIAL_SENTINEL_RE.fullmatch(value) is not None:
+        return True
+    substitution = _CREDENTIAL_SUBSTITUTION_RE.fullmatch(value)
+    if substitution is None:
+        return False
+    default = substitution.group("default")
+    return default is None or _placeholder(default) or _SAFE_CREDENTIAL_SENTINEL_RE.fullmatch(default) is not None
 
 
 def _secret_pattern(text: str, *, source_suffix: str) -> str | None:
@@ -361,24 +431,18 @@ def _secret_pattern(text: str, *, source_suffix: str) -> str | None:
     provider = _PROVIDER_TOKEN_RE.search(text)
     if provider is not None and not _placeholder(provider.group(1)):
         return "provider_token"
-    for credential in _CREDENTIAL_ASSIGNMENT_RE.finditer(text):
-        quoted = (
-            credential.group("double")
-            or credential.group("single")
-            or credential.group("wrapped_double")
-            or credential.group("wrapped_single")
-        )
-        value = quoted or credential.group("bare")
-        if value is None or _placeholder(value):
+    for credential in _CREDENTIAL_KEY_RE.finditer(text):
+        if credential.group("declaration") is not None and source_suffix not in _SOURCE_REFERENCE_SUFFIXES:
             continue
-        if quoted is None and source_suffix in _SOURCE_REFERENCE_SUFFIXES and _source_reference(value):
+        scalar = _scan_credential_scalar(text, credential.end())
+        if not scalar:
+            continue
+        value, is_literal = _normalized_credential_scalar(scalar)
+        if _safe_credential_scalar(value):
+            continue
+        if not is_literal and source_suffix in _SOURCE_REFERENCE_SUFFIXES and _source_reference(value):
             continue
         return "credential_assignment"
-    if source_suffix not in _SOURCE_REFERENCE_SUFFIXES:
-        for credential in _CREDENTIAL_SCALAR_RE.finditer(text):
-            value = _normalized_scalar(credential.group("scalar"))
-            if value and not _placeholder(value) and _SAFE_CREDENTIAL_SCALAR_RE.fullmatch(value) is None:
-                return "credential_assignment"
     return None
 
 
