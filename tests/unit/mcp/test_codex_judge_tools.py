@@ -592,6 +592,26 @@ def test_labelled_credential_literals_are_denied_without_value_echo(tmp_path: Pa
 @pytest.mark.parametrize(
     "content",
     [
+        'password_policy = "minimum length 12"',
+        'password_field = "password"',
+        'token_endpoint = "https://identity.example/oauth/token"',
+        'api_key_header = "X-API-Key"',
+        '{"password_label": "Account password"}',
+        "api_key = self.settings.api_key",
+        "token = credentials.token",
+        "password = DEFAULT_PASSWORD",
+    ],
+)
+def test_credential_metadata_and_bare_source_references_remain_readable(tmp_path: Path, content: str) -> None:
+    path = tmp_path / "credential-metadata.py"
+    path.write_text(content, encoding="utf-8")
+
+    assert content in _read_file(_ctx(tmp_path), {"file_path": "credential-metadata.py"})
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
         'api_key = os.environ["OPENAI_API_KEY"]',
         'token = request.headers.get("Authorization")',
         "password = settings.database_password",

@@ -80,7 +80,7 @@ _CREDENTIAL_ASSIGNMENT_RE = re.compile(
     r"(?imx)(?<![A-Za-z0-9_])[\"']?"
     r"(?:[A-Za-z0-9]+[._-])*"
     r"(?:secret[._-]access[._-]key|api[._-]?key|client[._-]?secret|password|passwd|secret|token)"
-    r"(?:[._-][A-Za-z0-9]+)*[\"']?(?![A-Za-z0-9_])"
+    r"[\"']?(?![A-Za-z0-9_])"
     r"\s*[:=]\s*(?:"
     r"\"(?P<double>[^\"\r\n]{8,})\""
     r"|'(?P<single>[^'\r\n]{8,})'"
@@ -101,6 +101,8 @@ _SOURCE_REFERENCE_RE = re.compile(
     r"(?i)^(?:(?:os\.)?environ(?:\[|\.get\()|(?:os\.)?getenv\("
     r"|request(?:\.|\[)|settings(?:\.|\[)|config(?:\.|\[))"
 )
+_DOTTED_REFERENCE_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+$")
+_CONSTANT_REFERENCE_RE = re.compile(r"^[A-Z][A-Z0-9_]*$")
 
 
 class _BudgetStop(Exception):
@@ -289,7 +291,12 @@ def _placeholder(value: str) -> bool:
 
 
 def _source_reference(value: str) -> bool:
-    return _SOURCE_REFERENCE_RE.match(value.strip()) is not None
+    candidate = value.strip()
+    return (
+        _SOURCE_REFERENCE_RE.match(candidate) is not None
+        or _DOTTED_REFERENCE_RE.fullmatch(candidate) is not None
+        or _CONSTANT_REFERENCE_RE.fullmatch(candidate) is not None
+    )
 
 
 def _secret_pattern(text: str) -> str | None:
