@@ -561,6 +561,35 @@ def test_secret_wrapper_around_literal_credential_is_denied(tmp_path: Path) -> N
 
 
 @pytest.mark.parametrize(
+    ("content", "literal"),
+    [
+        (
+            '{"password": "correct-horse-battery-staple-2026"}',
+            "correct-horse-battery-staple-2026",
+        ),
+        (
+            'database_password = "correct-horse-battery-staple-2026"',
+            "correct-horse-battery-staple-2026",
+        ),
+        (
+            'AWS_SECRET_ACCESS_KEY = "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789ABCD"',
+            "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789ABCD",
+        ),
+    ],
+)
+def test_labelled_credential_literals_are_denied_without_value_echo(tmp_path: Path, content: str, literal: str) -> None:
+    path = tmp_path / "credential-literal.txt"
+    path.write_text(content, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="credential_assignment") as exc_info:
+        _read_file(_ctx(tmp_path), {"file_path": "credential-literal.txt"})
+
+    message = str(exc_info.value)
+    assert literal not in message
+    assert content not in message
+
+
+@pytest.mark.parametrize(
     "content",
     [
         'api_key = os.environ["OPENAI_API_KEY"]',

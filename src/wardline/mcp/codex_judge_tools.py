@@ -77,9 +77,16 @@ _PROVIDER_TOKEN_RE = re.compile(
     r"|AIza[A-Za-z0-9_-]{20,}))\b"
 )
 _CREDENTIAL_ASSIGNMENT_RE = re.compile(
-    r"(?im)\b(?:api[_-]?key|client[_-]?secret|password|passwd|secret|token)\b"
-    r"\s*[:=]\s*(?:\"(?P<double>[^\"\r\n]{8,})\""
-    r"|'(?P<single>[^'\r\n]{8,})'|(?P<bare>[^\s#,;]+))"
+    r"(?imx)(?<![A-Za-z0-9_])[\"']?"
+    r"(?:[A-Za-z0-9]+[._-])*"
+    r"(?:secret[._-]access[._-]key|api[._-]?key|client[._-]?secret|password|passwd|secret|token)"
+    r"(?:[._-][A-Za-z0-9]+)*[\"']?(?![A-Za-z0-9_])"
+    r"\s*[:=]\s*(?:"
+    r"\"(?P<double>[^\"\r\n]{8,})\""
+    r"|'(?P<single>[^'\r\n]{8,})'"
+    r"|(?:secretstr|secretbytes|secretvalue|secret)\(\s*"
+    r"(?:\"(?P<wrapped_double>[^\"\r\n]{8,})\"|'(?P<wrapped_single>[^'\r\n]{8,})')\s*\)"
+    r"|(?P<bare>[A-Za-z0-9][A-Za-z0-9._~+/=-]{7,})(?![A-Za-z0-9._~+/=(\[]))"
 )
 _PLACEHOLDER_RE = re.compile(
     r"(?i)^(?:<?your(?:[-_][a-z0-9]+)*(?:_here)?>?"
@@ -94,7 +101,6 @@ _SOURCE_REFERENCE_RE = re.compile(
     r"(?i)^(?:(?:os\.)?environ(?:\[|\.get\()|(?:os\.)?getenv\("
     r"|request(?:\.|\[)|settings(?:\.|\[)|config(?:\.|\[))"
 )
-_SECRET_WRAPPER_RE = re.compile(r"(?i)^(?:secretstr|secretbytes|secretvalue|secret)\((.*)\)$")
 
 
 class _BudgetStop(Exception):
@@ -283,11 +289,7 @@ def _placeholder(value: str) -> bool:
 
 
 def _source_reference(value: str) -> bool:
-    candidate = value.strip()
-    wrapper = _SECRET_WRAPPER_RE.fullmatch(candidate)
-    if wrapper is not None:
-        return _source_reference(wrapper.group(1))
-    return _SOURCE_REFERENCE_RE.match(candidate) is not None
+    return _SOURCE_REFERENCE_RE.match(value.strip()) is not None
 
 
 def _secret_pattern(text: str) -> str | None:
@@ -300,7 +302,12 @@ def _secret_pattern(text: str) -> str | None:
     if provider is not None and not _placeholder(provider.group(1)):
         return "provider_token"
     for credential in _CREDENTIAL_ASSIGNMENT_RE.finditer(text):
-        quoted = credential.group("double") or credential.group("single")
+        quoted = (
+            credential.group("double")
+            or credential.group("single")
+            or credential.group("wrapped_double")
+            or credential.group("wrapped_single")
+        )
         value = quoted or credential.group("bare")
         if value is None or _placeholder(value):
             continue
