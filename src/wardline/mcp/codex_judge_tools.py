@@ -1,0 +1,619 @@
+"""Sealed, read-only repository tools for the Codex judge transport.
+
+The server deliberately exposes a much smaller surface than Wardline's normal
+MCP server.  It accepts only repository-relative paths, never follows symlinks,
+filters instruction and credential files, and returns bounded text-only results.
+"""
+
+from __future__ import annotations
+
+import argparse
+import fnmatch
+import heapq
+import json
+import os
+import re
+import stat
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+from pathlib import Path, PurePosixPath, PureWindowsPath
+from typing import Any, NoReturn, TypeGuard
+
+from wardline._version import __version__
+from wardline.core.judge_types import CodexToolScope
+from wardline.mcp.protocol import JsonRpcServer
+
+_MAX_READ_LINES = 400
+_MAX_RESULT_CHARS = 50_000
+_MAX_FILE_RESULTS = 500
+_MAX_SCANNED_FILES = 20_000
+_MAX_FILE_BYTES = 2 * 1024 * 1024
+_MAX_TOTAL_SCANNED_BYTES = 64 * 1024 * 1024
+_MAX_WALK_ENTRIES = 50_000
+_MAX_WALK_DEPTH = 32
+_MAX_PATH_CHARS = 4096
+_MAX_PATTERN_CHARS = 512
+
+_ANNOTATIONS = {
+    "readOnlyHint": True,
+    "destructiveHint": False,
+    "idempotentHint": True,
+    "openWorldHint": False,
+}
+
+_DENIED_FILE_NAMES = frozenset(
+    {
+        ".cursorrules",
+        "agents.md",
+        "agents.override.md",
+        "claude.md",
+        "gemini.md",
+        "copilot-instructions.md",
+    }
+)
+_DENIED_DIRECTORY_NAMES = frozenset({".agents", ".claude", ".codex", ".cursor", ".git"})
+_SENSITIVE_ENVIRONMENT_NAMES = frozenset(
+    {
+        "ANTHROPIC_API_KEY",
+        "AWS_ACCESS_KEY_ID",
+        "AWS_SECRET_ACCESS_KEY",
+        "AWS_SESSION_TOKEN",
+        "AZURE_OPENAI_API_KEY",
+        "GEMINI_API_KEY",
+        "GH_TOKEN",
+        "GITHUB_TOKEN",
+        "GOOGLE_API_KEY",
+        "OPENAI_API_KEY",
+        "OPENROUTER_API_KEY",
+        "WARDLINE_OPENROUTER_API_KEY",
+    }
+)
+
+_PEM_PRIVATE_KEY_RE = re.compile(r"-----BEGIN (?:[A-Z0-9 ]+ )?PRIVATE KEY-----")
+_AUTHORIZATION_BEARER_RE = re.compile(r"(?i)\bauthorization\s*:\s*bearer\s+([A-Za-z0-9._~+/=-]{20,})")
+_PROVIDER_TOKEN_RE = re.compile(r"\b((?:sk|pk|rk)-[A-Za-z0-9_-]{20,})\b")
+_CREDENTIAL_ASSIGNMENT_RE = re.compile(
+    r"(?im)\b(?:api[_-]?key|client[_-]?secret|password|passwd|secret|token)\b"
+    r"\s*[:=]\s*[\"']?([^\s\"'#,;]{8,})"
+)
+_PLACEHOLDER_MARKERS = (
+    "placeholder",
+    "your_",
+    "your-",
+    "<your",
+    "example",
+    "dummy",
+    "redacted",
+    "fake",
+    "test",
+    "changeme",
+)
+
+
+class _BudgetStop(Exception):
+    """Internal signal that a repository traversal reached a hard limit."""
+
+
+@dataclass(slots=True)
+class _Accounting:
+    scanned_files: int = 0
+    scanned_bytes: int = 0
+    visited_entries: int = 0
+    truncated: bool = False
+
+
+@dataclass(slots=True)
+class _Context:
+    scope: CodexToolScope
+    calls: int = 0
+
+    def consume_call(self) -> None:
+        self.calls += 1
+        if self.calls > self.scope.max_calls:
+            raise ValueError("tool call budget exhausted")
+
+
+def _fail(message: str) -> NoReturn:
+    raise ValueError(message)
+
+
+def _is_plain_int(value: object) -> TypeGuard[int]:
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def _require_object(arguments: object, *, allowed: set[str]) -> dict[str, object]:
+    if not isinstance(arguments, dict):
+        _fail("invalid tool arguments")
+    if not all(isinstance(key, str) for key in arguments):
+        _fail("invalid tool arguments")
+    typed = arguments
+    if not set(typed).issubset(allowed):
+        _fail("invalid tool arguments")
+    return typed
+
+
+def _validate_relative(value: object, *, limit: int, label: str) -> str:
+    if not isinstance(value, str) or not value or len(value) > limit or "\x00" in value:
+        _fail(f"invalid {label}")
+    posix = PurePosixPath(value)
+    windows = PureWindowsPath(value)
+    if posix.is_absolute() or windows.is_absolute() or ".." in posix.parts or ".." in windows.parts:
+        _fail(f"invalid {label}")
+    return value
+
+
+def _is_denied_relative(relative: PurePosixPath) -> bool:
+    parts = tuple(part.casefold() for part in relative.parts if part not in ("", "."))
+    if not parts:
+        return False
+    if any(part in _DENIED_DIRECTORY_NAMES for part in parts):
+        return True
+    name = parts[-1]
+    if name == ".env" or name.startswith(".env.") or name in _DENIED_FILE_NAMES:
+        return True
+    if len(parts) >= 3 and parts[-3:-1] == (".github", "instructions"):
+        return name.endswith(".instructions.md")
+    return False
+
+
+def _relative_to_root(context: _Context, path: Path) -> PurePosixPath:
+    try:
+        relative = path.relative_to(context.scope.root)
+    except ValueError:
+        _fail("path escapes repository root")
+    return PurePosixPath(relative.as_posix())
+
+
+def _resolve_file(context: _Context, raw_path: object) -> Path:
+    value = _validate_relative(raw_path, limit=_MAX_PATH_CHARS, label="file path")
+    relative = PurePosixPath(value)
+    if not relative.parts or relative == PurePosixPath("."):
+        _fail("file path must identify a regular file")
+    if _is_denied_relative(relative):
+        _fail("file path denied")
+
+    candidate = context.scope.root.joinpath(*relative.parts)
+    current = context.scope.root
+    try:
+        for part in relative.parts:
+            current = current / part
+            if current.is_symlink():
+                _fail("symlink paths are denied")
+        resolved = candidate.resolve(strict=True)
+    except (FileNotFoundError, NotADirectoryError, OSError):
+        _fail("file is unavailable")
+    try:
+        resolved.relative_to(context.scope.root)
+    except ValueError:
+        _fail("path escapes repository root")
+    try:
+        mode = resolved.stat().st_mode
+    except OSError:
+        _fail("file is unavailable")
+    if not stat.S_ISREG(mode):
+        _fail("file path must identify a regular file")
+    return resolved
+
+
+def _placeholder(value: str) -> bool:
+    folded = value.casefold()
+    return any(marker in folded for marker in _PLACEHOLDER_MARKERS)
+
+
+def _secret_pattern(text: str) -> str | None:
+    if _PEM_PRIVATE_KEY_RE.search(text):
+        return "pem_private_key"
+    bearer = _AUTHORIZATION_BEARER_RE.search(text)
+    if bearer is not None and not _placeholder(bearer.group(1)):
+        return "authorization_bearer"
+    provider = _PROVIDER_TOKEN_RE.search(text)
+    if provider is not None and not _placeholder(provider.group(1)):
+        return "provider_token"
+    credential = _CREDENTIAL_ASSIGNMENT_RE.search(text)
+    if credential is not None and not _placeholder(credential.group(1)):
+        return "credential_assignment"
+    return None
+
+
+def _safe_text(
+    context: _Context,
+    path: Path,
+    accounting: _Accounting | None = None,
+) -> str:
+    """Read one regular, in-root file with race-aware size and content checks."""
+    try:
+        relative = _relative_to_root(context, path)
+        if _is_denied_relative(relative):
+            _fail("file path denied")
+        if path.is_symlink():
+            _fail("symlink paths are denied")
+        before = path.stat()
+    except ValueError:
+        raise
+    except OSError:
+        _fail("file is unavailable")
+    if not stat.S_ISREG(before.st_mode):
+        _fail("file path must identify a regular file")
+    if before.st_size > _MAX_FILE_BYTES:
+        _fail("file exceeds size limit")
+
+    if accounting is not None:
+        if accounting.scanned_files >= _MAX_SCANNED_FILES:
+            accounting.truncated = True
+            raise _BudgetStop
+        remaining = _MAX_TOTAL_SCANNED_BYTES - accounting.scanned_bytes
+        if remaining <= 0 or before.st_size > remaining:
+            accounting.truncated = True
+            raise _BudgetStop
+    else:
+        remaining = _MAX_FILE_BYTES
+
+    flags = os.O_RDONLY
+    flags |= getattr(os, "O_CLOEXEC", 0)
+    flags |= getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(path, flags)
+    except OSError:
+        _fail("file is unavailable")
+    try:
+        opened = os.fstat(descriptor)
+        if not stat.S_ISREG(opened.st_mode):
+            _fail("file path must identify a regular file")
+        if opened.st_size > _MAX_FILE_BYTES:
+            _fail("file exceeds size limit")
+        if accounting is not None and opened.st_size > remaining:
+            accounting.truncated = True
+            raise _BudgetStop
+
+        read_limit = min(_MAX_FILE_BYTES, remaining) + 1
+        chunks: list[bytes] = []
+        received = 0
+        while received < read_limit:
+            chunk = os.read(descriptor, min(64 * 1024, read_limit - received))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            received += len(chunk)
+        data = b"".join(chunks)
+    finally:
+        os.close(descriptor)
+
+    if accounting is not None:
+        if len(data) > remaining:
+            accounting.scanned_bytes += remaining
+            accounting.truncated = True
+            raise _BudgetStop
+        accounting.scanned_files += 1
+        accounting.scanned_bytes += len(data)
+    if len(data) > _MAX_FILE_BYTES:
+        _fail("file exceeds size limit")
+    if b"\x00" in data:
+        _fail("file is not safe UTF-8 text")
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError:
+        _fail("file is not safe UTF-8 text")
+    pattern = _secret_pattern(text)
+    if pattern is not None:
+        _fail(f"file content denied by secret pattern: {pattern}")
+    return text
+
+
+def _read_file(context: _Context, arguments: object) -> str:
+    values = _require_object(arguments, allowed={"file_path", "start_line", "line_count"})
+    if "file_path" not in values:
+        _fail("invalid tool arguments")
+    start_line = values.get("start_line", 1)
+    line_count = values.get("line_count", _MAX_READ_LINES)
+    if not _is_plain_int(start_line) or start_line < 1:
+        _fail("invalid tool arguments")
+    if not _is_plain_int(line_count) or not 1 <= line_count <= _MAX_READ_LINES:
+        _fail("invalid tool arguments")
+    path = _resolve_file(context, values["file_path"])
+    text = _safe_text(context, path)
+    lines = text.splitlines()
+    first = start_line - 1
+    selected = lines[first : first + line_count]
+    rendered = "\n".join(f"{first + offset + 1}: {line}" for offset, line in enumerate(selected))
+    return rendered[:_MAX_RESULT_CHARS]
+
+
+def _validate_pattern(value: object, *, label: str) -> str:
+    return _validate_relative(value, limit=_MAX_PATTERN_CHARS, label=label)
+
+
+def _directory_entries(directory: Path, accounting: _Accounting) -> list[os.DirEntry[str]]:
+    remaining = _MAX_WALK_ENTRIES - accounting.visited_entries
+    if remaining <= 0:
+        accounting.truncated = True
+        raise _BudgetStop
+    try:
+        with os.scandir(directory) as iterator:
+            entries = heapq.nsmallest(remaining + 1, iterator, key=lambda item: item.name)
+    except OSError:
+        return []
+    if len(entries) > remaining:
+        accounting.truncated = True
+        entries.pop()
+    return entries
+
+
+def _walk_files(
+    context: _Context,
+    accounting: _Accounting,
+    directory: Path,
+    depth: int = 0,
+) -> Sequence[tuple[PurePosixPath, Path]]:
+    found: list[tuple[PurePosixPath, Path]] = []
+    try:
+        entries = _directory_entries(directory, accounting)
+    except _BudgetStop:
+        return found
+    for entry in entries:
+        if accounting.visited_entries >= _MAX_WALK_ENTRIES:
+            accounting.truncated = True
+            break
+        accounting.visited_entries += 1
+        child = Path(entry.path)
+        relative = _relative_to_root(context, child)
+        if _is_denied_relative(relative):
+            continue
+        try:
+            if entry.is_symlink():
+                continue
+            if entry.is_dir(follow_symlinks=False):
+                if depth >= _MAX_WALK_DEPTH:
+                    accounting.truncated = True
+                else:
+                    found.extend(_walk_files(context, accounting, child, depth + 1))
+                if accounting.truncated and accounting.visited_entries >= _MAX_WALK_ENTRIES:
+                    break
+            elif entry.is_file(follow_symlinks=False):
+                found.append((relative, child))
+        except OSError:
+            continue
+    return found
+
+
+def _canonical_result(payload: dict[str, object]) -> str:
+    rendered = json.dumps(payload, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
+    files = payload.get("files")
+    if not isinstance(files, list):
+        return rendered[:_MAX_RESULT_CHARS]
+    while len(rendered) > _MAX_RESULT_CHARS and files:
+        files.pop()
+        payload["truncated"] = True
+        rendered = json.dumps(payload, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
+    if len(rendered) > _MAX_RESULT_CHARS:
+        _fail("result metadata exceeds character limit")
+    return rendered
+
+
+def _result_payload(accounting: _Accounting, files: list[str]) -> dict[str, object]:
+    return {
+        "files": files,
+        "truncated": accounting.truncated,
+        "scanned_files": accounting.scanned_files,
+        "scanned_bytes": accounting.scanned_bytes,
+        "visited_entries": accounting.visited_entries,
+    }
+
+
+def _glob_files(context: _Context, arguments: object) -> str:
+    values = _require_object(arguments, allowed={"pattern"})
+    if "pattern" not in values:
+        _fail("invalid tool arguments")
+    pattern = _validate_pattern(values["pattern"], label="glob pattern")
+    accounting = _Accounting()
+    matches: list[str] = []
+    for relative, path in _walk_files(context, accounting, context.scope.root):
+        relative_text = relative.as_posix()
+        if not fnmatch.fnmatchcase(relative_text, pattern):
+            continue
+        try:
+            _safe_text(context, path, accounting)
+        except _BudgetStop:
+            break
+        except ValueError:
+            continue
+        if len(matches) >= _MAX_FILE_RESULTS:
+            accounting.truncated = True
+            break
+        matches.append(relative_text)
+    matches.sort()
+    return _canonical_result(_result_payload(accounting, matches))
+
+
+def _grep_files(context: _Context, arguments: object) -> str:
+    values = _require_object(arguments, allowed={"pattern", "glob", "output_mode"})
+    if "pattern" not in values:
+        _fail("invalid tool arguments")
+    pattern = values["pattern"]
+    if not isinstance(pattern, str) or not pattern or len(pattern) > _MAX_PATTERN_CHARS or "\x00" in pattern:
+        _fail("invalid grep pattern")
+    glob_pattern = _validate_pattern(values.get("glob", "*"), label="glob pattern")
+    output_mode = values.get("output_mode", "files_with_matches")
+    if output_mode not in ("files_with_matches", "count"):
+        _fail("invalid tool arguments")
+
+    accounting = _Accounting()
+    matches: list[str] = []
+    count = 0
+    for relative, path in _walk_files(context, accounting, context.scope.root):
+        relative_text = relative.as_posix()
+        if not fnmatch.fnmatchcase(relative_text, glob_pattern):
+            continue
+        try:
+            text = _safe_text(context, path, accounting)
+        except _BudgetStop:
+            break
+        except ValueError:
+            continue
+        if pattern not in text:
+            continue
+        count += 1
+        if output_mode == "files_with_matches":
+            if len(matches) >= _MAX_FILE_RESULTS:
+                accounting.truncated = True
+                break
+            matches.append(relative_text)
+
+    if output_mode == "count":
+        return _canonical_result(
+            {
+                "count": count,
+                "truncated": accounting.truncated,
+                "scanned_files": accounting.scanned_files,
+                "scanned_bytes": accounting.scanned_bytes,
+                "visited_entries": accounting.visited_entries,
+            }
+        )
+    matches.sort()
+    return _canonical_result(_result_payload(accounting, matches))
+
+
+def _tool_definitions() -> list[dict[str, object]]:
+    return [
+        {
+            "name": "read_file",
+            "description": "Read a bounded range of lines from a safe repository text file.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "file_path": {"type": "string", "minLength": 1, "maxLength": _MAX_PATH_CHARS},
+                    "start_line": {"type": "integer", "minimum": 1},
+                    "line_count": {"type": "integer", "minimum": 1, "maximum": _MAX_READ_LINES},
+                },
+                "required": ["file_path"],
+                "additionalProperties": False,
+            },
+            "annotations": dict(_ANNOTATIONS),
+        },
+        {
+            "name": "grep_files",
+            "description": "Find safe repository files containing a literal string.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "pattern": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": _MAX_PATTERN_CHARS,
+                    },
+                    "glob": {"type": "string", "minLength": 1, "maxLength": _MAX_PATTERN_CHARS},
+                    "output_mode": {
+                        "type": "string",
+                        "enum": ["files_with_matches", "count"],
+                    },
+                },
+                "required": ["pattern"],
+                "additionalProperties": False,
+            },
+            "annotations": dict(_ANNOTATIONS),
+        },
+        {
+            "name": "glob_files",
+            "description": "List safe repository text files matching a bounded glob.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "pattern": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": _MAX_PATTERN_CHARS,
+                    }
+                },
+                "required": ["pattern"],
+                "additionalProperties": False,
+            },
+            "annotations": dict(_ANNOTATIONS),
+        },
+    ]
+
+
+def _text_result(text: str, *, error: bool = False) -> dict[str, object]:
+    result: dict[str, object] = {"content": [{"type": "text", "text": text}]}
+    if error:
+        result["isError"] = True
+    return result
+
+
+def create_server(scope: CodexToolScope) -> JsonRpcServer:
+    context = _Context(scope)
+    server = JsonRpcServer(
+        server_name="wardline-codex-judge-tools",
+        server_version=__version__,
+        require_handshake=True,
+    )
+    server.capabilities = {"tools": {"listChanged": False}}
+    tools = _tool_definitions()
+
+    def _list_tools(_params: dict[str, Any]) -> dict[str, object]:
+        return {"tools": tools}
+
+    def _call_tool(params: dict[str, Any]) -> dict[str, object]:
+        try:
+            context.consume_call()
+            name = params.get("name")
+            arguments = params.get("arguments", {})
+            if not isinstance(name, str) or name not in {"read_file", "grep_files", "glob_files"}:
+                _fail("unknown tool")
+            if not isinstance(arguments, dict):
+                _fail("invalid tool arguments")
+            if name == "read_file":
+                value = _read_file(context, arguments)
+            elif name == "grep_files":
+                value = _grep_files(context, arguments)
+            else:
+                value = _glob_files(context, arguments)
+            return _text_result(value)
+        except ValueError as exc:
+            return _text_result(str(exc), error=True)
+        except Exception:  # noqa: BLE001 - never disclose host details through MCP errors
+            return _text_result("tool failed safely", error=True)
+
+    server.register("tools/list", _list_tools)
+    server.register("tools/call", _call_tool)
+    return server
+
+
+def _assert_keyless_environment(source: Mapping[str, str] | None = None) -> None:
+    environment = os.environ if source is None else source
+    present = sorted(name for name in _SENSITIVE_ENVIRONMENT_NAMES if name in environment)
+    if present:
+        raise RuntimeError(f"sensitive environment keys are present: {', '.join(present)}")
+
+
+def _positive_integer(value: str) -> int:
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("must be a positive integer") from exc
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError("must be a positive integer")
+    return parsed
+
+
+def _repository_root(value: str) -> Path:
+    try:
+        root = Path(value).resolve(strict=True)
+    except OSError as exc:
+        raise argparse.ArgumentTypeError("root must be an existing directory") from exc
+    if not root.is_dir():
+        raise argparse.ArgumentTypeError("root must be an existing directory")
+    return root
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--root", required=True, type=_repository_root)
+    parser.add_argument("--max-calls", required=True, type=_positive_integer)
+    parsed = parser.parse_args(argv)
+    _assert_keyless_environment()
+    scope = CodexToolScope(root=parsed.root, max_calls=parsed.max_calls)
+    create_server(scope).run_stdio()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
