@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import json
 import os
 import subprocess
@@ -39,6 +40,12 @@ from wardline.mcp.protocol import PROTOCOL_VERSION, JsonRpcServer
 
 def _ctx(root: Path, *, max_calls: int = 24) -> _Context:
     return _Context(CodexToolScope(root=root.resolve(), max_calls=max_calls))
+
+
+def _close_context(context: _Context) -> None:
+    close = getattr(context, "close", None)
+    if close is not None:
+        close()
 
 
 def _json(value: str) -> dict[str, object]:
@@ -205,6 +212,87 @@ def test_walkers_never_follow_directory_symlink_escape_or_loop(tmp_path: Path) -
     assert str(outside.resolve()) not in json.dumps([globbed, grepped])
 
 
+def test_pinned_root_survives_configured_root_ancestor_swap_for_direct_read(
+    tmp_path: Path,
+) -> None:
+    configured_parent = tmp_path / "configured"
+    root = configured_parent / "repo"
+    root.mkdir(parents=True)
+    (root / "target.txt").write_text("INSIDE_BYTES", encoding="utf-8")
+    outside_parent = tmp_path / "outside"
+    outside_root = outside_parent / "repo"
+    outside_root.mkdir(parents=True)
+    (outside_root / "target.txt").write_text("OUTSIDE_BYTES", encoding="utf-8")
+    context = _ctx(root)
+
+    try:
+        configured_parent.rename(tmp_path / "parked")
+        configured_parent.symlink_to(outside_parent, target_is_directory=True)
+
+        assert _read_file(context, {"file_path": "target.txt"}) == "1: INSIDE_BYTES"
+    finally:
+        _close_context(context)
+
+
+def test_pinned_root_survives_configured_root_ancestor_swap_for_walkers(
+    tmp_path: Path,
+) -> None:
+    configured_parent = tmp_path / "configured"
+    root = configured_parent / "repo"
+    root.mkdir(parents=True)
+    (root / "target.txt").write_text("INSIDE_BYTES", encoding="utf-8")
+    outside_parent = tmp_path / "outside"
+    outside_root = outside_parent / "repo"
+    outside_root.mkdir(parents=True)
+    (outside_root / "target.txt").write_text("OUTSIDE_BYTES", encoding="utf-8")
+    context = _ctx(root)
+
+    try:
+        configured_parent.rename(tmp_path / "parked")
+        configured_parent.symlink_to(outside_parent, target_is_directory=True)
+
+        outside = _json(_grep_files(context, {"pattern": "OUTSIDE_BYTES", "output_mode": "files_with_matches"}))
+        inside = _json(_grep_files(context, {"pattern": "INSIDE_BYTES", "output_mode": "files_with_matches"}))
+    finally:
+        _close_context(context)
+
+    assert outside["files"] == []
+    assert inside["files"] == ["target.txt"]
+
+
+def test_context_close_is_idempotent_and_invalidates_retained_root_fd(tmp_path: Path) -> None:
+    context = _ctx(tmp_path)
+    root_fd = context.root_fd
+
+    context.close()
+    context.close()
+
+    with pytest.raises(OSError):
+        os.fstat(root_fd)
+    with pytest.raises(ValueError, match="closed"):
+        _glob_files(context, {"pattern": "*"})
+
+
+@pytest.mark.parametrize(
+    "missing",
+    ["dir_fd_open", "fd_scandir", "O_NOFOLLOW", "O_DIRECTORY", "O_NONBLOCK"],
+)
+def test_context_refuses_missing_secure_open_capability(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, missing: str
+) -> None:
+    if missing == "dir_fd_open":
+        monkeypatch.setattr(tools_module.os, "supports_dir_fd", set())
+    elif missing == "fd_scandir":
+        monkeypatch.setattr(tools_module.os, "supports_fd", set())
+    else:
+        monkeypatch.delattr(tools_module.os, missing)
+
+    with pytest.raises(RuntimeError, match="secure repository access unavailable") as exc_info:
+        _ctx(tmp_path)
+
+    assert str(tmp_path) not in str(exc_info.value)
+
+
 @pytest.mark.parametrize(
     "name",
     [
@@ -276,6 +364,7 @@ def test_safe_text_rejects_file_that_grows_between_stat_and_read(
 ) -> None:
     target = tmp_path / "growing.txt"
     target.write_bytes(b"a" * _MAX_FILE_BYTES)
+    context = _ctx(tmp_path)
     real_open = tools_module.os.open
     grown = False
 
@@ -296,8 +385,11 @@ def test_safe_text_rejects_file_that_grows_between_stat_and_read(
 
     monkeypatch.setattr(tools_module.os, "open", _grow_then_open)
 
-    with pytest.raises(ValueError, match="size"):
-        _safe_text(_ctx(tmp_path), target)
+    try:
+        with pytest.raises(ValueError, match="size"):
+            _safe_text(context, target)
+    finally:
+        _close_context(context)
 
 
 def test_safe_text_growth_charges_detection_byte_and_scanned_file(
@@ -422,6 +514,67 @@ def test_common_provider_placeholder_tokens_remain_readable(tmp_path: Path, cont
     path.write_text(content, encoding="utf-8")
 
     assert content in _read_file(_ctx(tmp_path), {"file_path": "provider-fixture.txt"})
+
+
+@pytest.mark.parametrize(
+    ("pattern_name", "content"),
+    [
+        (
+            "authorization_bearer",
+            "Authorization: Bearer production-contest-example-fake-token-123456",
+        ),
+        ("provider_token", 'token = "sk-live-contest-example-fake-1234567890"'),
+        ("provider_token", 'token = "ghp_productiontestexamplefake1234567890"'),
+        ("credential_assignment", 'password = "productiontestexamplefakevalue"'),
+    ],
+)
+def test_placeholder_words_embedded_in_real_credentials_do_not_exempt_them(
+    tmp_path: Path, pattern_name: str, content: str
+) -> None:
+    path = tmp_path / "real-credential.txt"
+    path.write_text(content, encoding="utf-8")
+
+    with pytest.raises(ValueError, match=pattern_name) as exc_info:
+        _read_file(_ctx(tmp_path), {"file_path": "real-credential.txt"})
+
+    assert content not in str(exc_info.value)
+
+
+def test_quoted_credential_literal_with_spaces_is_denied(tmp_path: Path) -> None:
+    content = 'password = "correct horse battery staple"'
+    (tmp_path / "credential.txt").write_text(content, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="credential_assignment") as exc_info:
+        _read_file(_ctx(tmp_path), {"file_path": "credential.txt"})
+
+    assert content not in str(exc_info.value)
+
+
+def test_secret_wrapper_around_literal_credential_is_denied(tmp_path: Path) -> None:
+    content = 'secret = SecretStr("production literal secret value")'
+    (tmp_path / "credential.py").write_text(content, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="credential_assignment") as exc_info:
+        _read_file(_ctx(tmp_path), {"file_path": "credential.py"})
+
+    assert content not in str(exc_info.value)
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        'api_key = os.environ["OPENAI_API_KEY"]',
+        'token = request.headers.get("Authorization")',
+        "password = settings.database_password",
+        "secret = SecretStr(config.api_key)",
+        'client_secret = config["client_secret"]',
+    ],
+)
+def test_credential_source_expressions_remain_readable(tmp_path: Path, content: str) -> None:
+    path = tmp_path / "configuration.py"
+    path.write_text(content, encoding="utf-8")
+
+    assert content in _read_file(_ctx(tmp_path), {"file_path": "configuration.py"})
 
 
 def test_grep_is_literal_and_never_returns_matching_content(tmp_path: Path) -> None:
@@ -585,11 +738,22 @@ def test_directory_enumeration_never_reads_beyond_remaining_budget(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(tools_module, "_MAX_WALK_ENTRIES", 2)
+    context = _ctx(tmp_path)
+    directory_fd = os.dup(context.root_fd)
     pulls = 0
 
     class _FakeEntry:
         def __init__(self, name: str) -> None:
             self.name = name
+
+        def is_symlink(self) -> bool:
+            return False
+
+        def is_dir(self, *, follow_symlinks: bool = True) -> bool:
+            return False
+
+        def is_file(self, *, follow_symlinks: bool = True) -> bool:
+            return True
 
     class _FakeScandir:
         def __init__(self) -> None:
@@ -611,13 +775,59 @@ def test_directory_enumeration_never_reads_beyond_remaining_budget(
 
     monkeypatch.setattr(tools_module.os, "scandir", lambda _path: _FakeScandir())
     accounting = _Accounting()
-
-    entries = _directory_entries(tmp_path, accounting)
+    try:
+        entries = _directory_entries(directory_fd, accounting)
+    finally:
+        os.close(directory_fd)
+        _close_context(context)
 
     assert [entry.name for entry in entries] == ["a.py", "z.py"]
     assert pulls == 2
-    assert accounting.visited_entries == 0
+    assert accounting.visited_entries == 2
     assert accounting.truncated is True
+
+
+def test_recursive_walk_charges_each_scandir_pull_once_globally(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(tools_module, "_MAX_WALK_ENTRIES", 3)
+    for directory_name in ("a", "b"):
+        directory = tmp_path / directory_name
+        directory.mkdir()
+        (directory / "one.txt").write_text("safe", encoding="utf-8")
+        (directory / "two.txt").write_text("safe", encoding="utf-8")
+    real_scandir = tools_module.os.scandir
+    context = _ctx(tmp_path)
+    pulls = 0
+
+    class _CountingScandir:
+        def __init__(self, source: int | Path) -> None:
+            self._inner = real_scandir(source)
+
+        def __enter__(self) -> _CountingScandir:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            self._inner.close()
+
+        def __iter__(self) -> _CountingScandir:
+            return self
+
+        def __next__(self) -> os.DirEntry[str]:
+            nonlocal pulls
+            entry = next(self._inner)
+            pulls += 1
+            return entry
+
+    monkeypatch.setattr(tools_module.os, "scandir", lambda source: _CountingScandir(source))
+    try:
+        result = _json(_glob_files(context, {"pattern": "*"}))
+    finally:
+        _close_context(context)
+
+    assert pulls == 3
+    assert result["visited_entries"] == 3
+    assert result["truncated"] is True
 
 
 def test_ancestor_swap_to_outside_symlink_never_reads_outside_bytes(
@@ -632,6 +842,7 @@ def test_ancestor_swap_to_outside_symlink_never_reads_outside_bytes(
     outside_content = "outside bytes were read"
     (outside / "target.txt").write_text(outside_content, encoding="utf-8")
     parked = root / "parked"
+    context = _ctx(root)
     real_open = tools_module.os.open
     swapped = False
 
@@ -654,8 +865,11 @@ def test_ancestor_swap_to_outside_symlink_never_reads_outside_bytes(
 
     monkeypatch.setattr(tools_module.os, "open", _swap_then_open)
 
-    with pytest.raises(ValueError) as exc_info:
-        _read_file(_ctx(root), {"file_path": "ancestor/target.txt"})
+    try:
+        with pytest.raises(ValueError) as exc_info:
+            _read_file(context, {"file_path": "ancestor/target.txt"})
+    finally:
+        _close_context(context)
 
     assert outside_content not in str(exc_info.value)
 
@@ -736,6 +950,17 @@ def test_server_success_and_failure_results_are_one_text_block_and_budgeted(
     assert len(second_result["content"]) == 1
     assert second_result["content"][0]["type"] == "text"
     assert "budget" in second_result["content"][0]["text"]
+
+
+def test_stdio_server_closes_its_retained_root_context(tmp_path: Path) -> None:
+    server = create_server(CodexToolScope(root=tmp_path.resolve()))
+    context = server._context
+    root_fd = context.root_fd
+
+    server.run_stdio(stdin=io.StringIO(""), stdout=io.StringIO())
+
+    with pytest.raises(OSError):
+        os.fstat(root_fd)
 
 
 def test_server_unknown_and_malformed_calls_are_iserror_and_consume_budget(tmp_path: Path) -> None:

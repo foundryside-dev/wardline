@@ -15,9 +15,9 @@ import re
 import stat
 from collections.abc import Mapping, Sequence
 from contextlib import suppress
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath, PureWindowsPath
-from typing import Any, NoReturn, TypeGuard
+from typing import Any, NoReturn, TextIO, TypeGuard
 
 from wardline._version import __version__
 from wardline.core.judge_types import CodexToolScope
@@ -33,6 +33,7 @@ _MAX_WALK_ENTRIES = 50_000
 _MAX_WALK_DEPTH = 32
 _MAX_PATH_CHARS = 4096
 _MAX_PATTERN_CHARS = 512
+_ROOT_RELATIVE = PurePosixPath(".")
 
 _ANNOTATIONS = {
     "readOnlyHint": True,
@@ -77,20 +78,23 @@ _PROVIDER_TOKEN_RE = re.compile(
 )
 _CREDENTIAL_ASSIGNMENT_RE = re.compile(
     r"(?im)\b(?:api[_-]?key|client[_-]?secret|password|passwd|secret|token)\b"
-    r"\s*[:=]\s*[\"']?([^\s\"'#,;]{8,})"
+    r"\s*[:=]\s*(?:\"(?P<double>[^\"\r\n]{8,})\""
+    r"|'(?P<single>[^'\r\n]{8,})'|(?P<bare>[^\s#,;]+))"
 )
-_PLACEHOLDER_MARKERS = (
-    "placeholder",
-    "your_",
-    "your-",
-    "<your",
-    "example",
-    "dummy",
-    "redacted",
-    "fake",
-    "test",
-    "changeme",
+_PLACEHOLDER_RE = re.compile(
+    r"(?i)^(?:<?your(?:[-_][a-z0-9]+)*(?:_here)?>?"
+    r"|(?:placeholder|example|dummy|redacted|fake|test|changeme)(?:$|[-_].*)"
+    r"|(?:sk|pk|rk)-(?:placeholder|example|dummy|redacted|fake|test|changeme)(?:$|[-_].*)"
+    r"|ghp_(?:placeholder|example|dummy|redacted|fake|test|changeme)(?:$|[_-].*)"
+    r"|github_pat_(?:placeholder|example|dummy|redacted|fake|test|changeme)(?:$|[_-].*)"
+    r"|AIza(?:Placeholder|Example|Dummy|Redacted|Fake|Test|Changeme)[A-Za-z0-9_-]*"
+    r"|AKIA(?:PLACEHOLDER|EXAMPLE|DUMMY|REDACTED|FAKE|TEST|CHANGEME)[A-Z0-9]*)$"
 )
+_SOURCE_REFERENCE_RE = re.compile(
+    r"(?i)^(?:(?:os\.)?environ(?:\[|\.get\()|(?:os\.)?getenv\("
+    r"|request(?:\.|\[)|settings(?:\.|\[)|config(?:\.|\[))"
+)
+_SECRET_WRAPPER_RE = re.compile(r"(?i)^(?:secretstr|secretbytes|secretvalue|secret)\((.*)\)$")
 
 
 class _BudgetStop(Exception):
@@ -105,15 +109,112 @@ class _Accounting:
     truncated: bool = False
 
 
+@dataclass(frozen=True, slots=True)
+class _WalkEntry:
+    name: str
+    is_symlink: bool
+    is_directory: bool
+    is_file: bool
+
+
 @dataclass(slots=True)
 class _Context:
     scope: CodexToolScope
     calls: int = 0
+    _root_fd: int = field(init=False, default=-1, repr=False)
+
+    def __post_init__(self) -> None:
+        _require_secure_open_capabilities()
+        self._root_fd = _pin_repository_root(self.scope.root)
+
+    @property
+    def root_fd(self) -> int:
+        if self._root_fd < 0:
+            raise ValueError("repository context is closed")
+        return self._root_fd
+
+    def duplicate_root_fd(self) -> int:
+        try:
+            return os.dup(self.root_fd)
+        except OSError:
+            _fail("repository context is closed")
+
+    def close(self) -> None:
+        descriptor = self._root_fd
+        self._root_fd = -1
+        if descriptor >= 0:
+            with suppress(OSError):
+                os.close(descriptor)
+
+    def __enter__(self) -> _Context:
+        _ = self.root_fd
+        return self
+
+    def __exit__(self, *_args: object) -> None:
+        self.close()
+
+    def __del__(self) -> None:
+        self.close()
 
     def consume_call(self) -> None:
         self.calls += 1
         if self.calls > self.scope.max_calls:
             raise ValueError("tool call budget exhausted")
+
+
+def _require_secure_open_capabilities() -> None:
+    available = (
+        os.open in os.supports_dir_fd
+        and os.scandir in os.supports_fd
+        and hasattr(os, "O_NOFOLLOW")
+        and hasattr(os, "O_DIRECTORY")
+        and hasattr(os, "O_NONBLOCK")
+    )
+    if not available:
+        raise RuntimeError("secure repository access unavailable on this platform")
+
+
+def _directory_flags() -> int:
+    return os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | os.O_NOFOLLOW | os.O_DIRECTORY
+
+
+def _pin_repository_root(root: Path) -> int:
+    descriptor = -1
+    try:
+        descriptor = os.open(os.sep, _directory_flags())
+        for component in root.parts[1:]:
+            next_descriptor = os.open(component, _directory_flags(), dir_fd=descriptor)
+            previous_descriptor = descriptor
+            descriptor = next_descriptor
+            os.close(previous_descriptor)
+        return descriptor
+    except OSError as exc:
+        if descriptor >= 0:
+            with suppress(OSError):
+                os.close(descriptor)
+        raise RuntimeError("secure repository root unavailable") from exc
+
+
+class _CodexJudgeServer(JsonRpcServer):
+    def __init__(self, context: _Context) -> None:
+        self._context = context
+        super().__init__(
+            server_name="wardline-codex-judge-tools",
+            server_version=__version__,
+            require_handshake=True,
+        )
+
+    def close(self) -> None:
+        self._context.close()
+
+    def run_stdio(self, *, stdin: TextIO | None = None, stdout: TextIO | None = None) -> None:
+        try:
+            super().run_stdio(stdin=stdin, stdout=stdout)
+        finally:
+            self.close()
+
+    def __del__(self) -> None:
+        self.close()
 
 
 def _fail(message: str) -> NoReturn:
@@ -174,33 +275,19 @@ def _resolve_file(context: _Context, raw_path: object) -> Path:
         _fail("file path must identify a regular file")
     if _is_denied_relative(relative):
         _fail("file path denied")
-
-    candidate = context.scope.root.joinpath(*relative.parts)
-    current = context.scope.root
-    try:
-        for part in relative.parts:
-            current = current / part
-            if current.is_symlink():
-                _fail("symlink paths are denied")
-        resolved = candidate.resolve(strict=True)
-    except (FileNotFoundError, NotADirectoryError, OSError):
-        _fail("file is unavailable")
-    try:
-        resolved.relative_to(context.scope.root)
-    except ValueError:
-        _fail("path escapes repository root")
-    try:
-        mode = resolved.stat().st_mode
-    except OSError:
-        _fail("file is unavailable")
-    if not stat.S_ISREG(mode):
-        _fail("file path must identify a regular file")
-    return resolved
+    return context.scope.root.joinpath(*relative.parts)
 
 
 def _placeholder(value: str) -> bool:
-    folded = value.casefold()
-    return any(marker in folded for marker in _PLACEHOLDER_MARKERS)
+    return _PLACEHOLDER_RE.fullmatch(value.strip()) is not None
+
+
+def _source_reference(value: str) -> bool:
+    candidate = value.strip()
+    wrapper = _SECRET_WRAPPER_RE.fullmatch(candidate)
+    if wrapper is not None:
+        return _source_reference(wrapper.group(1))
+    return _SOURCE_REFERENCE_RE.match(candidate) is not None
 
 
 def _secret_pattern(text: str) -> str | None:
@@ -212,8 +299,13 @@ def _secret_pattern(text: str) -> str | None:
     provider = _PROVIDER_TOKEN_RE.search(text)
     if provider is not None and not _placeholder(provider.group(1)):
         return "provider_token"
-    credential = _CREDENTIAL_ASSIGNMENT_RE.search(text)
-    if credential is not None and not _placeholder(credential.group(1)):
+    for credential in _CREDENTIAL_ASSIGNMENT_RE.finditer(text):
+        quoted = credential.group("double") or credential.group("single")
+        value = quoted or credential.group("bare")
+        if value is None or _placeholder(value):
+            continue
+        if quoted is None and _source_reference(value):
+            continue
         return "credential_assignment"
     return None
 
@@ -227,19 +319,15 @@ def _open_anchored_file(context: _Context, path: Path) -> int:
     if _is_denied_relative(relative):
         _fail("file path denied")
 
-    common_flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
-    directory_flags = common_flags | getattr(os, "O_DIRECTORY", 0)
-    directory_fd = -1
+    file_flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | os.O_NOFOLLOW | os.O_NONBLOCK
+    directory_fd = context.duplicate_root_fd()
     try:
-        directory_fd = os.open(context.scope.root, directory_flags)
-        if not stat.S_ISDIR(os.fstat(directory_fd).st_mode):
-            _fail("repository root is unavailable")
         for component in parts[:-1]:
-            next_fd = os.open(component, directory_flags, dir_fd=directory_fd)
+            next_fd = os.open(component, _directory_flags(), dir_fd=directory_fd)
             previous_fd = directory_fd
             directory_fd = next_fd
             os.close(previous_fd)
-        return os.open(parts[-1], common_flags, dir_fd=directory_fd)
+        return os.open(parts[-1], file_flags, dir_fd=directory_fd)
     except ValueError:
         raise
     except OSError:
@@ -248,6 +336,29 @@ def _open_anchored_file(context: _Context, path: Path) -> int:
         if directory_fd >= 0:
             with suppress(OSError):
                 os.close(directory_fd)
+
+
+def _open_anchored_directory(context: _Context, relative: PurePosixPath) -> int:
+    descriptor = context.duplicate_root_fd()
+    try:
+        for component in relative.parts:
+            if component in ("", "."):
+                continue
+            if component == "..":
+                _fail("path escapes repository root")
+            next_descriptor = os.open(component, _directory_flags(), dir_fd=descriptor)
+            previous_descriptor = descriptor
+            descriptor = next_descriptor
+            os.close(previous_descriptor)
+    except ValueError:
+        with suppress(OSError):
+            os.close(descriptor)
+        raise
+    except OSError:
+        with suppress(OSError):
+            os.close(descriptor)
+        _fail("directory is unavailable")
+    return descriptor
 
 
 def _safe_text(
@@ -334,19 +445,38 @@ def _validate_pattern(value: object, *, label: str) -> str:
     return _validate_relative(value, limit=_MAX_PATTERN_CHARS, label=label)
 
 
-def _directory_entries(directory: Path, accounting: _Accounting) -> list[os.DirEntry[str]]:
+def _directory_entries(directory_fd: int, accounting: _Accounting) -> list[_WalkEntry]:
     remaining = _MAX_WALK_ENTRIES - accounting.visited_entries
     if remaining <= 0:
         accounting.truncated = True
         raise _BudgetStop
-    entries: list[os.DirEntry[str]] = []
+    entries: list[_WalkEntry] = []
     try:
-        with os.scandir(directory) as iterator:
+        with os.scandir(directory_fd) as iterator:
             for _index in range(remaining):
                 try:
-                    entries.append(next(iterator))
+                    entry = next(iterator)
                 except StopIteration:
                     break
+                accounting.visited_entries += 1
+                try:
+                    entries.append(
+                        _WalkEntry(
+                            name=entry.name,
+                            is_symlink=entry.is_symlink(),
+                            is_directory=entry.is_dir(follow_symlinks=False),
+                            is_file=entry.is_file(follow_symlinks=False),
+                        )
+                    )
+                except OSError:
+                    entries.append(
+                        _WalkEntry(
+                            name=entry.name,
+                            is_symlink=False,
+                            is_directory=False,
+                            is_file=False,
+                        )
+                    )
             if len(entries) == remaining:
                 accounting.truncated = True
     except OSError:
@@ -357,37 +487,40 @@ def _directory_entries(directory: Path, accounting: _Accounting) -> list[os.DirE
 def _walk_files(
     context: _Context,
     accounting: _Accounting,
-    directory: Path,
+    directory: PurePosixPath | None = None,
     depth: int = 0,
 ) -> Sequence[tuple[PurePosixPath, Path]]:
+    if directory is None:
+        directory = _ROOT_RELATIVE
     found: list[tuple[PurePosixPath, Path]] = []
     try:
-        entries = _directory_entries(directory, accounting)
+        directory_fd = _open_anchored_directory(context, directory)
+    except ValueError:
+        if directory == _ROOT_RELATIVE:
+            raise
+        return found
+    try:
+        entries = _directory_entries(directory_fd, accounting)
     except _BudgetStop:
         return found
+    finally:
+        os.close(directory_fd)
     for entry in entries:
-        if accounting.visited_entries >= _MAX_WALK_ENTRIES:
-            accounting.truncated = True
-            break
-        accounting.visited_entries += 1
-        child = Path(entry.path)
-        relative = _relative_to_root(context, child)
+        relative = PurePosixPath(entry.name) if directory == _ROOT_RELATIVE else directory / entry.name
         if _is_denied_relative(relative):
             continue
-        try:
-            if entry.is_symlink():
-                continue
-            if entry.is_dir(follow_symlinks=False):
-                if depth >= _MAX_WALK_DEPTH:
-                    accounting.truncated = True
-                else:
-                    found.extend(_walk_files(context, accounting, child, depth + 1))
-                if accounting.truncated and accounting.visited_entries >= _MAX_WALK_ENTRIES:
-                    break
-            elif entry.is_file(follow_symlinks=False):
-                found.append((relative, child))
-        except OSError:
+        if entry.is_symlink:
             continue
+        if entry.is_directory:
+            if depth >= _MAX_WALK_DEPTH:
+                accounting.truncated = True
+            else:
+                found.extend(_walk_files(context, accounting, relative, depth + 1))
+            if accounting.visited_entries >= _MAX_WALK_ENTRIES:
+                break
+        elif entry.is_file:
+            path = context.scope.root.joinpath(*relative.parts)
+            found.append((relative, path))
     return found
 
 
@@ -422,7 +555,7 @@ def _glob_files(context: _Context, arguments: object) -> str:
     pattern = _validate_pattern(values["pattern"], label="glob pattern")
     accounting = _Accounting()
     matches: list[str] = []
-    for relative, path in _walk_files(context, accounting, context.scope.root):
+    for relative, path in _walk_files(context, accounting):
         relative_text = relative.as_posix()
         if not fnmatch.fnmatchcase(relative_text, pattern):
             continue
@@ -455,7 +588,7 @@ def _grep_files(context: _Context, arguments: object) -> str:
     accounting = _Accounting()
     matches: list[str] = []
     count = 0
-    for relative, path in _walk_files(context, accounting, context.scope.root):
+    for relative, path in _walk_files(context, accounting):
         relative_text = relative.as_posix()
         if not fnmatch.fnmatchcase(relative_text, glob_pattern):
             continue
@@ -556,11 +689,7 @@ def _text_result(text: str, *, error: bool = False) -> dict[str, object]:
 
 def create_server(scope: CodexToolScope) -> JsonRpcServer:
     context = _Context(scope)
-    server = JsonRpcServer(
-        server_name="wardline-codex-judge-tools",
-        server_version=__version__,
-        require_handshake=True,
-    )
+    server = _CodexJudgeServer(context)
     server.capabilities = {"tools": {"listChanged": False}}
     tools = _tool_definitions()
 
