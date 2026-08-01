@@ -40,7 +40,12 @@ WARDLINE_SCHEMA: dict[str, Any] = {
             "type": "object",
             "additionalProperties": False,
             "properties": {
+                "transport": {
+                    "type": "string",
+                    "enum": ["auto", "codex-cli", "openrouter"],
+                },
                 "model": {"type": "string"},
+                "codex_model": {"type": "string"},
                 "context_lines": {"type": "integer", "minimum": 0},
                 "max_findings": {"type": "integer", "minimum": 1},
                 "policy_file": {"type": "string"},

@@ -15,6 +15,11 @@ from typing import Any
 
 from wardline.core.config_schema import WARDLINE_SCHEMA
 from wardline.core.errors import ConfigError
+from wardline.core.judge_types import (
+    DEFAULT_CODEX_JUDGE_MODEL,
+    DEFAULT_OPENROUTER_JUDGE_MODEL,
+    JudgeTransport,
+)
 from wardline.core.optional_deps import require_jsonschema
 from wardline.core.paths import (
     DEFAULT_ARTIFACT_DIR,
@@ -566,7 +571,9 @@ def resolve_filigree_url(
 
 @dataclass(frozen=True, slots=True)
 class JudgeSettings:
-    model: str = "anthropic/claude-opus-4-8"
+    transport: JudgeTransport = JudgeTransport.AUTO
+    model: str = DEFAULT_OPENROUTER_JUDGE_MODEL
+    codex_model: str = DEFAULT_CODEX_JUDGE_MODEL
     context_lines: int = 30
     max_findings: int | None = None
     policy_file: str | None = None
@@ -600,8 +607,16 @@ def parse_judge_settings(raw: Mapping[str, Any]) -> JudgeSettings:
             raise ConfigError(f"judge.{key} must be a string, got {type(value).__name__}")
         return value
 
-    model = _str("model", "anthropic/claude-opus-4-8")
-    assert model is not None  # default is non-None
+    transport_raw = _str("transport", JudgeTransport.AUTO.value)
+    assert transport_raw is not None
+    try:
+        transport = JudgeTransport(transport_raw)
+    except ValueError as exc:
+        allowed = ", ".join(item.value for item in JudgeTransport)
+        raise ConfigError(f"judge.transport must be one of {allowed}; got {transport_raw!r}") from exc
+    model = _str("model", DEFAULT_OPENROUTER_JUDGE_MODEL)
+    codex_model = _str("codex_model", DEFAULT_CODEX_JUDGE_MODEL)
+    assert model is not None and codex_model is not None
     ctx = _int("context_lines", 30)
     assert ctx is not None
     if ctx < 0:
@@ -619,7 +634,9 @@ def parse_judge_settings(raw: Mapping[str, Any]) -> JudgeSettings:
         if not 0.0 <= floor_val <= 1.0:
             raise ConfigError(f"judge.write_confidence_floor must be 0.0..1.0, got {floor_val}")
     return JudgeSettings(
+        transport=transport,
         model=model,
+        codex_model=codex_model,
         context_lines=ctx,
         max_findings=max_findings,
         policy_file=_str("policy_file", None),
