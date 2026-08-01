@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 
 from wardline.core.finding import Finding, Kind, Location, Severity, SuppressionState
 from wardline.core.judge import JudgeRequest, JudgeResponse, JudgeVerdict
+from wardline.core.judge_types import JudgeTransport
 from wardline.core.triage import finding_to_request, run_triage
 
 
@@ -30,6 +31,7 @@ def _resp(v: JudgeVerdict, conf: float = 0.9) -> JudgeResponse:
         prompt_tokens_total=1,
         prompt_tokens_cached=None,
         policy_hash="sha256:x",
+        judge_transport=JudgeTransport.OPENROUTER,
     )
 
 

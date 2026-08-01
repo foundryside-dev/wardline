@@ -12,6 +12,7 @@ from wardline.core.dossier import build_dossier
 from wardline.core.errors import ConfigError
 from wardline.core.judge import JudgeRequest, JudgeResponse, JudgeVerdict
 from wardline.core.judge_run import run_judge
+from wardline.core.judge_types import JudgeTransport
 
 _KEY = "0" * 64
 
@@ -44,6 +45,7 @@ def _false_positive(_req: JudgeRequest) -> JudgeResponse:
         prompt_tokens_total=1,
         prompt_tokens_cached=None,
         policy_hash="deadbeef",
+        judge_transport=JudgeTransport.OPENROUTER,
     )
 
 

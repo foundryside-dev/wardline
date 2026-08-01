@@ -14,6 +14,7 @@ from wardline.core.errors import WardlineError
 from wardline.core.finding import Kind, SuppressionState
 from wardline.core.judge import JudgeRequest, JudgeResponse, JudgeVerdict
 from wardline.core.judge_run import JudgeOutcome, resolve_project_policy, run_judge
+from wardline.core.judge_types import JudgeTransport
 from wardline.core.paths import judged_path
 from wardline.core.run import run_scan
 
@@ -45,6 +46,7 @@ def _tp_caller(_req: JudgeRequest) -> JudgeResponse:
         prompt_tokens_total=128,
         prompt_tokens_cached=None,
         policy_hash="deadbeef",
+        judge_transport=JudgeTransport.OPENROUTER,
     )
 
 
@@ -59,6 +61,7 @@ def _fp_caller(conf: float):  # type: ignore[no-untyped-def]
             prompt_tokens_total=64,
             prompt_tokens_cached=None,
             policy_hash="deadbeef",
+            judge_transport=JudgeTransport.OPENROUTER,
         )
 
     return _caller

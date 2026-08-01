@@ -15,6 +15,7 @@ import yaml
 
 from wardline.core.finding import FINGERPRINT_SCHEME
 from wardline.core.judge import JudgeResponse, JudgeVerdict
+from wardline.core.judge_types import JudgeTransport
 from wardline.core.paths import baseline_path
 from wardline.mcp.server import WardlineMCPServer
 
@@ -251,6 +252,7 @@ def _fake_response() -> JudgeResponse:
         prompt_tokens_total=128,
         prompt_tokens_cached=None,
         policy_hash="deadbeef",
+        judge_transport=JudgeTransport.OPENROUTER,
     )
 
 

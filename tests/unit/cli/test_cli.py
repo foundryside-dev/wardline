@@ -1872,6 +1872,7 @@ def _fake_fp_response():  # type: ignore[no-untyped-def]
     from datetime import UTC, datetime
 
     from wardline.core.judge import JudgeResponse, JudgeVerdict
+    from wardline.core.judge_types import JudgeTransport
 
     return JudgeResponse(
         verdict=JudgeVerdict.FALSE_POSITIVE,
@@ -1882,6 +1883,7 @@ def _fake_fp_response():  # type: ignore[no-untyped-def]
         prompt_tokens_total=1,
         prompt_tokens_cached=None,
         policy_hash="sha256:x",
+        judge_transport=JudgeTransport.OPENROUTER,
     )
 
 
@@ -2044,6 +2046,7 @@ def _fake_fp_response_conf(conf):  # type: ignore[no-untyped-def]
     from datetime import UTC, datetime
 
     from wardline.core.judge import JudgeResponse, JudgeVerdict
+    from wardline.core.judge_types import JudgeTransport
 
     return JudgeResponse(
         verdict=JudgeVerdict.FALSE_POSITIVE,
@@ -2054,6 +2057,7 @@ def _fake_fp_response_conf(conf):  # type: ignore[no-untyped-def]
         prompt_tokens_total=1,
         prompt_tokens_cached=None,
         policy_hash="sha256:x",
+        judge_transport=JudgeTransport.OPENROUTER,
     )
 
 

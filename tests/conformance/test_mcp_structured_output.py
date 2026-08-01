@@ -26,6 +26,7 @@ import jsonschema
 import pytest
 
 from wardline.core.judge import JudgeResponse, JudgeVerdict
+from wardline.core.judge_types import JudgeTransport
 from wardline.core.paths import waivers_path
 from wardline.core.waivers import load_project_waivers
 from wardline.mcp.protocol import PROTOCOL_VERSION, SUPPORTED_PROTOCOL_VERSIONS, JsonRpcServer
@@ -347,6 +348,7 @@ def test_judge_structured_output(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
         prompt_tokens_total=128,
         prompt_tokens_cached=None,
         policy_hash="deadbeef",
+        judge_transport=JudgeTransport.OPENROUTER,
     )
     monkeypatch.setattr("wardline.core.judge_run.call_judge", lambda *a, **k: fake)
     monkeypatch.setenv("WARDLINE_OPENROUTER_API_KEY", "sk-or-test")

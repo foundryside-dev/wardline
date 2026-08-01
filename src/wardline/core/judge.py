@@ -14,7 +14,7 @@ import hashlib
 import json
 import os
 import urllib.error
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -26,8 +26,13 @@ from wardline.core.errors import (
     JudgeTransportError,
 )
 from wardline.core.http import WeftHttp
+from wardline.core.judge_types import (
+    CONCRETE_JUDGE_TRANSPORTS,
+    DEFAULT_OPENROUTER_JUDGE_MODEL,
+    JudgeTransport,
+)
 
-DEFAULT_JUDGE_MODEL: str = "anthropic/claude-opus-4-8"
+DEFAULT_JUDGE_MODEL: str = DEFAULT_OPENROUTER_JUDGE_MODEL
 DEFAULT_JUDGE_MAX_TOKENS: int = 1024
 JUDGE_EXCERPT_CONTEXT_LINES: int = 30
 JUDGE_SURROUNDING_CODE_CHAR_LIMIT: int = 12_000
@@ -64,6 +69,13 @@ class JudgeResponse:
     prompt_tokens_total: int
     prompt_tokens_cached: int | None
     policy_hash: str
+    judge_transport: JudgeTransport
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.judge_transport, JudgeTransport) or self.judge_transport not in (
+            CONCRETE_JUDGE_TRANSPORTS
+        ):
+            raise ValueError("judge_transport must be a concrete JudgeTransport")
 
 
 # --- the generic Wardline policy block (the prompt) --------------------------
@@ -282,6 +294,17 @@ def build_messages(
 
 
 @dataclass(frozen=True, slots=True)
+class _TransportResult:
+    raw_text: str
+    served_model_id: str
+    prompt_tokens_total: int
+    prompt_tokens_cached: int | None
+
+
+TransportImpl = Callable[[JudgeRequest, str, int], _TransportResult]
+
+
+@dataclass(frozen=True, slots=True)
 class Response:
     status: int
     body: str
@@ -314,22 +337,20 @@ class UrllibTransport:
 # --- orchestration -----------------------------------------------------------
 
 
-def call_judge(
+def _call_openrouter(
     request: JudgeRequest,
+    model_id: str,
+    max_tokens: int,
     *,
-    model_id: str = DEFAULT_JUDGE_MODEL,
-    max_tokens: int = DEFAULT_JUDGE_MAX_TOKENS,
-    policy_block: str = _STATIC_POLICY_BLOCK,
+    policy_block: str,
     project_policy: str | None = None,
-    transport: Transport | None = None,
-) -> JudgeResponse:
-    """Send one triage request to OpenRouter and return the parsed verdict.
+    http_transport: Transport | None = None,
+) -> _TransportResult:
+    """Send one triage request to OpenRouter and return its transport result.
 
     Status bands (charter-consistent with the Filigree emitter): connection / 5xx
     -> ``JudgeTransportError`` (sibling outage; the CLI treats it as skip-and-warn);
-    3xx/4xx -> ``JudgeTransportError`` (loud — bad key/model/request); 2xx parsed
-    strictly, malformed -> ``JudgeContractError`` (crash — the audit primitive must
-    be honest).
+    3xx/4xx -> ``JudgeTransportError`` (loud — bad key/model/request).
     """
     api_key = os.environ.get(_API_KEY_ENV)
     if not api_key:
@@ -338,10 +359,8 @@ def call_judge(
             f"findings. Export the key (`export {_API_KEY_ENV}=sk-or-...`) or place it "
             "in a .env in the scan root, then re-run."
         )
-    if max_tokens <= 0:
-        raise ValueError(f"max_tokens must be positive, got {max_tokens}")
 
-    transport = transport if transport is not None else UrllibTransport()
+    transport = http_transport if http_transport is not None else UrllibTransport()
     body = json.dumps(
         {
             "model": model_id,
@@ -362,22 +381,63 @@ def call_judge(
 
     completion = _parse_completion(resp.body)
     raw_text = _extract_text(completion)
-    parsed = _parse_verdict_payload(raw_text)
     total, cached = _extract_usage(completion)
     # Record the SERVED model (OpenRouter may route to a fallback), falling back to
     # the requested slug ONLY when the transport omitted the field. Spec §4.2: don't
     # fabricate a served id, but don't discard a valid verdict over missing metadata
     # either. This fallback is deliberate — do not "harden" it into a crash.
     served = completion.get("model")
+    return _TransportResult(
+        raw_text=raw_text,
+        served_model_id=served if isinstance(served, str) and served else model_id,
+        prompt_tokens_total=total,
+        prompt_tokens_cached=cached,
+    )
+
+
+def call_judge(
+    request: JudgeRequest,
+    *,
+    model_id: str | None = None,
+    max_tokens: int = DEFAULT_JUDGE_MAX_TOKENS,
+    policy_block: str = _STATIC_POLICY_BLOCK,
+    project_policy: str | None = None,
+    judge_transport: JudgeTransport = JudgeTransport.OPENROUTER,
+    openrouter_transport: Transport | None = None,
+    transport_impl: TransportImpl | None = None,
+) -> JudgeResponse:
+    """Dispatch one triage request and return a strictly parsed verdict."""
+    if max_tokens <= 0:
+        raise ValueError(f"max_tokens must be positive, got {max_tokens}")
+    if judge_transport is JudgeTransport.AUTO:
+        raise ValueError("judge transport 'auto' must be resolved before call_judge")
+
+    requested_model = model_id or DEFAULT_OPENROUTER_JUDGE_MODEL
+    if transport_impl is not None:
+        result = transport_impl(request, requested_model, max_tokens)
+    elif judge_transport is JudgeTransport.OPENROUTER:
+        result = _call_openrouter(
+            request,
+            requested_model,
+            max_tokens,
+            policy_block=policy_block,
+            project_policy=project_policy,
+            http_transport=openrouter_transport,
+        )
+    else:
+        raise JudgeConfigurationError("Codex CLI judge transport is not registered")
+
+    parsed = _parse_verdict_payload(result.raw_text)
     return JudgeResponse(
         verdict=JudgeVerdict(parsed["verdict"]),
         rationale=parsed["rationale"],
         confidence=parsed["confidence"],
-        model_id=served if isinstance(served, str) and served else model_id,
+        model_id=result.served_model_id,
         recorded_at=datetime.now(UTC),
-        prompt_tokens_total=total,
-        prompt_tokens_cached=cached,
+        prompt_tokens_total=result.prompt_tokens_total,
+        prompt_tokens_cached=result.prompt_tokens_cached,
         policy_hash=_policy_hash(policy_block),
+        judge_transport=judge_transport,
     )
 
 
