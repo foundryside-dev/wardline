@@ -176,6 +176,16 @@ def test_codex_probe_vocabulary_is_exact() -> None:
     assert availability.is_available is True
 
 
+@pytest.mark.parametrize("reason", [item.value for item in CodexUnavailableReason])
+def test_codex_availability_rejects_raw_string_reason(reason: str) -> None:
+    with pytest.raises(TypeError, match="CodexUnavailableReason"):
+        CodexAvailability(
+            reason=reason,  # type: ignore[arg-type]
+            detail="must not become fallback-eligible",
+            version=None,
+        )
+
+
 def test_auto_prefers_available_codex_and_probes_once() -> None:
     calls = 0
 
@@ -235,6 +245,18 @@ def test_explicit_openrouter_never_probes_codex() -> None:
     selected = resolve_judge_transport(JudgeTransport.OPENROUTER, probe=_unexpected_probe)
 
     assert selected is JudgeTransport.OPENROUTER
+
+
+@pytest.mark.parametrize("requested", [item.value for item in JudgeTransport])
+def test_selector_rejects_raw_string_transport_before_probing(requested: str) -> None:
+    def _unexpected_probe() -> CodexAvailability:
+        raise AssertionError("untyped transport must fail before probing")
+
+    with pytest.raises(TypeError, match="JudgeTransport"):
+        resolve_judge_transport(
+            requested,  # type: ignore[arg-type]
+            probe=_unexpected_probe,
+        )
 
 
 def test_codex_child_env_is_an_exact_nonempty_allowlist() -> None:

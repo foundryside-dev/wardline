@@ -84,6 +84,10 @@ class CodexAvailability:
     detail: str
     version: str | None
 
+    def __post_init__(self) -> None:
+        if not isinstance(self.reason, CodexUnavailableReason):
+            raise TypeError("reason must be a CodexUnavailableReason")
+
     @classmethod
     def available(cls, version: str) -> CodexAvailability:
         return cls(CodexUnavailableReason.AVAILABLE, "authenticated", version)
@@ -223,6 +227,8 @@ def resolve_judge_transport(
     probe: Probe = probe_codex_cli,
 ) -> JudgeTransport:
     """Resolve one requested transport to a concrete provider exactly once."""
+    if not isinstance(requested, JudgeTransport):
+        raise TypeError("requested must be a JudgeTransport")
     if requested is JudgeTransport.OPENROUTER:
         return requested
     availability = probe()
