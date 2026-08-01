@@ -412,7 +412,7 @@ def call_judge(
     if judge_transport is JudgeTransport.AUTO:
         raise ValueError("judge transport 'auto' must be resolved before call_judge")
 
-    requested_model = model_id or DEFAULT_OPENROUTER_JUDGE_MODEL
+    requested_model = DEFAULT_OPENROUTER_JUDGE_MODEL if model_id is None else model_id
     if transport_impl is not None:
         result = transport_impl(request, requested_model, max_tokens)
     elif judge_transport is JudgeTransport.OPENROUTER:

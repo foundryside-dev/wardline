@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 
 import pytest
 
+import wardline.core.judge as judge_module
 from wardline.core.errors import (
     JudgeConfigurationError,
     JudgeContractError,
@@ -251,8 +252,18 @@ def _good_verdict() -> str:
     return json.dumps({"verdict": "FALSE_POSITIVE", "rationale": "constructor over-taint floor", "confidence": 0.88})
 
 
-def test_call_judge_uses_one_strict_parser_for_injected_codex_result() -> None:
+def test_call_judge_uses_one_strict_parser_for_injected_codex_result(monkeypatch: pytest.MonkeyPatch) -> None:
     from wardline.core.judge import _TransportResult
+
+    parser_calls = 0
+    parse_verdict_payload = judge_module._parse_verdict_payload
+
+    def _counting_parser(raw_text: str):  # type: ignore[no-untyped-def]
+        nonlocal parser_calls
+        parser_calls += 1
+        return parse_verdict_payload(raw_text)
+
+    monkeypatch.setattr(judge_module, "_parse_verdict_payload", _counting_parser)
 
     def _fake(_request: JudgeRequest, _model: str, _max_tokens: int) -> _TransportResult:
         return _TransportResult(
@@ -274,6 +285,7 @@ def test_call_judge_uses_one_strict_parser_for_injected_codex_result() -> None:
     assert response.prompt_tokens_total == 22
     assert response.prompt_tokens_cached == 4
     assert response.judge_transport is JudgeTransport.CODEX_CLI
+    assert parser_calls == 1
 
 
 def test_call_judge_rejects_auto_as_unresolved() -> None:
@@ -295,6 +307,44 @@ def test_call_judge_happy_path(monkeypatch) -> None:
     sent = json.loads(body)
     assert sent["temperature"] == 0
     assert sent["messages"][0]["content"][0]["cache_control"] == {"type": "ephemeral"}
+
+
+def test_call_judge_preserves_explicit_empty_model_for_openrouter(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("WARDLINE_OPENROUTER_API_KEY", "sk-or-test")
+    body = json.dumps(
+        {
+            "choices": [{"finish_reason": "stop", "message": {"content": _good_verdict()}}],
+            "usage": {"prompt_tokens": 10},
+        }
+    )
+    transport = _FakeTransport(Response(200, body))
+
+    response = call_judge(_req(), model_id="", openrouter_transport=transport)
+
+    _, request_body, _ = transport.calls[0]
+    assert json.loads(request_body)["model"] == ""
+    assert response.model_id == ""
+
+
+def test_call_judge_openrouter_uses_one_strict_parser(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("WARDLINE_OPENROUTER_API_KEY", "sk-or-test")
+    parser_calls = 0
+    parse_verdict_payload = judge_module._parse_verdict_payload
+
+    def _counting_parser(raw_text: str):  # type: ignore[no-untyped-def]
+        nonlocal parser_calls
+        parser_calls += 1
+        return parse_verdict_payload(raw_text)
+
+    monkeypatch.setattr(judge_module, "_parse_verdict_payload", _counting_parser)
+
+    response = call_judge(
+        _req(),
+        openrouter_transport=_FakeTransport(Response(200, _completion(_good_verdict()))),
+    )
+
+    assert response.verdict is JudgeVerdict.FALSE_POSITIVE
+    assert parser_calls == 1
 
 
 def test_call_judge_missing_key_is_configuration_error(monkeypatch) -> None:
