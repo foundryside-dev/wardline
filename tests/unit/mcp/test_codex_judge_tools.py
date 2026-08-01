@@ -781,11 +781,149 @@ def test_arbitrary_credential_substitutions_are_denied_without_value_echo(tmp_pa
     assert content not in str(exc_info.value)
 
 
-def test_supported_source_declaration_reference_remains_readable(tmp_path: Path) -> None:
-    content = "const api_key = settings.api_key"
+@pytest.mark.parametrize(
+    "content",
+    [
+        "const api_key = settings.api_key",
+        "export const api_key = settings.api_key;",
+    ],
+)
+def test_supported_source_declaration_reference_remains_readable(tmp_path: Path, content: str) -> None:
     (tmp_path / "configuration.ts").write_text(content, encoding="utf-8")
 
     assert content in _read_file(_ctx(tmp_path), {"file_path": "configuration.ts"})
+
+
+@pytest.mark.parametrize(
+    ("pattern_name", "content", "literal"),
+    [
+        (
+            "authorization_bearer",
+            "Authorization: Bearer example-example-example-example\n"
+            "Authorization: Bearer production-bearer-secret-abcdefghijklmnopqrstuvwxyz",
+            "production-bearer-secret-abcdefghijklmnopqrstuvwxyz",
+        ),
+        (
+            "provider_token",
+            "token = sk-test-abcdefghijklmnopqrstuvwxyz0123456789\n"
+            "token = sk-live-abcdefghijklmnopqrstuvwxyz0123456789",
+            "sk-live-abcdefghijklmnopqrstuvwxyz0123456789",
+        ),
+    ],
+)
+def test_later_real_global_token_is_denied_without_value_echo(
+    tmp_path: Path, pattern_name: str, content: str, literal: str
+) -> None:
+    (tmp_path / "credentials.txt").write_text(content, encoding="utf-8")
+
+    with pytest.raises(ValueError, match=pattern_name) as exc_info:
+        _read_file(_ctx(tmp_path), {"file_path": "credentials.txt"})
+
+    message = str(exc_info.value)
+    assert literal not in message
+    assert content not in message
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        'password = os.getenv("PASSWORD", "correct horse battery staple")',
+        'api_key = settings.api_key or "correct horse battery staple"',
+        'client_secret = config.client_secret + "correct horse battery staple"',
+    ],
+)
+def test_source_reference_with_appended_literal_is_denied_without_value_echo(tmp_path: Path, content: str) -> None:
+    (tmp_path / "configuration.py").write_text(content, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="credential_assignment") as exc_info:
+        _read_file(_ctx(tmp_path), {"file_path": "configuration.py"})
+
+    assert content not in str(exc_info.value)
+
+
+@pytest.mark.parametrize(
+    ("filename", "content"),
+    [
+        ("configure.sh", 'export PASSWORD="correct horse battery staple"'),
+        ("configuration.ts", 'export const api_key = "correct horse battery staple";'),
+        ("configuration.rs", 'let mut password = "correct horse battery staple";'),
+        ("Configuration.java", 'private String password = "correct horse battery staple";'),
+        ("Configuration.cs", 'private string password = "correct horse battery staple";'),
+        ("configuration.cpp", 'std::string password = "correct horse battery staple";'),
+        ("Configuration.kt", 'private val password = "correct horse battery staple"'),
+        ("configuration.php", '$this->password = "correct horse battery staple";'),
+        ("configuration.rb", '@password = "correct horse battery staple"'),
+        ("Dockerfile", 'ENV PASSWORD="correct horse battery staple"'),
+    ],
+)
+def test_language_declaration_literal_is_denied_without_value_echo(tmp_path: Path, filename: str, content: str) -> None:
+    (tmp_path / filename).write_text(content, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="credential_assignment") as exc_info:
+        _read_file(_ctx(tmp_path), {"file_path": filename})
+
+    assert content not in str(exc_info.value)
+
+
+@pytest.mark.parametrize(
+    ("filename", "content"),
+    [
+        ("config.yaml", "password: changeme#actual-production-secret"),
+        ("configuration.py", 'password = "placeholder-password", "correct horse battery staple"'),
+    ],
+)
+def test_credential_scalar_delimiters_do_not_truncate_real_literal(tmp_path: Path, filename: str, content: str) -> None:
+    (tmp_path / filename).write_text(content, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="credential_assignment") as exc_info:
+        _read_file(_ctx(tmp_path), {"file_path": filename})
+
+    assert content not in str(exc_info.value)
+
+
+def test_separated_yaml_comment_after_placeholder_remains_readable(tmp_path: Path) -> None:
+    content = "password: changeme # replace outside production"
+    (tmp_path / "config.yaml").write_text(content, encoding="utf-8")
+
+    assert content in _read_file(_ctx(tmp_path), {"file_path": "config.yaml"})
+
+
+@pytest.mark.parametrize(
+    ("filename", "content"),
+    [
+        ("configuration.py", "api_key: str"),
+        ("configuration.py", "password: SecretStr | None = None"),
+        ("configuration.ts", "token: string;"),
+        ("schema.json", '{"properties":{"password":{"type":"string"}}}'),
+    ],
+)
+def test_secret_free_type_declaration_and_schema_remain_readable(tmp_path: Path, filename: str, content: str) -> None:
+    (tmp_path / filename).write_text(content, encoding="utf-8")
+
+    assert content in _read_file(_ctx(tmp_path), {"file_path": filename})
+
+
+@pytest.mark.parametrize(
+    ("filename", "content"),
+    [
+        ("configuration.py", 'api_key: str = "correct horse battery staple"'),
+        ("configuration.py", 'password: SecretStr | None = "correct horse battery staple"'),
+        ("configuration.ts", 'token: string = "correct horse battery staple";'),
+        (
+            "schema.json",
+            '{"properties":{"password":{"type":"string","default":"correct horse battery staple"}}}',
+        ),
+    ],
+)
+def test_typed_declaration_and_schema_literal_is_denied_without_value_echo(
+    tmp_path: Path, filename: str, content: str
+) -> None:
+    (tmp_path / filename).write_text(content, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="credential_assignment") as exc_info:
+        _read_file(_ctx(tmp_path), {"file_path": filename})
+
+    assert content not in str(exc_info.value)
 
 
 @pytest.mark.parametrize(
@@ -804,6 +942,7 @@ def test_bare_source_reference_forms_are_not_exempt_in_non_source_files(tmp_path
     "content",
     [
         'api_key = os.environ["OPENAI_API_KEY"]',
+        'password = os.getenv("PASSWORD")',
         'token = request.headers.get("Authorization")',
         "password = settings.database_password",
         "secret = SecretStr(config.api_key)",

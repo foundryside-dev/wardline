@@ -13,7 +13,7 @@ import json
 import os
 import re
 import stat
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from contextlib import suppress
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath, PureWindowsPath
@@ -109,11 +109,39 @@ _CREDENTIAL_LABEL_PATTERN = (
     r"[\"']?(?![A-Za-z0-9_])"
 )
 _CREDENTIAL_KEY_RE = re.compile(
-    rf"(?imx)(?:"
-    rf"^[ \t]*(?:-[ \t]+)?(?:(?P<declaration>const|let|var|final|readonly)[ \t]+)?"
-    rf"|(?<!\$\{{)(?<=[{{,])[ \t]*"
+    rf"(?imx)(?:^[ \t]*(?:-[ \t]+)?|(?P<flow>(?<!\$\{{)(?<=[{{,]))[ \t]*"
     rf"){_CREDENTIAL_LABEL_PATTERN}[ \t]*(?P<delimiter>[:=])"
 )
+_DECLARATION_PREFIX_PATTERNS = {
+    ".bash": r"export[ \t]+",
+    ".c": r"(?:(?:static|extern|const)[ \t]+)*(?:char[ \t]*\*|char[ \t]+)[ \t]*",
+    ".cc": r"(?:(?:static|extern|const|constexpr)[ \t]+)*(?:(?:std::)?string|char[ \t]*\*)[ \t]+",
+    ".cpp": r"(?:(?:static|extern|const|constexpr)[ \t]+)*(?:(?:std::)?string|char[ \t]*\*)[ \t]+",
+    ".cs": r"(?:(?:public|protected|private|internal|static|readonly|const)[ \t]+)*(?:string|char\[\]|byte\[\])[ \t]+",
+    ".h": r"(?:(?:static|extern|const|constexpr)[ \t]+)*(?:(?:std::)?string|char[ \t]*\*)[ \t]+",
+    ".hpp": r"(?:(?:static|extern|const|constexpr)[ \t]+)*(?:(?:std::)?string|char[ \t]*\*)[ \t]+",
+    ".java": (
+        r"(?:(?:public|protected|private|static|final|volatile|transient)[ \t]+)*"
+        r"(?:String|char\[\]|byte\[\])[ \t]+"
+    ),
+    ".js": r"(?:export[ \t]+)?(?:const|let|var)[ \t]+",
+    ".jsx": r"(?:export[ \t]+)?(?:const|let|var)[ \t]+",
+    ".kt": r"(?:(?:public|protected|private|internal|lateinit|const)[ \t]+)*(?:val|var)[ \t]+",
+    ".kts": r"(?:(?:public|protected|private|internal|lateinit|const)[ \t]+)*(?:val|var)[ \t]+",
+    ".mjs": r"(?:export[ \t]+)?(?:const|let|var)[ \t]+",
+    ".php": r"(?:(?:public|protected|private|static|readonly)[ \t]+)*(?:\$this->|\$)",
+    ".rb": r"(?:@@?|\$)",
+    ".rs": r"(?:pub(?:\([^\r\n)]{1,64}\))?[ \t]+)?(?:static|const|let)(?:[ \t]+mut)?[ \t]+",
+    ".sh": r"export[ \t]+",
+    ".ts": r"(?:export[ \t]+)?(?:const|let|var)[ \t]+",
+    ".tsx": r"(?:export[ \t]+)?(?:const|let|var)[ \t]+",
+    ".zsh": r"export[ \t]+",
+}
+_CREDENTIAL_DECLARATION_RES = {
+    suffix: re.compile(rf"(?imx)^[ \t]*{prefix}{_CREDENTIAL_LABEL_PATTERN}[ \t]*(?P<delimiter>=)")
+    for suffix, prefix in _DECLARATION_PREFIX_PATTERNS.items()
+}
+_DOCKERFILE_CREDENTIAL_RE = re.compile(rf"(?imx)^[ \t]*ENV[ \t]+{_CREDENTIAL_LABEL_PATTERN}[ \t]*(?P<delimiter>=)")
 _SAFE_CREDENTIAL_SENTINEL_RE = re.compile(r"(?i)^(?:null|none|true|false|~)$")
 _CREDENTIAL_SUBSTITUTION_RE = re.compile(
     r"^\$\{[A-Z_][A-Z0-9_]{0,127}(?:(?P<operator>:-|-)(?P<default>[^{}]{1,128}))?\}$"
@@ -131,12 +159,25 @@ _PLACEHOLDER_RE = re.compile(
     r"|AIza(?:Placeholder|Example|Dummy|Redacted|Fake|Test|Changeme)[A-Za-z0-9_-]*"
     r"|AKIA(?:PLACEHOLDER|EXAMPLE|DUMMY|REDACTED|FAKE|TEST|CHANGEME)[A-Z0-9]*)$"
 )
+_REFERENCE_STRING_PATTERN = r'(?:"(?:\\.|[^"\\\r\n])*"|\'(?:\\.|[^\'\\\r\n])*\')'
+_REFERENCE_IDENTIFIER_PATTERN = r"[A-Za-z_][A-Za-z0-9_]*"
 _SOURCE_REFERENCE_RE = re.compile(
-    r"(?i)^(?:(?:os\.)?environ(?:\[|\.get\()|(?:os\.)?getenv\("
-    r"|request(?:\.|\[)|settings(?:\.|\[)|config(?:\.|\[))"
+    rf"(?ix)^(?:"
+    rf"(?:os\.)?environ[ \t]*\[[ \t]*{_REFERENCE_STRING_PATTERN}[ \t]*\]"
+    rf"|(?:os\.)?environ\.get[ \t]*\([ \t]*{_REFERENCE_STRING_PATTERN}[ \t]*\)"
+    rf"|(?:os\.)?getenv[ \t]*\([ \t]*{_REFERENCE_STRING_PATTERN}[ \t]*\)"
+    rf"|(?:self\.)?(?:request|settings|config|credentials)"
+    rf"(?:\.{_REFERENCE_IDENTIFIER_PATTERN}|[ \t]*\[[ \t]*{_REFERENCE_STRING_PATTERN}[ \t]*\])+"
+    rf"(?:\.get[ \t]*\([ \t]*{_REFERENCE_STRING_PATTERN}[ \t]*\))?"
+    rf")$"
 )
 _DOTTED_REFERENCE_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+$")
 _CONSTANT_REFERENCE_RE = re.compile(r"^[A-Z][A-Z0-9_]*$")
+_PYTHON_CREDENTIAL_ANNOTATION_RE = re.compile(
+    r"^(?:str|bytes|SecretStr|SecretBytes)(?:[ \t]*\|[ \t]*None)?"
+    r"(?:[ \t]*=[ \t]*None)?$"
+)
+_TYPESCRIPT_CREDENTIAL_ANNOTATION_RE = re.compile(r"^string[ \t]*;?$", re.IGNORECASE)
 
 
 class _BudgetStop(Exception):
@@ -327,7 +368,7 @@ def _placeholder(value: str) -> bool:
 def _source_reference(value: str) -> bool:
     candidate = value.strip()
     return (
-        _SOURCE_REFERENCE_RE.match(candidate) is not None
+        _SOURCE_REFERENCE_RE.fullmatch(candidate) is not None
         or _DOTTED_REFERENCE_RE.fullmatch(candidate) is not None
         or _CONSTANT_REFERENCE_RE.fullmatch(candidate) is not None
     )
@@ -362,7 +403,19 @@ def _normalized_credential_scalar(value: str) -> tuple[str, bool]:
     return (quoted, True) if quoted is not None else (argument, False)
 
 
-def _scan_credential_scalar(text: str, start: int) -> str:
+def _credential_scalar_starts(text: str, *, source_suffix: str, source_name: str) -> Iterator[tuple[int, bool, str]]:
+    for credential in _CREDENTIAL_KEY_RE.finditer(text):
+        yield credential.end(), credential.group("flow") is not None, credential.group("delimiter")
+    declaration_re = _CREDENTIAL_DECLARATION_RES.get(source_suffix)
+    if declaration_re is not None:
+        for credential in declaration_re.finditer(text):
+            yield credential.end(), False, credential.group("delimiter")
+    if source_name == "dockerfile" or source_name.startswith("dockerfile."):
+        for credential in _DOCKERFILE_CREDENTIAL_RE.finditer(text):
+            yield credential.end(), False, credential.group("delimiter")
+
+
+def _scan_credential_scalar(text: str, start: int, *, flow_context: bool) -> str:
     limit = min(len(text), start + _MAX_PATTERN_CHARS)
     while start < limit and text[start] in " \t":
         start += 1
@@ -406,8 +459,13 @@ def _scan_credential_scalar(text: str, start: int) -> str:
                 parenthesis_depth -= 1
             elif not (square_depth or brace_depth):
                 break
-        elif not (square_depth or brace_depth or parenthesis_depth) and character in ",#\r\n":
-            break
+        elif not (square_depth or brace_depth or parenthesis_depth):
+            if character in "\r\n":
+                break
+            if character == "," and flow_context:
+                break
+            if character == "#" and index > 0 and text[index - 1] in " \t":
+                break
         index += 1
     return text[start:index].strip()
 
@@ -422,21 +480,42 @@ def _safe_credential_scalar(value: str) -> bool:
     return default is None or _placeholder(default) or _SAFE_CREDENTIAL_SENTINEL_RE.fullmatch(default) is not None
 
 
-def _secret_pattern(text: str, *, source_suffix: str) -> str | None:
+def _safe_credential_shape(scalar: str, *, source_suffix: str, delimiter: str, flow_context: bool) -> bool:
+    candidate = scalar.strip()
+    if delimiter != ":":
+        return False
+    if not flow_context and source_suffix in {".py", ".pyi"}:
+        return _PYTHON_CREDENTIAL_ANNOTATION_RE.fullmatch(candidate) is not None
+    if not flow_context and source_suffix in {".ts", ".tsx"}:
+        return _TYPESCRIPT_CREDENTIAL_ANNOTATION_RE.fullmatch(candidate) is not None
+    if flow_context and source_suffix == ".json":
+        try:
+            schema = json.loads(candidate)
+        except (json.JSONDecodeError, RecursionError):
+            return False
+        return isinstance(schema, dict) and len(schema) == 1 and schema.get("type") == "string"
+    return False
+
+
+def _secret_pattern(text: str, *, source_suffix: str, source_name: str) -> str | None:
     if _PEM_PRIVATE_KEY_RE.search(text):
         return "pem_private_key"
-    bearer = _AUTHORIZATION_BEARER_RE.search(text)
-    if bearer is not None and not _placeholder(bearer.group(1)):
-        return "authorization_bearer"
-    provider = _PROVIDER_TOKEN_RE.search(text)
-    if provider is not None and not _placeholder(provider.group(1)):
-        return "provider_token"
-    for credential in _CREDENTIAL_KEY_RE.finditer(text):
-        if credential.group("declaration") is not None and source_suffix not in _SOURCE_REFERENCE_SUFFIXES:
-            continue
-        scalar = _scan_credential_scalar(text, credential.end())
+    for bearer in _AUTHORIZATION_BEARER_RE.finditer(text):
+        if not _placeholder(bearer.group(1)):
+            return "authorization_bearer"
+    for provider in _PROVIDER_TOKEN_RE.finditer(text):
+        if not _placeholder(provider.group(1)):
+            return "provider_token"
+    for scalar_start, flow_context, delimiter in _credential_scalar_starts(
+        text, source_suffix=source_suffix, source_name=source_name
+    ):
+        scalar = _scan_credential_scalar(text, scalar_start, flow_context=flow_context)
         if not scalar:
             continue
+        if _safe_credential_shape(scalar, source_suffix=source_suffix, delimiter=delimiter, flow_context=flow_context):
+            continue
+        if source_suffix in _SOURCE_REFERENCE_SUFFIXES and scalar.endswith(";"):
+            scalar = scalar[:-1].rstrip()
         value, is_literal = _normalized_credential_scalar(scalar)
         if _safe_credential_scalar(value):
             continue
@@ -553,7 +632,11 @@ def _safe_text(
         text = data.decode("utf-8")
     except UnicodeDecodeError:
         _fail("file is not safe UTF-8 text")
-    pattern = _secret_pattern(text, source_suffix=relative.suffix.casefold())
+    pattern = _secret_pattern(
+        text,
+        source_suffix=relative.suffix.casefold(),
+        source_name=relative.name.casefold(),
+    )
     if pattern is not None:
         _fail(f"file content denied by secret pattern: {pattern}")
     return text
