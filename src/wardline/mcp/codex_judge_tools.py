@@ -348,12 +348,7 @@ def _directory_entries(directory: Path, accounting: _Accounting) -> list[os.DirE
                 except StopIteration:
                     break
             if len(entries) == remaining:
-                try:
-                    next(iterator)
-                except StopIteration:
-                    pass
-                else:
-                    accounting.truncated = True
+                accounting.truncated = True
     except OSError:
         return []
     return sorted(entries, key=lambda item: item.name)

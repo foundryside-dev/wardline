@@ -581,7 +581,7 @@ def test_visited_entry_cap_counts_denied_and_nonregular_before_filtering(
     assert result["truncated"] is True
 
 
-def test_directory_enumeration_retains_only_bounded_prefix_and_one_peek(
+def test_directory_enumeration_never_reads_beyond_remaining_budget(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(tools_module, "_MAX_WALK_ENTRIES", 2)
@@ -615,7 +615,7 @@ def test_directory_enumeration_retains_only_bounded_prefix_and_one_peek(
     entries = _directory_entries(tmp_path, accounting)
 
     assert [entry.name for entry in entries] == ["a.py", "z.py"]
-    assert pulls == 3
+    assert pulls == 2
     assert accounting.visited_entries == 0
     assert accounting.truncated is True
 
