@@ -609,6 +609,68 @@ def test_credential_metadata_and_bare_source_references_remain_readable(tmp_path
     assert content in _read_file(_ctx(tmp_path), {"file_path": "credential-metadata.py"})
 
 
+def test_source_reference_suffix_vocabulary_is_exact() -> None:
+    expected = frozenset(
+        {
+            ".c",
+            ".cc",
+            ".cpp",
+            ".cs",
+            ".go",
+            ".h",
+            ".hpp",
+            ".java",
+            ".js",
+            ".jsx",
+            ".kt",
+            ".kts",
+            ".mjs",
+            ".php",
+            ".py",
+            ".pyi",
+            ".rb",
+            ".rs",
+            ".scala",
+            ".swift",
+            ".ts",
+            ".tsx",
+        }
+    )
+    assert expected == tools_module._SOURCE_REFERENCE_SUFFIXES
+
+
+@pytest.mark.parametrize(
+    ("filename", "content", "literal"),
+    [
+        ("config.yaml", "password: hunter2.secret", "hunter2.secret"),
+        ("config.yml", "api_key: PROD_SECRET_2026", "PROD_SECRET_2026"),
+    ],
+)
+def test_yaml_credential_literals_are_denied_without_value_echo(
+    tmp_path: Path, filename: str, content: str, literal: str
+) -> None:
+    (tmp_path / filename).write_text(content, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="credential_assignment") as exc_info:
+        _read_file(_ctx(tmp_path), {"file_path": filename})
+
+    message = str(exc_info.value)
+    assert literal not in message
+    assert content not in message
+
+
+@pytest.mark.parametrize(
+    "filename",
+    ["config.json", "config.toml", "config.sh", "config.data", "config"],
+)
+def test_bare_source_reference_forms_are_not_exempt_in_non_source_files(tmp_path: Path, filename: str) -> None:
+    content = "password = DEFAULT_PASSWORD"
+    (tmp_path / filename).write_text(content, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="credential_assignment"):
+        _read_file(_ctx(tmp_path), {"file_path": filename})
+
+
 @pytest.mark.parametrize(
     "content",
     [

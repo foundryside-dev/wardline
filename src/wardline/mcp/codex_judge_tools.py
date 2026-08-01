@@ -34,6 +34,32 @@ _MAX_WALK_DEPTH = 32
 _MAX_PATH_CHARS = 4096
 _MAX_PATTERN_CHARS = 512
 _ROOT_RELATIVE = PurePosixPath(".")
+_SOURCE_REFERENCE_SUFFIXES = frozenset(
+    {
+        ".c",
+        ".cc",
+        ".cpp",
+        ".cs",
+        ".go",
+        ".h",
+        ".hpp",
+        ".java",
+        ".js",
+        ".jsx",
+        ".kt",
+        ".kts",
+        ".mjs",
+        ".php",
+        ".py",
+        ".pyi",
+        ".rb",
+        ".rs",
+        ".scala",
+        ".swift",
+        ".ts",
+        ".tsx",
+    }
+)
 
 _ANNOTATIONS = {
     "readOnlyHint": True,
@@ -299,7 +325,7 @@ def _source_reference(value: str) -> bool:
     )
 
 
-def _secret_pattern(text: str) -> str | None:
+def _secret_pattern(text: str, *, source_suffix: str) -> str | None:
     if _PEM_PRIVATE_KEY_RE.search(text):
         return "pem_private_key"
     bearer = _AUTHORIZATION_BEARER_RE.search(text)
@@ -318,7 +344,7 @@ def _secret_pattern(text: str) -> str | None:
         value = quoted or credential.group("bare")
         if value is None or _placeholder(value):
             continue
-        if quoted is None and _source_reference(value):
+        if quoted is None and source_suffix in _SOURCE_REFERENCE_SUFFIXES and _source_reference(value):
             continue
         return "credential_assignment"
     return None
@@ -381,6 +407,7 @@ def _safe_text(
     accounting: _Accounting | None = None,
 ) -> str:
     """Read one regular, in-root file with race-aware size and content checks."""
+    relative = _relative_to_root(context, path)
     if accounting is not None:
         if accounting.scanned_files >= _MAX_SCANNED_FILES:
             accounting.truncated = True
@@ -430,7 +457,7 @@ def _safe_text(
         text = data.decode("utf-8")
     except UnicodeDecodeError:
         _fail("file is not safe UTF-8 text")
-    pattern = _secret_pattern(text)
+    pattern = _secret_pattern(text, source_suffix=relative.suffix.casefold())
     if pattern is not None:
         _fail(f"file content denied by secret pattern: {pattern}")
     return text
