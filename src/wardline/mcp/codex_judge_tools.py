@@ -102,17 +102,24 @@ _PROVIDER_TOKEN_RE = re.compile(
     r"|github_pat_[A-Za-z0-9_]{20,}"
     r"|AIza[A-Za-z0-9_-]{20,}))\b"
 )
-_CREDENTIAL_ASSIGNMENT_RE = re.compile(
-    r"(?imx)(?<![A-Za-z0-9_])[\"']?"
+_CREDENTIAL_LABEL_PATTERN = (
+    r"(?<![A-Za-z0-9_])[\"']?"
     r"(?:[A-Za-z0-9]+[._-])*"
     r"(?:secret[._-]access[._-]key|api[._-]?key|client[._-]?secret|password|passwd|secret|token)"
     r"[\"']?(?![A-Za-z0-9_])"
-    r"\s*[:=]\s*(?:"
+)
+_CREDENTIAL_ASSIGNMENT_RE = re.compile(
+    rf"(?imx){_CREDENTIAL_LABEL_PATTERN}"
+    r"[ \t]*[:=][ \t]*(?:"
     r"\"(?P<double>[^\"\r\n]{8,})\""
     r"|'(?P<single>[^'\r\n]{8,})'"
-    r"|(?:secretstr|secretbytes|secretvalue|secret)\(\s*"
-    r"(?:\"(?P<wrapped_double>[^\"\r\n]{8,})\"|'(?P<wrapped_single>[^'\r\n]{8,})')\s*\)"
+    r"|(?:secretstr|secretbytes|secretvalue|secret)\([ \t]*"
+    r"(?:\"(?P<wrapped_double>[^\"\r\n]{8,})\"|'(?P<wrapped_single>[^'\r\n]{8,})')[ \t]*\)"
     r"|(?P<bare>[A-Za-z0-9][A-Za-z0-9._~+/=-]{7,})(?![A-Za-z0-9._~+/=(\[]))"
+)
+_CREDENTIAL_SCALAR_RE = re.compile(
+    rf"(?imx){_CREDENTIAL_LABEL_PATTERN}"
+    rf"[ \t]*[:=][ \t]*(?P<scalar>[^\r\n#]{{1,{_MAX_PATTERN_CHARS}}})"
 )
 _PLACEHOLDER_RE = re.compile(
     r"(?i)^(?:<?your(?:[-_][a-z0-9]+)*(?:_here)?>?"
@@ -325,6 +332,24 @@ def _source_reference(value: str) -> bool:
     )
 
 
+def _normalized_scalar(value: str) -> str:
+    candidate = value.strip()
+    if len(candidate) < 2 or candidate[0] not in ('"', "'"):
+        return candidate
+    quote = candidate[0]
+    escaped = False
+    for index, character in enumerate(candidate[1:], start=1):
+        if character == quote and not escaped:
+            remainder = candidate[index + 1 :].strip()
+            if not remainder or all(marker in ",}]" for marker in remainder):
+                return candidate[1:index]
+            break
+        escaped = character == "\\" and not escaped
+        if character != "\\":
+            escaped = False
+    return candidate
+
+
 def _secret_pattern(text: str, *, source_suffix: str) -> str | None:
     if _PEM_PRIVATE_KEY_RE.search(text):
         return "pem_private_key"
@@ -347,6 +372,11 @@ def _secret_pattern(text: str, *, source_suffix: str) -> str | None:
         if quoted is None and source_suffix in _SOURCE_REFERENCE_SUFFIXES and _source_reference(value):
             continue
         return "credential_assignment"
+    if source_suffix not in _SOURCE_REFERENCE_SUFFIXES:
+        for credential in _CREDENTIAL_SCALAR_RE.finditer(text):
+            value = _normalized_scalar(credential.group("scalar"))
+            if value and not _placeholder(value):
+                return "credential_assignment"
     return None
 
 

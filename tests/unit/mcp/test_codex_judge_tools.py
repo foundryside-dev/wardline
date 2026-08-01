@@ -660,6 +660,62 @@ def test_yaml_credential_literals_are_denied_without_value_echo(
 
 
 @pytest.mark.parametrize(
+    ("content", "literal"),
+    [
+        ('password: config["production_password"]', 'config["production_password"]'),
+        ('token: request.headers.get("Authorization")', 'request.headers.get("Authorization")'),
+        ("secret: SecretStr(config.api_key)", "SecretStr(config.api_key)"),
+        ('api_key: os.environ["OPENAI_API_KEY"]', 'os.environ["OPENAI_API_KEY"]'),
+    ],
+)
+def test_yaml_complex_credential_scalars_are_denied_without_value_echo(
+    tmp_path: Path, content: str, literal: str
+) -> None:
+    (tmp_path / "config.yaml").write_text(content, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="credential_assignment") as exc_info:
+        _read_file(_ctx(tmp_path), {"file_path": "config.yaml"})
+
+    message = str(exc_info.value)
+    assert literal not in message
+    assert content not in message
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        'password = config["production_password"]',
+        'token = request.headers.get("Authorization")',
+        "secret = SecretStr(config.api_key)",
+        'api_key = os.environ["OPENAI_API_KEY"]',
+    ],
+)
+def test_supported_source_files_keep_complex_references_readable(tmp_path: Path, content: str) -> None:
+    (tmp_path / "configuration.py").write_text(content, encoding="utf-8")
+
+    assert content in _read_file(_ctx(tmp_path), {"file_path": "configuration.py"})
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        "password: REDACTED",
+        "token: dummy-value-for-tests",
+        "secret: placeholder-value",
+        "api_key: sk-test-abcdefghijklmnopqrstuvwxyz0123456789",
+        'password_policy: "minimum length 12"',
+        'password_field: "password"',
+        'token_endpoint: "https://identity.example/oauth/token"',
+        'api_key_header: "X-API-Key"',
+    ],
+)
+def test_yaml_placeholders_and_credential_metadata_remain_readable(tmp_path: Path, content: str) -> None:
+    (tmp_path / "config.yaml").write_text(content, encoding="utf-8")
+
+    assert content in _read_file(_ctx(tmp_path), {"file_path": "config.yaml"})
+
+
+@pytest.mark.parametrize(
     "filename",
     ["config.json", "config.toml", "config.sh", "config.data", "config"],
 )
