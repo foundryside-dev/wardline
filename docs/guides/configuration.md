@@ -160,7 +160,9 @@ keys are optional; the defaults are shown.
 
 | Key | Type | Default | Constraint |
 |---|---|---|---|
+| `transport` | string | `auto` | One of `auto`, `codex-cli`, or `openrouter`. `auto` prefers Codex after a narrow availability/auth preflight. |
 | `model` | string | `anthropic/claude-opus-4-8` | OpenRouter model slug. |
+| `codex_model` | string | `gpt-5.6-sol` | Codex CLI model identifier. |
 | `context_lines` | integer | `30` | `>= 0`. Excerpt radius around a finding. |
 | `max_findings` | integer | unset (all) | `>= 1`. Cap findings triaged per run. |
 | `policy_file` | string | unset | Path (under the scan root) to an extra project policy appended to the built-in prompt. |
@@ -168,10 +170,17 @@ keys are optional; the defaults are shown.
 
 ```toml
 [wardline.judge]
+transport = "auto"
 model = "anthropic/claude-opus-4-8"
+codex_model = "gpt-5.6-sol"
 context_lines = 30
 write_confidence_floor = 0.5
 ```
+
+Repository-supplied judge settings do not control execution unless you pass
+`--trust-judge-config`. CLI flags remain explicit operator choices. The
+`policy_file` key has a separate `--trust-judge-policy` gate because Wardline
+passes its contents to the model only as untrusted context.
 
 Out-of-range values fail loud:
 
@@ -208,7 +217,9 @@ enable = ["PY-WL-101"]
 severity = { "PY-WL-101" = "ERROR" }
 
 [wardline.judge]
+transport = "auto"
 model = "anthropic/claude-opus-4-8"
+codex_model = "gpt-5.6-sol"
 context_lines = 30
 
 [wardline.autofix]

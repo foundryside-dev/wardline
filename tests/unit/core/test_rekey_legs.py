@@ -16,17 +16,36 @@ yaml = pytest.importorskip("yaml")
 from wardline.core import paths  # noqa: E402
 from wardline.core.baseline import load_baseline  # noqa: E402
 from wardline.core.errors import ConfigError  # noqa: E402
+from wardline.core.judge_types import JudgeTransport  # noqa: E402
+from wardline.core.judged import load_judged  # noqa: E402
 from wardline.core.rekey import (  # noqa: E402
     Journal,
     _write_store_doc,  # noqa: E402
     apply_pending_legs,
     carry_baseline_forward,
+    carry_judged_forward,
     resume_rekey,
     snapshot_dir,
     write_journal,
 )
 
 A, NA = "a" * 64, "1" * 64
+B = "b" * 64
+
+
+def _judged_v1_entry(fingerprint: str = A) -> dict[str, object]:
+    return {
+        "fingerprint": fingerprint,
+        "rule_id": "PY-WL-108",
+        "path": "m.py",
+        "message": "shell",
+        "verdict": "FALSE_POSITIVE",
+        "rationale": "legacy verdict",
+        "confidence": 0.97,
+        "model_id": "anthropic/claude",
+        "recorded_at": "2026-06-01T00:00:00+00:00",
+        "policy_hash": "deadbeef",
+    }
 
 
 def _seed_snapshot_baseline(root: Path) -> None:
@@ -39,6 +58,38 @@ def _seed_snapshot_baseline(root: Path) -> None:
                 "version": 1,
                 "entries": [{"fingerprint": A, "rule_id": "PY-WL-108", "path": "m.py", "message": "x"}],
             }
+        ),
+        encoding="utf-8",
+    )
+
+
+def _seed_snapshot_judged_v1(root: Path) -> None:
+    sdir = snapshot_dir(root)
+    sdir.mkdir(parents=True, exist_ok=True)
+    (sdir / "judged.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "fingerprint_scheme": "wlfp1",
+                "version": 1,
+                "findings": [_judged_v1_entry()],
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+
+def _seed_snapshot_waivers(root: Path) -> None:
+    sdir = snapshot_dir(root)
+    sdir.mkdir(parents=True, exist_ok=True)
+    (sdir / "waivers.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "fingerprint_scheme": "wlfp1",
+                "version": 1,
+                "waivers": [{"fingerprint": B, "reason": "accepted risk"}],
+            },
+            sort_keys=False,
         ),
         encoding="utf-8",
     )
@@ -85,6 +136,162 @@ def test_crash_after_write_before_flag_preserves_content(tmp_path: Path) -> None
         "resume must re-derive verdicts from the snapshot — an empty store here would mean "
         "every verdict was silently shredded"
     )
+
+
+def test_apply_pending_judged_leg_migrates_v1_to_loadable_v2(tmp_path: Path) -> None:
+    root = tmp_path
+    _seed_snapshot_judged_v1(root)
+    journal = Journal(remap={A: NA})
+
+    apply_pending_legs(root, journal, findings=[])
+
+    carried = load_judged(paths.judged_path(root)).match(NA)
+    document = yaml.safe_load(paths.judged_path(root).read_text(encoding="utf-8"))
+    assert document["version"] == 2
+    assert carried is not None
+    assert carried.judge_transport is JudgeTransport.OPENROUTER
+
+
+def test_resume_rederives_v1_judged_snapshot_with_concrete_transport(tmp_path: Path) -> None:
+    root = tmp_path
+    _seed_snapshot_judged_v1(root)
+    journal = Journal(remap={A: NA})
+    journal.leg("baseline").done = True
+
+    result = carry_judged_forward(snapshot_dir(root) / "judged.yaml", journal.remap)
+    _write_store_doc(root, paths.judged_path(root), result.document)
+    paths.judged_path(root).write_text("corrupted live store\n", encoding="utf-8")
+    assert journal.leg("judged").done is False
+    write_journal(paths.migration_journal_path(root), journal, root=root)
+
+    resume_rekey(root)
+
+    carried = load_judged(paths.judged_path(root)).match(NA)
+    assert carried is not None
+    assert carried.judge_transport is JudgeTransport.OPENROUTER
+
+
+def test_preflight_rejects_invalid_v2_judged_before_baseline_mutation(tmp_path: Path) -> None:
+    root = tmp_path
+    _seed_snapshot_baseline(root)
+    sdir = snapshot_dir(root)
+    (sdir / "judged.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "fingerprint_scheme": "wlfp2",
+                "version": 2,
+                "findings": [{**_judged_v1_entry(), "judge_transport": "auto"}],
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    baseline_live = paths.baseline_path(root)
+    baseline_live.write_bytes(b"baseline-live-before")
+    before = baseline_live.read_bytes()
+
+    with pytest.raises(ConfigError, match="judge_transport"):
+        apply_pending_legs(root, Journal(remap={A: NA}))
+
+    assert baseline_live.read_bytes() == before
+
+
+def test_preflight_rejects_incomplete_v1_judged_before_baseline_or_journal_mutation(tmp_path: Path) -> None:
+    root = tmp_path
+    _seed_snapshot_baseline(root)
+    _seed_snapshot_judged_v1(root)
+    judged_snapshot = snapshot_dir(root) / "judged.yaml"
+    judged_document = yaml.safe_load(judged_snapshot.read_text(encoding="utf-8"))
+    judged_document["findings"][0].pop("verdict")
+    judged_snapshot.write_text(yaml.safe_dump(judged_document, sort_keys=False), encoding="utf-8")
+    baseline_live = paths.baseline_path(root)
+    baseline_live.write_bytes(b"baseline-live-before")
+    journal = Journal(remap={A: NA})
+    journal_path = paths.migration_journal_path(root)
+    write_journal(journal_path, journal, root=root)
+    before = {
+        baseline_live: baseline_live.read_bytes(),
+        journal_path: journal_path.read_bytes(),
+    }
+
+    with pytest.raises(ConfigError, match="verdict"):
+        apply_pending_legs(root, journal)
+
+    assert {path: path.read_bytes() for path in before} == before
+    assert all(not leg.done for leg in journal.legs)
+
+
+@pytest.mark.parametrize(
+    ("remap", "second_entry", "error"),
+    [
+        ({A: "short"}, False, "fingerprint"),
+        ({A: NA, B: NA}, True, "target collision"),
+    ],
+)
+def test_preflight_rejects_invalid_or_colliding_judged_remap_before_any_mutation(
+    tmp_path: Path,
+    remap: dict[str, str],
+    second_entry: bool,
+    error: str,
+) -> None:
+    root = tmp_path
+    _seed_snapshot_baseline(root)
+    _seed_snapshot_judged_v1(root)
+    judged_snapshot = snapshot_dir(root) / "judged.yaml"
+    judged_document = yaml.safe_load(judged_snapshot.read_text(encoding="utf-8"))
+    if second_entry:
+        judged_document["findings"].append(_judged_v1_entry(B))
+        judged_snapshot.write_text(yaml.safe_dump(judged_document, sort_keys=False), encoding="utf-8")
+
+    baseline_live = paths.baseline_path(root)
+    baseline_live.write_bytes(b"baseline-live-before")
+    journal = Journal(remap=remap)
+    journal_path = paths.migration_journal_path(root)
+    write_journal(journal_path, journal, root=root)
+    before = {
+        baseline_live: baseline_live.read_bytes(),
+        journal_path: journal_path.read_bytes(),
+    }
+
+    with pytest.raises(ConfigError, match=error):
+        apply_pending_legs(root, journal)
+
+    assert {path: path.read_bytes() for path in before} == before
+    assert all(not leg.done for leg in journal.legs)
+
+
+@pytest.mark.parametrize(
+    ("remap", "error"),
+    [
+        ({"short": NA}, "source fingerprint"),
+        ({A: "short"}, "target fingerprint"),
+        ({A: NA, B: NA}, "target collision"),
+    ],
+)
+def test_apply_rejects_invalid_global_remap_before_baseline_or_waiver_mutation(
+    tmp_path: Path,
+    remap: dict[str, str],
+    error: str,
+) -> None:
+    root = tmp_path
+    _seed_snapshot_baseline(root)
+    _seed_snapshot_waivers(root)
+    assert not (snapshot_dir(root) / "judged.yaml").exists()
+
+    live_paths = [paths.baseline_path(root), paths.judged_path(root), paths.waivers_path(root)]
+    for index, live_path in enumerate(live_paths):
+        live_path.write_bytes(f"live-before-{index}".encode())
+    journal = Journal(remap=remap)
+    journal_path = paths.migration_journal_path(root)
+    write_journal(journal_path, journal, root=root)
+    bytes_before = {path: path.read_bytes() for path in [*live_paths, journal_path]}
+    legs_before = [(leg.done, list(leg.carried), list(leg.orphaned), leg.debt) for leg in journal.legs]
+
+    with pytest.raises(ConfigError, match=error):
+        apply_pending_legs(root, journal)
+
+    assert {path: path.read_bytes() for path in bytes_before} == bytes_before
+    assert [(leg.done, list(leg.carried), list(leg.orphaned), leg.debt) for leg in journal.legs] == legs_before
 
 
 def test_resume_preflights_every_pending_snapshot_scheme_before_any_write(tmp_path: Path) -> None:

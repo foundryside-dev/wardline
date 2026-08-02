@@ -1813,6 +1813,14 @@
               "description": "Stable fingerprint of the judged finding.",
               "type": "string"
             },
+            "judge_transport": {
+              "description": "Concrete provider transport selected for this verdict.",
+              "enum": [
+                "codex-cli",
+                "openrouter"
+              ],
+              "type": "string"
+            },
             "label": {
               "description": "The judge's verdict: a real defect vs an analyzer over-approximation.",
               "enum": [
@@ -1827,6 +1835,10 @@
                 "integer",
                 "null"
               ]
+            },
+            "model_id": {
+              "description": "Provider-specific model identifier used for this verdict.",
+              "type": "string"
             },
             "path": {
               "description": "Repo-relative file path of the finding.",
@@ -1848,7 +1860,9 @@
             "line",
             "label",
             "confidence",
-            "rationale"
+            "rationale",
+            "judge_transport",
+            "model_id"
           ],
           "type": "object"
         },

@@ -19,6 +19,7 @@ import pytest
 
 from wardline.core.baseline import Baseline, build_baseline_document
 from wardline.core.finding import Finding, Kind, Location, Severity, SuppressionState
+from wardline.core.judge_types import JudgeTransport
 from wardline.core.judged import JudgedFP, JudgedSet
 from wardline.core.suppression import apply_suppressions, gate_trips
 from wardline.core.waivers import Waiver, WaiverSet
@@ -74,6 +75,7 @@ def test_rs_finding_is_suppressed_by_a_judged_false_positive() -> None:
                 message="program injection",
                 rationale="the program is a vetted constant at runtime",
                 model_id="test-judge",
+                judge_transport=JudgeTransport.OPENROUTER,
                 confidence=0.97,
                 recorded_at=datetime(2026, 6, 10, tzinfo=UTC),
                 policy_hash="p" * 8,

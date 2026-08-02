@@ -12,6 +12,7 @@ from datetime import UTC, date, datetime
 
 from wardline.core.baseline import Baseline
 from wardline.core.finding_identity import IdentityResolution, resolve_identity
+from wardline.core.judge_types import JudgeTransport
 from wardline.core.judged import JudgedFP, JudgedSet
 from wardline.core.waivers import WaiverSet, parse_waivers
 
@@ -36,6 +37,7 @@ def _judged() -> JudgedSet:
                 message="m",
                 rationale="over-taint floor",
                 model_id="m",
+                judge_transport=JudgeTransport.OPENROUTER,
                 confidence=0.9,
                 recorded_at=datetime(2026, 5, 30, tzinfo=UTC),
                 policy_hash="sha256:x",

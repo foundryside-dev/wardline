@@ -62,9 +62,12 @@ def test_malformed_toml_falls_back_to_defaults(tmp_path) -> None:
 
 def test_judge_settings_defaults() -> None:
     from wardline.core.config import parse_judge_settings
+    from wardline.core.judge_types import JudgeTransport
 
     s = parse_judge_settings({})
+    assert s.transport is JudgeTransport.AUTO
     assert s.model == "anthropic/claude-opus-4-8"
+    assert s.codex_model == "gpt-5.6-sol"
     assert s.context_lines == 30
     assert s.max_findings is None
     assert s.policy_file is None
@@ -72,12 +75,31 @@ def test_judge_settings_defaults() -> None:
 
 def test_judge_settings_from_mapping() -> None:
     from wardline.core.config import parse_judge_settings
+    from wardline.core.judge_types import JudgeTransport
 
     s = parse_judge_settings(
-        {"model": "anthropic/claude-sonnet-4-6", "context_lines": 10, "max_findings": 50, "policy_file": "POLICY.md"}
+        {
+            "transport": "codex-cli",
+            "model": "openrouter/model",
+            "codex_model": "gpt-test",
+            "context_lines": 10,
+            "max_findings": 50,
+            "policy_file": "POLICY.md",
+        }
     )
-    assert s.model == "anthropic/claude-sonnet-4-6" and s.context_lines == 10
+    assert s.transport is JudgeTransport.CODEX_CLI
+    assert s.model == "openrouter/model"
+    assert s.codex_model == "gpt-test"
+    assert s.context_lines == 10
     assert s.max_findings == 50 and s.policy_file == "POLICY.md"
+
+
+@pytest.mark.parametrize("value", ["codex", "open-router", "AUTO", "", 1, True])
+def test_judge_settings_rejects_unknown_or_non_string_transport(value: object) -> None:
+    from wardline.core.config import parse_judge_settings
+
+    with pytest.raises(ConfigError, match="judge.transport"):
+        parse_judge_settings({"transport": value})
 
 
 def test_judge_settings_bad_type_raises() -> None:
@@ -171,6 +193,25 @@ def test_unknown_judge_key_raises(tmp_path) -> None:
     p = _write_cfg(tmp_path, "[wardline.judge]\nbogus_setting = 1\n")
     with pytest.raises(ConfigError):
         load(p)
+
+
+def test_judge_config_schema_declares_closed_transport_and_separate_models() -> None:
+    from wardline.core.config_schema import WARDLINE_SCHEMA
+
+    properties = WARDLINE_SCHEMA["properties"]["judge"]["properties"]
+    assert properties["transport"] == {
+        "type": "string",
+        "enum": ["auto", "codex-cli", "openrouter"],
+    }
+    assert properties["model"] == {"type": "string"}
+    assert properties["codex_model"] == {"type": "string"}
+
+
+def test_config_schema_rejects_unknown_judge_transport(tmp_path: Path) -> None:
+    path = _write_cfg(tmp_path, '[wardline.judge]\ntransport = "codex"\n')
+
+    with pytest.raises(ConfigError, match="invalid"):
+        load(path)
 
 
 def test_artifacts_retain_must_be_positive(tmp_path) -> None:

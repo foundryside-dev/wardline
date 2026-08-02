@@ -40,6 +40,7 @@ from wardline.core.filigree_emit import (
 from wardline.core.finding import Finding, Kind, Severity
 from wardline.core.finding_query import filter_findings
 from wardline.core.judge_run import run_judge
+from wardline.core.judge_types import JudgeTransport
 from wardline.core.paths import baseline_path as baseline_file
 from wardline.core.paths import project_root_for, waivers_path, weft_config_path
 from wardline.core.run import ScanResult, baseline_migration_hint, gate_decision, run_scan
@@ -3545,15 +3546,26 @@ _VERIFY_ATTESTATION_TOOL: dict[str, Any] = {
 
 
 def _judge(args: dict[str, Any], root: Path) -> dict[str, Any]:
-    # No key/.env → run_judge's default caller raises JudgeConfigurationError (a
-    # WardlineError) naming WARDLINE_OPENROUTER_API_KEY; _tools_call turns that into
-    # an isError result the agent can read. The network is touched only here, only
-    # when a finding is actually triaged.
+    # Provider selection, authentication guidance, and the network call are all owned
+    # by run_judge. This surface validates and forwards only the public overrides.
     context_lines = args.get("context_lines")
+    transport = args.get("transport")
+    if transport is not None and (
+        not isinstance(transport, str) or transport not in {item.value for item in JudgeTransport}
+    ):
+        raise ToolError("transport must be one of auto/codex-cli/openrouter")
+    model = args.get("model")
+    if model is not None and not isinstance(model, str):
+        raise ToolError("model must be a string")
+    codex_model = args.get("codex_model")
+    if codex_model is not None and not isinstance(codex_model, str):
+        raise ToolError("codex_model must be a string")
     outcome = run_judge(
         root,
         config_path=_cfg(args, root),
-        model=args.get("model"),
+        transport=transport,
+        model=model,
+        codex_model=codex_model,
         max_findings=args.get("max_findings"),
         write=_bool_arg(args, "write", False),
         source_root_confinement=SourceRootConfinement.PROJECT_ROOT,
@@ -3574,6 +3586,8 @@ def _judge(args: dict[str, Any], root: Path) -> dict[str, Any]:
                 "label": v.label,
                 "confidence": v.confidence,
                 "rationale": v.rationale,
+                "judge_transport": v.judge_transport.value,
+                "model_id": v.model_id,
             }
             for v in outcome.verdicts
         ],
@@ -3611,8 +3625,27 @@ _JUDGE_OUTPUT_SCHEMA: dict[str, Any] = {
                         "description": "The model's verbatim reasoning (the audit primitive); always a non-empty "
                         "string.",
                     },
+                    "judge_transport": {
+                        "type": "string",
+                        "enum": ["codex-cli", "openrouter"],
+                        "description": "Concrete provider transport selected for this verdict.",
+                    },
+                    "model_id": {
+                        "type": "string",
+                        "description": "Provider-specific model identifier used for this verdict.",
+                    },
                 },
-                "required": ["fingerprint", "rule_id", "path", "line", "label", "confidence", "rationale"],
+                "required": [
+                    "fingerprint",
+                    "rule_id",
+                    "path",
+                    "line",
+                    "label",
+                    "confidence",
+                    "rationale",
+                    "judge_transport",
+                    "model_id",
+                ],
                 "additionalProperties": False,
             },
         },
@@ -3633,14 +3666,16 @@ _JUDGE_OUTPUT_SCHEMA: dict[str, Any] = {
 _JUDGE_TOOL: dict[str, Any] = {
     "name": "judge",
     "title": "LLM triage of findings",
-    "description": "NETWORK: opt-in LLM triage of active defects via OpenRouter "
-    "(needs WARDLINE_OPENROUTER_API_KEY). Labels each TRUE/FALSE positive. "
+    "description": "NETWORK: opt-in LLM triage of active defects. Auto prefers an installed, authenticated "
+    "Codex CLI and may use OpenRouter when Codex is unavailable. Labels each TRUE/FALSE positive. "
     "Never run automatically; never folded into scan.",
     "input_schema": {
         "type": "object",
         "properties": {
             "config": {"type": "string"},
+            "transport": {"type": "string", "enum": ["auto", "codex-cli", "openrouter"]},
             "model": {"type": "string"},
+            "codex_model": {"type": "string"},
             "max_findings": {"type": "integer"},
             "write": {"type": "boolean", "description": "append above-floor FPs to judged.yaml"},
             "trust_judge_config": {"type": "boolean"},

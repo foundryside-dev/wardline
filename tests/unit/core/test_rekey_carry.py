@@ -13,6 +13,7 @@ yaml = pytest.importorskip("yaml")
 from wardline.core import paths  # noqa: E402
 from wardline.core.baseline import load_baseline  # noqa: E402
 from wardline.core.errors import ConfigError  # noqa: E402
+from wardline.core.judge_types import JudgeTransport  # noqa: E402
 from wardline.core.judged import load_judged  # noqa: E402
 from wardline.core.rekey import (  # noqa: E402
     _carry_loaded_store,
@@ -117,8 +118,137 @@ def test_carry_judged_preserves_full_provenance(tmp_path: Path) -> None:
     assert carried is not None
     assert carried.rationale == "operator-controlled constant"  # full provenance survived
     assert carried.model_id == "anthropic/claude"
+    assert carried.judge_transport is JudgeTransport.OPENROUTER
     assert abs(carried.confidence - 0.97) < 1e-9
     assert js.match(C) is None  # orphan not carried
+
+
+def test_rekey_carry_infers_openrouter_only_for_v1_judged_records(tmp_path: Path) -> None:
+    source = tmp_path / "judged.yaml"
+    _seed(
+        source,
+        {
+            "fingerprint_scheme": "wlfp1",
+            "version": 1,
+            "findings": [
+                {
+                    "fingerprint": A,
+                    "rule_id": "PY-WL-108",
+                    "path": "m.py",
+                    "message": "shell",
+                    "verdict": "FALSE_POSITIVE",
+                    "rationale": "legacy OpenRouter verdict",
+                    "confidence": 0.97,
+                    "model_id": "anthropic/claude",
+                    "judge_transport": "codex-cli",
+                    "recorded_at": "2026-06-01T00:00:00+00:00",
+                    "policy_hash": "deadbeef",
+                }
+            ],
+        },
+    )
+
+    result = carry_judged_forward(source, REMAP)
+
+    assert result.document["version"] == 2
+    assert result.document["findings"][0]["judge_transport"] == "openrouter"
+
+
+def test_rekey_carry_preserves_v2_codex_transport(tmp_path: Path) -> None:
+    source = tmp_path / "judged.yaml"
+    _seed(
+        source,
+        {
+            "fingerprint_scheme": "wlfp2",
+            "version": 2,
+            "findings": [
+                {
+                    "fingerprint": A,
+                    "rule_id": "PY-WL-108",
+                    "path": "m.py",
+                    "message": "shell",
+                    "verdict": "FALSE_POSITIVE",
+                    "rationale": "Codex verdict",
+                    "confidence": 0.97,
+                    "model_id": "gpt-test",
+                    "judge_transport": "codex-cli",
+                    "recorded_at": "2026-06-01T00:00:00+00:00",
+                    "policy_hash": "deadbeef",
+                }
+            ],
+        },
+    )
+
+    result = carry_judged_forward(source, REMAP)
+
+    assert result.document["version"] == 2
+    assert result.document["findings"][0]["judge_transport"] == "codex-cli"
+
+
+@pytest.mark.parametrize("version", [None, True, False, 0, 3, "2"])
+def test_rekey_carry_rejects_missing_unknown_or_noninteger_judged_version(tmp_path: Path, version: object) -> None:
+    source = tmp_path / "judged.yaml"
+    document: dict[str, object] = {
+        "fingerprint_scheme": "wlfp1",
+        "findings": [],
+    }
+    if version is not None:
+        document["version"] = version
+    _seed(source, document)
+
+    with pytest.raises(ConfigError, match="version"):
+        carry_judged_forward(source, REMAP)
+
+
+def test_rekey_carry_rejects_an_empty_unversioned_judged_document(tmp_path: Path) -> None:
+    source = tmp_path / "judged.yaml"
+    source.write_text("{}\n", encoding="utf-8")
+
+    with pytest.raises(ConfigError, match="version"):
+        carry_judged_forward(source, REMAP)
+
+
+@pytest.mark.parametrize(
+    ("include_transport", "transport"),
+    [
+        (False, None),
+        (True, None),
+        (True, ""),
+        (True, "auto"),
+        (True, "codex"),
+        (True, "OPENROUTER"),
+        (True, "unknown"),
+    ],
+)
+def test_rekey_carry_rejects_invalid_v2_judged_transport(
+    tmp_path: Path, include_transport: bool, transport: object
+) -> None:
+    source = tmp_path / "judged.yaml"
+    entry: dict[str, object] = {
+        "fingerprint": A,
+        "rule_id": "PY-WL-108",
+        "path": "m.py",
+        "message": "shell",
+        "verdict": "FALSE_POSITIVE",
+        "rationale": "otherwise valid provenance",
+        "confidence": 0.97,
+        "model_id": "test-model",
+        "recorded_at": "2026-06-01T00:00:00+00:00",
+        "policy_hash": "deadbeef",
+    }
+    if include_transport:
+        entry["judge_transport"] = transport
+    _seed(
+        source,
+        {
+            "fingerprint_scheme": "wlfp2",
+            "version": 2,
+            "findings": [entry],
+        },
+    )
+
+    with pytest.raises(ConfigError, match="judge_transport"):
+        carry_judged_forward(source, REMAP)
 
 
 def test_carry_waivers_preserves_reason_and_expiry(tmp_path: Path) -> None:

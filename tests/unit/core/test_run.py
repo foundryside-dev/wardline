@@ -11,6 +11,7 @@ from wardline.core import config as config_mod
 from wardline.core.confinement import SourceRootConfinement
 from wardline.core.errors import ConfigError
 from wardline.core.finding import ENGINE_PATH, FINGERPRINT_SCHEME, Finding, Kind, Location, Severity, SuppressionState
+from wardline.core.judge_types import JudgeTransport
 from wardline.core.judged import JudgedFP, write_judged
 from wardline.core.paths import baseline_path, judged_path, waivers_path
 from wardline.core.run import (
@@ -203,6 +204,7 @@ def _write_judged(proj: Path, fp: str) -> None:
                 message="m",
                 rationale="model ruled FP",
                 model_id="anthropic/claude-opus-4-8",
+                judge_transport=JudgeTransport.OPENROUTER,
                 confidence=0.95,
                 recorded_at=datetime(2026, 5, 30, tzinfo=UTC),
                 policy_hash="sha256:abc",

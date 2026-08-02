@@ -26,6 +26,7 @@ import jsonschema
 import pytest
 
 from wardline.core.judge import JudgeResponse, JudgeVerdict
+from wardline.core.judge_types import JudgeTransport
 from wardline.core.paths import waivers_path
 from wardline.core.waivers import load_project_waivers
 from wardline.mcp.protocol import PROTOCOL_VERSION, SUPPORTED_PROTOCOL_VERSIONS, JsonRpcServer
@@ -347,12 +348,34 @@ def test_judge_structured_output(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
         prompt_tokens_total=128,
         prompt_tokens_cached=None,
         policy_hash="deadbeef",
+        judge_transport=JudgeTransport.OPENROUTER,
     )
+
+    def _select_openrouter(requested: JudgeTransport, *, probe: object) -> JudgeTransport:
+        del probe
+        assert requested is JudgeTransport.AUTO
+        return JudgeTransport.OPENROUTER
+
     monkeypatch.setattr("wardline.core.judge_run.call_judge", lambda *a, **k: fake)
+    monkeypatch.setattr("wardline.core.judge_run.resolve_judge_transport", _select_openrouter)
     monkeypatch.setenv("WARDLINE_OPENROUTER_API_KEY", "sk-or-test")
     server = WardlineMCPServer(root=_leaky_project(tmp_path))
     out = _validated(server, "judge", {})
     assert out["verdicts"], out
+    verdict = out["verdicts"][0]
+    assert set(verdict) == {
+        "fingerprint",
+        "rule_id",
+        "path",
+        "line",
+        "label",
+        "confidence",
+        "rationale",
+        "judge_transport",
+        "model_id",
+    }
+    assert verdict["judge_transport"] == "openrouter"
+    assert verdict["model_id"] == "fake/model"
 
 
 def test_baseline_structured_output(tmp_path: Path) -> None:

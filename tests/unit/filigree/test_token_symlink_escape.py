@@ -6,6 +6,7 @@ shape of tests/unit/core/test_attest_key.py::test_mint_rejects_symlinked_dotenv.
 from __future__ import annotations
 
 import os
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -22,13 +23,20 @@ from wardline.filigree.config import (
 
 
 @pytest.fixture(autouse=True)
-def _clear(monkeypatch: pytest.MonkeyPatch) -> None:
+def _clear(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     # All three credential env names may leak in from the real environment — clear
     # them so each test controls the full picture (an unset env is the case where
     # the file-based read actually runs).
     monkeypatch.delenv(WEFT_FEDERATION_TOKEN_ENV, raising=False)
     monkeypatch.delenv(WARDLINE_FILIGREE_TOKEN_ENV, raising=False)
     monkeypatch.delenv(_API_KEY_ENV, raising=False)
+    yield
+    # load_env_key intentionally writes directly to os.environ. If the key was absent
+    # above, MonkeyPatch has no deletion to undo, so remove test-created credentials
+    # explicitly before its teardown restores any real values inherited by the test.
+    os.environ.pop(WEFT_FEDERATION_TOKEN_ENV, None)
+    os.environ.pop(WARDLINE_FILIGREE_TOKEN_ENV, None)
+    os.environ.pop(_API_KEY_ENV, None)
 
 
 def _outside_secret(tmp_path: Path, name: str, content: str) -> Path:

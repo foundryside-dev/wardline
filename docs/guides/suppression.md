@@ -167,11 +167,13 @@ state file under `.weft/wardline/`: waivers in `waivers.yaml`, machine-judged FP
 in `judged.yaml` with full provenance.
 
 Each record carries the model's verbatim `rationale` — the audit primitive — plus
-`model_id`, `confidence`, `recorded_at`, and a `policy_hash` so a re-run under a
-changed prompt is a visible audit signal.
+`model_id`, concrete `judge_transport`, `confidence`, `recorded_at`, and a
+`policy_hash` so a re-run under a changed prompt or provider is a visible audit
+signal. The transport is always `codex-cli` or `openrouter`, never `auto`.
 
 ```yaml
-version: 1
+fingerprint_scheme: wlfp2
+version: 2
 findings:
 - fingerprint: <64-hex>
   rule_id: PY-WL-101
@@ -180,10 +182,21 @@ findings:
   verdict: FALSE_POSITIVE
   rationale: <verbatim model reasoning — the audit record>
   confidence: 0.9
-  model_id: anthropic/claude-opus-4-8
-  recorded_at: 2026-05-30T00:00:00+00:00
+  model_id: gpt-5.6-sol
+  judge_transport: codex-cli
+  recorded_at: 2026-08-02T00:00:00+00:00
   policy_hash: sha256:<...>
 ```
+
+Wardline writes version 2 records. It also reads a **legacy v1** judged file
+without rewriting it; because Wardline 1.5.0 had only OpenRouter, the loader
+infers `OpenRouter` provenance for those records. Version 2 requires an explicit
+concrete transport and never infers one.
+
+The schema change is one-way: do not roll a version 2 file back by deleting
+`judge_transport` or relabelling Codex records as OpenRouter. For rollback,
+restore the prior version 1 file from version control. A later Wardline write
+will produce version 2 again with truthful transport provenance.
 
 Commit `.weft/wardline/judged.yaml` like the baseline. A judged suppression is
 advisory — the rationale is recorded precisely so a human can audit it and revert

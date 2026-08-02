@@ -5,6 +5,7 @@ import os
 import pytest
 
 from wardline.core.judge import JudgeRequest, JudgeVerdict, call_judge
+from wardline.core.judge_types import JudgeTransport
 
 pytestmark = pytest.mark.network
 
@@ -33,3 +34,4 @@ def test_live_triage_round_trip() -> None:
     assert 0.0 <= first.confidence <= 1.0
     assert first.rationale.strip()
     assert first.policy_hash.startswith("sha256:")
+    assert first.judge_transport is JudgeTransport.OPENROUTER

@@ -126,6 +126,29 @@ def test_journal_rejects_an_unknown_fingerprint_scheme(tmp_path: Path, field: st
 
 
 @pytest.mark.parametrize(
+    ("remap", "error"),
+    [
+        ({"short": "1" * 64}, "source fingerprint"),
+        ({"a" * 64: "NOT-LOWERCASE"}, "target fingerprint"),
+        ({"a" * 64: "1" * 64, "b" * 64: "1" * 64}, "target collision"),
+        ({"a" * 64: "x" * 10_000}, "target fingerprint"),
+    ],
+)
+def test_load_journal_rejects_invalid_or_noninjective_remap_with_bounded_diagnostic(
+    tmp_path: Path,
+    remap: dict[str, str],
+    error: str,
+) -> None:
+    path = tmp_path / "journal.yaml"
+    _write_raw(path, {**_journal_doc(legs=_leg_docs()), "remap": remap})
+
+    with pytest.raises(ConfigError, match=error) as raised:
+        load_journal(path)
+
+    assert len(str(raised.value)) < 512
+
+
+@pytest.mark.parametrize(
     ("case", "names"),
     (
         ("missing", LEG_NAMES[:-1]),
