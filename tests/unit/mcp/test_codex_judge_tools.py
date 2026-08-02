@@ -969,6 +969,20 @@ def test_python_multiline_string_quote_cannot_suppress_later_credential(tmp_path
     assert content not in message
 
 
+def test_python_assignment_after_multiline_string_on_same_line_is_denied(tmp_path: Path) -> None:
+    literal = "correct-horse-battery-staple"
+    content = f'note = """first line\ninterior " quote\nthird line"""; password = "{literal}"\n'
+    ast.parse(content)
+    (tmp_path / "configuration.py").write_text(content, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="credential_assignment") as exc_info:
+        _read_file(_ctx(tmp_path), {"file_path": "configuration.py"})
+
+    message = str(exc_info.value)
+    assert literal not in message
+    assert content not in message
+
+
 def test_toml_multiline_string_quote_cannot_suppress_later_credential(tmp_path: Path) -> None:
     literal = "correct-horse-battery-staple"
     content = f'note = """first line\ninterior " quote\nthird line"""\npassword = "{literal}"\n'

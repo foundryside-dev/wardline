@@ -126,6 +126,9 @@ _CREDENTIAL_KEY_RE = re.compile(
     rf"(?imx)(?:^[ \t]*(?:-[ \t]+)?|(?P<flow>(?<!\$\{{)(?<=[{{,]))[ \t]*"
     rf"){_CREDENTIAL_LABEL_PATTERN}[ \t]*(?P<delimiter>[:=])"
 )
+_SEMICOLON_CREDENTIAL_KEY_RE = re.compile(rf"(?imx)(?<=;)[ \t]*{_CREDENTIAL_LABEL_PATTERN}[ \t]*(?P<delimiter>[:=])")
+_RAW_CREDENTIAL_KEY_SUFFIXES = frozenset({".py", ".pyi", ".toml", ".yaml", ".yml"})
+_SEMICOLON_STATEMENT_SUFFIXES = frozenset({".py", ".pyi"})
 _DECLARATION_PATTERNS = {
     ".bash": (r"export[ \t]+", r""),
     ".c": (r"(?:(?:static|extern|const)[ \t]+)*(?:char[ \t]*\*|char[ \t]+)[ \t]*", r""),
@@ -572,64 +575,67 @@ def _starts_hash_comment(text: str, index: int, mode: str) -> bool:
 
 
 def _credential_scalar_starts(text: str, *, source_suffix: str, source_name: str) -> Iterator[tuple[int, bool, str]]:
-    if source_suffix in {".yaml", ".yml"}:
-        # YAML block scalars may contain arbitrary unmatched quote or
-        # substitution bytes.  Do not let those bytes suppress a later
-        # structural credential-key match.
+    if source_suffix in _RAW_CREDENTIAL_KEY_SUFFIXES:
+        # Multiline strings and YAML block scalars may contain arbitrary
+        # unmatched quote or substitution bytes.  Treat structural key
+        # matches as raw evidence instead of approximating language parsers.
         for credential in _CREDENTIAL_KEY_RE.finditer(text):
             yield credential.end(), credential.group("flow") is not None, credential.group("delimiter")
-        return
-    cursor = 0
-    quote: str | None = None
-    escaped = False
-    substitution_depth = 0
-    in_comment = False
-    hash_comment_mode = _hash_comment_mode(source_suffix, text)
-    for credential in _CREDENTIAL_KEY_RE.finditer(text):
-        index = cursor
-        while index < credential.start():
-            character = text[index]
-            if character in "\r\n":
-                quote = None
-                escaped = False
-                substitution_depth = 0
-                in_comment = False
-                index += 1
-                continue
-            if in_comment:
-                index += 1
-                continue
-            if substitution_depth:
-                if character == "{":
-                    substitution_depth += 1
-                elif character == "}":
-                    substitution_depth -= 1
-                index += 1
-                continue
-            if quote is not None:
-                if escaped:
-                    escaped = False
-                elif character == "\\":
-                    escaped = True
-                elif character == quote:
+    else:
+        cursor = 0
+        quote: str | None = None
+        escaped = False
+        substitution_depth = 0
+        in_comment = False
+        hash_comment_mode = _hash_comment_mode(source_suffix, text)
+        for credential in _CREDENTIAL_KEY_RE.finditer(text):
+            index = cursor
+            while index < credential.start():
+                character = text[index]
+                if character in "\r\n":
                     quote = None
+                    escaped = False
+                    substitution_depth = 0
+                    in_comment = False
+                    index += 1
+                    continue
+                if in_comment:
+                    index += 1
+                    continue
+                if substitution_depth:
+                    if character == "{":
+                        substitution_depth += 1
+                    elif character == "}":
+                        substitution_depth -= 1
+                    index += 1
+                    continue
+                if quote is not None:
+                    if escaped:
+                        escaped = False
+                    elif character == "\\":
+                        escaped = True
+                    elif character == quote:
+                        quote = None
+                    index += 1
+                    continue
+                if character == "$" and index + 1 < credential.start() and text[index + 1] == "{":
+                    substitution_depth = 1
+                    index += 2
+                    continue
+                if character in ('"', "'"):
+                    quote = character
+                elif character == "#" and _starts_hash_comment(text, index, hash_comment_mode):
+                    in_comment = True
                 index += 1
+            if quote is not None or substitution_depth or in_comment:
+                cursor = credential.start()
                 continue
-            if character == "$" and index + 1 < credential.start() and text[index + 1] == "{":
-                substitution_depth = 1
-                index += 2
-                continue
-            if character in ('"', "'"):
-                quote = character
-            elif character == "#" and _starts_hash_comment(text, index, hash_comment_mode):
-                in_comment = True
-            index += 1
-        if quote is not None or substitution_depth or in_comment:
-            cursor = credential.start()
-            continue
-        flow_context = source_suffix == ".json" or credential.group("flow") is not None
-        yield credential.end(), flow_context, credential.group("delimiter")
-        cursor = credential.end()
+            flow_context = source_suffix == ".json" or credential.group("flow") is not None
+            yield credential.end(), flow_context, credential.group("delimiter")
+            cursor = credential.end()
+    if source_suffix in _SEMICOLON_STATEMENT_SUFFIXES:
+        for credential in _SEMICOLON_CREDENTIAL_KEY_RE.finditer(text):
+            yield credential.end(), False, credential.group("delimiter")
     if source_suffix in {".ts", ".tsx"}:
         for credential in _TYPESCRIPT_OPTIONAL_CREDENTIAL_RE.finditer(text):
             yield credential.end(), False, credential.group("delimiter")
