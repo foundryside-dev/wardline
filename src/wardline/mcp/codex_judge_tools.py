@@ -572,6 +572,13 @@ def _starts_hash_comment(text: str, index: int, mode: str) -> bool:
 
 
 def _credential_scalar_starts(text: str, *, source_suffix: str, source_name: str) -> Iterator[tuple[int, bool, str]]:
+    if source_suffix in {".yaml", ".yml"}:
+        # YAML block scalars may contain arbitrary unmatched quote or
+        # substitution bytes.  Do not let those bytes suppress a later
+        # structural credential-key match.
+        for credential in _CREDENTIAL_KEY_RE.finditer(text):
+            yield credential.end(), credential.group("flow") is not None, credential.group("delimiter")
+        return
     cursor = 0
     quote: str | None = None
     escaped = False
@@ -697,7 +704,7 @@ def _scan_credential_scalar(
                 terminated = True
                 terminator = character
                 break
-            if character == "," and flow_context and source_suffix not in {".yaml", ".yml"}:
+            if character == "," and flow_context:
                 terminated = True
                 terminator = character
                 break
@@ -826,9 +833,13 @@ def _source_scalar(scalar: str, *, source_suffix: str) -> str:
     return scalar
 
 
-def _credential_scalar_denied(scalar: str, *, source_suffix: str, allow_yaml_trailing_comma: bool = False) -> bool:
+def _credential_scalar_denied(
+    scalar: str, *, source_suffix: str, allow_safe_value_trailing_comma: bool = False
+) -> bool:
     source_scalar = _source_scalar(scalar, source_suffix=source_suffix)
-    if allow_yaml_trailing_comma and source_suffix in {".yaml", ".yml"} and source_scalar.endswith(","):
+    # This is a value-based exception for an exact safe scalar before a line
+    # ending.  It does not authorize or infer YAML flow structure.
+    if allow_safe_value_trailing_comma and source_suffix in {".yaml", ".yml"} and source_scalar.endswith(","):
         without_comma = source_scalar[:-1].rstrip()
         if without_comma and not without_comma.endswith(","):
             trailing_value, _is_literal = _normalized_credential_scalar(without_comma)
@@ -876,7 +887,7 @@ def _secret_pattern(text: str, *, source_suffix: str, source_name: str) -> str |
         if _credential_scalar_denied(
             scalar,
             source_suffix=source_suffix,
-            allow_yaml_trailing_comma=scan.terminator in {"\r", "\n"},
+            allow_safe_value_trailing_comma=scan.terminator in {"\r", "\n"},
         ):
             return "credential_assignment"
     return None

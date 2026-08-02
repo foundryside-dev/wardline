@@ -798,6 +798,28 @@ def test_flow_map_later_credential_is_denied_without_value_echo(tmp_path: Path) 
     assert content not in message
 
 
+def test_same_line_yaml_flow_map_with_only_safe_scalars_remains_readable(tmp_path: Path) -> None:
+    content = "{password: null, token: false, api_key: placeholder-value}"
+    assert yaml.safe_load(content) is not None
+    (tmp_path / "config.yaml").write_text(content, encoding="utf-8")
+
+    assert content in _read_file(_ctx(tmp_path), {"file_path": "config.yaml"})
+
+
+def test_same_line_yaml_flow_map_later_literal_is_denied_without_echo(tmp_path: Path) -> None:
+    literal = "correct-horse-battery-staple"
+    content = f"{{password: null, token: false, api_key: {literal}}}"
+    assert literal in json.dumps(yaml.safe_load(content))
+    (tmp_path / "config.yaml").write_text(content, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="credential_assignment") as exc_info:
+        _read_file(_ctx(tmp_path), {"file_path": "config.yaml"})
+
+    message = str(exc_info.value)
+    assert literal not in message
+    assert content not in message
+
+
 @pytest.mark.parametrize(
     ("filename", "content"),
     [
@@ -1413,10 +1435,59 @@ def test_multiline_yaml_flow_later_literal_is_denied_without_echo(tmp_path: Path
     assert content not in message
 
 
+@pytest.mark.parametrize("block_bytes", ['  "', "  ${"])
+def test_yaml_block_scalar_state_cannot_suppress_later_credential(tmp_path: Path, block_bytes: str) -> None:
+    literal = "correct-horse-battery-staple"
+    content = f"note: |\n{block_bytes}\npassword: {literal}\n"
+    parsed = yaml.safe_load(content)
+    assert isinstance(parsed, dict)
+    assert parsed["password"] == literal
+    (tmp_path / "config.yaml").write_text(content, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="credential_assignment") as exc_info:
+        _read_file(_ctx(tmp_path), {"file_path": "config.yaml"})
+
+    message = str(exc_info.value)
+    assert literal not in message
+    assert content not in message
+
+
+@pytest.mark.parametrize("line_ending", ["\n", "\r", "\r\n"])
+def test_yaml_block_context_safe_sentinel_with_one_line_ending_comma_is_readable(
+    tmp_path: Path, line_ending: str
+) -> None:
+    content = f"password: null,{line_ending}status: ok{line_ending}"
+    (tmp_path / "config.yaml").write_bytes(content.encode())
+
+    result = _read_file(_ctx(tmp_path), {"file_path": "config.yaml"})
+
+    assert "password: null," in result
+    assert "status: ok" in result
+
+
 @pytest.mark.parametrize(
     "content",
     [
-        "{password: null,real-secret}",
+        "password: null,",
+        "password: n,ull\n",
+        "password: null,,\n",
+        "password: null, appended\n",
+        "password: correct-horse-battery-staple,\n",
+    ],
+)
+def test_yaml_block_context_trailing_comma_exception_rejects_nonexact_safe_values(tmp_path: Path, content: str) -> None:
+    (tmp_path / "config.yaml").write_text(content, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="credential_assignment") as exc_info:
+        _read_file(_ctx(tmp_path), {"file_path": "config.yaml"})
+
+    assert content not in str(exc_info.value)
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        "{password: null, api_key: real-secret}",
         "password: null,,",
         "password: null,real-secret,",
         "password: null, appended text",
