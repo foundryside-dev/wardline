@@ -16,7 +16,7 @@ from pathlib import Path
 from wardline.core import config as config_mod
 from wardline.core.config import JudgeSettings, parse_judge_settings
 from wardline.core.confinement import SourceRootConfinement
-from wardline.core.errors import JudgeConfigurationError, WardlineError
+from wardline.core.errors import JudgeConfigurationError, JudgeTransportError, WardlineError
 from wardline.core.judge import (
     _API_KEY_ENV,
     _STATIC_POLICY_BLOCK,
@@ -33,6 +33,8 @@ from wardline.core.run import run_scan
 from wardline.core.safe_paths import safe_project_file
 from wardline.core.source_excerpt import extract_excerpt
 from wardline.core.triage import TriageResult, active_defects, run_triage
+
+_CODEX_RUN_TRANSPORT_ERROR = "Codex CLI transport failed for this judge run"
 
 
 @dataclass(frozen=True, slots=True)
@@ -200,13 +202,11 @@ def run_judge(
         result = TriageResult()
     else:
         project_policy = resolve_project_policy(root, settings, trust_judge_policy=trust_judge_policy)
-        terminal_transport_errors = False
         caller: Callable[[JudgeRequest], JudgeResponse]
         if judge_caller is not None:
             caller = judge_caller
         else:
             selected = resolve_judge_transport(requested_transport, probe=codex_probe)
-            terminal_transport_errors = selected is JudgeTransport.CODEX_CLI
             if selected is JudgeTransport.OPENROUTER:
                 load_env_key(root)
                 model_id = model if model is not None else settings.model
@@ -225,16 +225,24 @@ def run_judge(
             else:
                 model_id = codex_model if codex_model is not None else settings.codex_model
                 codex_tool_scope = CodexToolScope(root=root.resolve())
+                codex_transport_failed = False
 
                 def _codex_caller(req: JudgeRequest) -> JudgeResponse:
-                    return call_judge(
-                        req,
-                        model_id=model_id,
-                        policy_block=None,
-                        project_policy=project_policy,
-                        judge_transport=JudgeTransport.CODEX_CLI,
-                        codex_tool_scope=codex_tool_scope,
-                    )
+                    nonlocal codex_transport_failed
+                    if codex_transport_failed:
+                        raise JudgeTransportError(_CODEX_RUN_TRANSPORT_ERROR) from None
+                    try:
+                        return call_judge(
+                            req,
+                            model_id=model_id,
+                            policy_block=None,
+                            project_policy=project_policy,
+                            judge_transport=JudgeTransport.CODEX_CLI,
+                            codex_tool_scope=codex_tool_scope,
+                        )
+                    except JudgeTransportError:
+                        codex_transport_failed = True
+                    raise JudgeTransportError(_CODEX_RUN_TRANSPORT_ERROR) from None
 
                 caller = _codex_caller
 
@@ -245,7 +253,6 @@ def run_judge(
             ),
             judge_caller=caller,
             max_findings=cap,
-            terminal_transport_errors=terminal_transport_errors,
         )
 
     verdicts = [

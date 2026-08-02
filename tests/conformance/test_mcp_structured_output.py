@@ -350,7 +350,14 @@ def test_judge_structured_output(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
         policy_hash="deadbeef",
         judge_transport=JudgeTransport.OPENROUTER,
     )
+
+    def _select_openrouter(requested: JudgeTransport, *, probe: object) -> JudgeTransport:
+        del probe
+        assert requested is JudgeTransport.AUTO
+        return JudgeTransport.OPENROUTER
+
     monkeypatch.setattr("wardline.core.judge_run.call_judge", lambda *a, **k: fake)
+    monkeypatch.setattr("wardline.core.judge_run.resolve_judge_transport", _select_openrouter)
     monkeypatch.setenv("WARDLINE_OPENROUTER_API_KEY", "sk-or-test")
     server = WardlineMCPServer(root=_leaky_project(tmp_path))
     out = _validated(server, "judge", {})

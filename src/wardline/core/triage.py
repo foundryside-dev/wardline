@@ -2,11 +2,10 @@
 """Triage orchestration (SP5): drive the judge over active DEFECTs.
 
 Pure orchestration — the excerpt reader and the judge caller are injected, so the
-whole flow is hermetic in tests. A transport failure is counted and normally skips
-that one finding. Callers may classify transport failures as run-terminal when retrying
-the selected provider would only multiply an outage. A ``JudgeContractError``
-(malformed model output) is NOT caught here — it propagates, because a corrupted audit
-primitive must surface.
+whole flow is hermetic in tests. A transport failure skips that one finding and is
+counted, never crashes the run (charter: the judge is additive). A
+``JudgeContractError`` (malformed model output) is NOT caught here — it propagates,
+because a corrupted audit primitive must surface.
 """
 
 from __future__ import annotations
@@ -75,7 +74,6 @@ def run_triage(
     read_excerpt: Callable[[Finding], str],
     judge_caller: Callable[[JudgeRequest], JudgeResponse],
     max_findings: int | None = None,
-    terminal_transport_errors: bool = False,
 ) -> TriageResult:
     if max_findings is not None and max_findings <= 0:
         raise ValueError(f"max_findings must be positive, got {max_findings}")
@@ -85,7 +83,7 @@ def run_triage(
     n_cap = len(active) - len(eligible)
     n_transport = 0
     n_excerpt = 0
-    for i, finding in enumerate(eligible):
+    for finding in eligible:
         # A per-finding excerpt failure (file moved/unreadable, path escape) is
         # recoverable: skip-and-count, mirroring the transport band. It must NOT abort
         # the whole run (which would discard verdicts already computed). A malformed
@@ -100,9 +98,6 @@ def run_triage(
         try:
             response = judge_caller(request)
         except JudgeTransportError:
-            if terminal_transport_errors:
-                n_transport += len(eligible) - i
-                break
             n_transport += 1
             continue
         verdicts.append(TriageVerdict(finding=finding, response=response))

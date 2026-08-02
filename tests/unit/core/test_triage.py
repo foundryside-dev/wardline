@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 from datetime import UTC, datetime
 
 from wardline.core.finding import Finding, Kind, Location, Severity, SuppressionState
@@ -103,31 +104,7 @@ def test_run_triage_counts_transport_skips() -> None:
     assert result.n_skipped_transport == 1 and result.verdicts == []
 
 
-def test_run_triage_terminal_transport_error_preserves_prior_verdict_and_skips_remainder() -> None:
-    from wardline.core.errors import JudgeTransportError
-
-    findings = [_defect("a" * 64), _defect("b" * 64), _defect("c" * 64)]
-    calls: list[str] = []
-
-    def caller(req: JudgeRequest) -> JudgeResponse:
-        calls.append(req.fingerprint)
-        if len(calls) == 2:
-            raise JudgeTransportError("provider down")
-        return _resp(JudgeVerdict.TRUE_POSITIVE)
-
-    result = run_triage(
-        findings,
-        read_excerpt=lambda _finding: "c",
-        judge_caller=caller,
-        terminal_transport_errors=True,
-    )
-
-    assert calls == ["a" * 64, "b" * 64]
-    assert [verdict.finding.fingerprint for verdict in result.verdicts] == ["a" * 64]
-    assert result.n_skipped_transport == 2
-
-
-def test_run_triage_nonterminal_transport_errors_remain_per_finding() -> None:
+def test_run_triage_transport_errors_remain_provider_agnostic_and_per_finding() -> None:
     from wardline.core.errors import JudgeTransportError
 
     findings = [_defect("a" * 64), _defect("b" * 64), _defect("c" * 64)]
@@ -144,6 +121,10 @@ def test_run_triage_nonterminal_transport_errors_remain_per_finding() -> None:
     assert calls == [finding.fingerprint for finding in findings]
     assert [verdict.finding.fingerprint for verdict in result.verdicts] == ["c" * 64]
     assert result.n_skipped_transport == 2
+
+
+def test_run_triage_public_api_has_no_provider_terminal_state() -> None:
+    assert "terminal_transport_errors" not in inspect.signature(run_triage).parameters
 
 
 def test_run_triage_contract_error_propagates() -> None:

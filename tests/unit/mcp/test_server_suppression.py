@@ -256,10 +256,17 @@ def _fake_response() -> JudgeResponse:
     )
 
 
+def _select_openrouter(requested: JudgeTransport, *, probe: object) -> JudgeTransport:
+    del probe
+    assert requested is JudgeTransport.AUTO
+    return JudgeTransport.OPENROUTER
+
+
 def test_judge_tool_success_via_monkeypatch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     # run_judge builds its default caller from call_judge imported INTO the
     # judge_run namespace; patch it there so the network is never touched.
     monkeypatch.setattr("wardline.core.judge_run.call_judge", lambda *a, **k: _fake_response())
+    monkeypatch.setattr("wardline.core.judge_run.resolve_judge_transport", _select_openrouter)
     # call_judge is patched out, and the env-key check lives inside it — so no key is
     # actually read and no network is hit. The setenv just keeps the default-caller
     # construction path representative; it is not load-bearing for this test.
@@ -277,11 +284,6 @@ def test_judge_tool_success_via_monkeypatch(tmp_path: Path, monkeypatch: pytest.
 
 def test_judge_tool_missing_key_is_iserror_with_guidance(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("WARDLINE_OPENROUTER_API_KEY", raising=False)
-
-    def _select_openrouter(requested: JudgeTransport, *, probe: object) -> JudgeTransport:
-        del probe
-        assert requested is JudgeTransport.AUTO
-        return JudgeTransport.OPENROUTER
 
     # This test exercises OpenRouter's missing-key guidance, not auto-selection.
     # Pin the concrete transport so an authenticated developer Codex installation

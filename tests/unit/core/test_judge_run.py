@@ -28,6 +28,7 @@ from wardline.core.judge_types import (
 )
 from wardline.core.paths import judged_path
 from wardline.core.run import run_scan
+from wardline.core.triage import TriageResult
 
 # A @trust_boundary(to_level=GUARDED) validator that returns its input unchanged
 # (no rejection path) -> an active PY-WL-102 defect. Mirrors the proven CLI fixture.
@@ -501,6 +502,12 @@ def test_selected_codex_transport_error_stops_run_and_preserves_prior_verdict(
     ]
     assert len(eligible) >= 3
     attempts: list[JudgeTransport] = []
+    excerpt_reads = 0
+
+    def _excerpt(*_args: object, **_kwargs: object) -> str:
+        nonlocal excerpt_reads
+        excerpt_reads += 1
+        return "def validate(x): return x"
 
     def _call(_request: JudgeRequest, **kwargs: object) -> JudgeResponse:
         selected = kwargs["judge_transport"]
@@ -511,6 +518,7 @@ def test_selected_codex_transport_error_stops_run_and_preserves_prior_verdict(
         return _tp_response(JudgeTransport.CODEX_CLI)
 
     monkeypatch.setattr("wardline.core.judge_run.call_judge", _call)
+    monkeypatch.setattr("wardline.core.judge_run.extract_excerpt", _excerpt)
 
     outcome = run_judge(
         root,
@@ -519,6 +527,7 @@ def test_selected_codex_transport_error_stops_run_and_preserves_prior_verdict(
     )
 
     assert attempts == [JudgeTransport.CODEX_CLI, JudgeTransport.CODEX_CLI]
+    assert excerpt_reads == len(eligible)
     assert len(outcome.verdicts) == 1
     assert outcome.result.n_skipped_transport == len(eligible) - 1
 
@@ -533,6 +542,12 @@ def test_selected_codex_first_transport_error_attempts_only_one_subprocess(
         if finding.kind is Kind.DEFECT and finding.suppressed is SuppressionState.ACTIVE
     ]
     attempts = 0
+    excerpt_reads = 0
+
+    def _excerpt(*_args: object, **_kwargs: object) -> str:
+        nonlocal excerpt_reads
+        excerpt_reads += 1
+        return "def validate(x): return x"
 
     def _call(_request: JudgeRequest, **kwargs: object) -> JudgeResponse:
         nonlocal attempts
@@ -541,6 +556,7 @@ def test_selected_codex_first_transport_error_attempts_only_one_subprocess(
         raise JudgeTransportError("sensitive provider diagnostic")
 
     monkeypatch.setattr("wardline.core.judge_run.call_judge", _call)
+    monkeypatch.setattr("wardline.core.judge_run.extract_excerpt", _excerpt)
 
     outcome = run_judge(
         root,
@@ -549,9 +565,65 @@ def test_selected_codex_first_transport_error_attempts_only_one_subprocess(
     )
 
     assert attempts == 1
+    assert excerpt_reads == len(eligible)
     assert outcome.verdicts == []
     assert outcome.result.n_skipped_transport == len(eligible)
     assert "sensitive provider diagnostic" not in repr(outcome)
+
+
+def test_selected_codex_outage_state_raises_only_fixed_sanitized_errors(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = _leaky_project(tmp_path)
+    attempts = 0
+    errors: list[JudgeTransportError] = []
+    request = JudgeRequest(
+        rule_id="PY-WL-119",
+        message="m",
+        severity="ERROR",
+        file_path="svc/v.py",
+        line=1,
+        qualname="svc.v.validate",
+        fingerprint="a" * 64,
+        taint_summary="x",
+        surrounding_code="x",
+    )
+
+    def _call(_request: JudgeRequest, **_kwargs: object) -> JudgeResponse:
+        nonlocal attempts
+        attempts += 1
+        raise JudgeTransportError("raw-provider-secret")
+
+    def _exercise_caller(
+        _findings: object,
+        *,
+        judge_caller: object,
+        **_kwargs: object,
+    ) -> TriageResult:
+        assert callable(judge_caller)
+        for _ in range(2):
+            try:
+                judge_caller(request)
+            except JudgeTransportError as exc:
+                errors.append(exc)
+        return TriageResult(n_skipped_transport=2)
+
+    monkeypatch.setattr("wardline.core.judge_run.call_judge", _call)
+    monkeypatch.setattr("wardline.core.judge_run.run_triage", _exercise_caller)
+
+    run_judge(
+        root,
+        codex_probe=lambda: CodexAvailability.available("codex-cli 0.146.0"),
+    )
+
+    assert attempts == 1
+    assert len(errors) == 2
+    assert {str(error) for error in errors} == {"Codex CLI transport failed for this judge run"}
+    assert all(
+        error.__cause__ is None and error.__context__ is None and error.__suppress_context__
+        for error in errors
+    )
+    assert all("raw-provider-secret" not in repr(error) for error in errors)
 
 
 def test_untrusted_project_transport_and_models_are_ignored_but_guarded_policy_is_retained(
