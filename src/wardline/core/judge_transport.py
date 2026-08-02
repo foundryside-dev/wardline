@@ -189,6 +189,26 @@ def _drain_stream(stream: IO[bytes], capture: _BoundedCapture) -> None:
         capture.read_failed = True
 
 
+def _fallback_kill_and_reap(
+    process: subprocess.Popen[bytes],
+    *,
+    posix: bool,
+) -> None:
+    """Make bounded independent kill/reap attempts after normal teardown fails."""
+    deadline = time.monotonic() + _PROCESS_TERMINATION_GRACE_SECONDS
+    if posix:
+        with suppress(BaseException):
+            os.killpg(process.pid, signal.SIGKILL)
+    with suppress(BaseException):
+        process.kill()
+    for _attempt in range(2):
+        try:
+            process.wait(timeout=max(0.0, deadline - time.monotonic()))
+            break
+        except BaseException:
+            pass
+
+
 def _finalize_bounded_process(
     process: subprocess.Popen[bytes],
     *,
@@ -205,6 +225,8 @@ def _finalize_bounded_process(
             _terminate_process_tree(process, posix=posix)
         except BaseException:
             cleanup_failed = True
+            with suppress(BaseException):
+                _fallback_kill_and_reap(process, posix=posix)
 
     reader_deadline = time.monotonic() + _PROCESS_TERMINATION_GRACE_SECONDS
     for thread in started_threads:
