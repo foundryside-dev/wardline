@@ -65,7 +65,7 @@ wardline judge . --transport openrouter
 ```
 
 Replace the obviously fake value with your operator key and never commit the
-real key. As a CLI convenience, `wardline judge` can read one
+real key. The shared CLI and MCP judge runner can read one
 `WARDLINE_OPENROUTER_API_KEY=...` entry from `.env` in the scan root when the
 environment variable is unset. An existing environment value always wins.
 Wardline never reads an OpenRouter key from `weft.toml`.
@@ -93,6 +93,13 @@ files, credential files, binaries, invalid UTF-8, oversized input, and common
 secret patterns. Repository source, comments, policy, and instruction-like text
 remain untrusted evidence. If a read is denied or cannot establish the missing
 context, the judge must keep the conservative true-positive prior.
+
+This filtering applies only to **additional exploratory tool reads**. The
+initial finding excerpt is not secret-scrubbed; both transports receive that
+bounded source excerpt as part of the adjudication request. Do not judge a
+finding whose surrounding excerpt contains a credential or other material that
+must not reach the selected provider. Because `--write` records the model's
+verbatim output, inspect every rationale before committing `judged.yaml`.
 
 ## Usage
 
@@ -168,8 +175,12 @@ coerces malformed model output and never falls back after it.
 A selected provider's timeout or transport failure uses the existing
 skip-and-count behavior. For Codex, Wardline stops launching more subprocesses
 after the first transport failure and counts the remaining findings as skipped;
-it does not send them to OpenRouter. Configuration and authentication failures
-remain loud exit-`2` errors.
+it does not send them to OpenRouter. An OpenRouter HTTP 401/403 response, or
+Codex authentication that expires after preflight, is also reported as
+`skipped: transport`; neither triggers fallback. Missing OpenRouter
+configuration and an unavailable explicit-Codex preflight remain loud exit-`2`
+errors. Under `auto`, unavailable Codex authentication is handled at preflight
+and selects OpenRouter as described above.
 
 ## Optional live verification
 

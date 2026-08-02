@@ -29,6 +29,10 @@ def test_judge_guide_documents_selection_isolation_and_live_verification() -> No
     assert "gpt-5.6-sol" in judge
     assert "reasoning effort" in judge
     assert "WARDLINE_CODEX_LIVE=1" in judge and "-m codex_live" in judge
+    assert "initial finding excerpt is not secret-scrubbed" in judge
+    assert "inspect every rationale before committing" in judge
+    assert "HTTP 401/403" in judge and "skipped: transport" in judge
+    assert "CLI and MCP" in judge and ".env" in judge
 
 
 def test_cli_and_mcp_references_document_both_models_and_wire_provenance() -> None:
@@ -54,3 +58,10 @@ def test_public_docs_cover_v1_compatibility_and_remove_openrouter_only_claims() 
     assert "--transport codex-cli" in agents and "--transport openrouter" in agents
     assert "OpenRouter-only" not in readme
     assert "OpenRouter-only" not in _read("docs/guides/judge.md")
+
+
+def test_packaging_comment_describes_both_transport_adapters() -> None:
+    pyproject = _read("pyproject.toml")
+
+    assert "installed Codex CLI" in pyproject
+    assert "stdlib urllib -> OpenRouter" not in pyproject

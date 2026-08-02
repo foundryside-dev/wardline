@@ -231,9 +231,11 @@ wardline judge . --transport openrouter
 
 An explicit unavailable Codex selection and a missing OpenRouter key both fail
 loud with exit `2`, so an agent cannot mistake "couldn't triage" for "nothing to
-triage". Codex runs in Wardline's empty temporary workspace and can inspect only
-bounded, secret-aware repository reads; project instructions remain untrusted
-data.
+triage". Codex runs in Wardline's empty temporary workspace; additional
+repository exploration is bounded and secret-filtered, and project instructions
+remain untrusted data. The initial finding excerpt is not secret-scrubbed, so
+inspect it before judging and review every rationale before committing
+`judged.yaml`.
 
 The command prints the concrete transport and model on every verdict. Pass
 `--write` to append `FALSE_POSITIVE` verdicts to

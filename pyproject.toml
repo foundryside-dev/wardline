@@ -38,7 +38,8 @@ loomweave = ["wardline[scanner]", "blake3>=1.0"]
 # and loads rust_taint.yaml, so it pulls `wardline[scanner]` (pyyaml/click/jsonschema):
 # `pip install wardline[rust]` is then usable standalone, not merely additive to [scanner].
 rust = ["wardline[scanner]", "tree-sitter>=0.25,<0.26", "tree-sitter-rust==0.24.2"]
-# The SP5 LLM triage judge is dependency-free (stdlib urllib -> OpenRouter); no extra needed.
+# The LLM judge adds no Python dependency: it uses an installed Codex CLI or
+# stdlib urllib for the OpenRouter adapter; no Wardline extra is needed.
 
 [dependency-groups]
 # Tooling only. Runtime deps live in the extras above; `uv sync --all-extras

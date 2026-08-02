@@ -290,8 +290,9 @@ selection. Never run automatically; never folded into `scan`.
 (bound token spend), `write` (append above-floor false positives to
 `.weft/wardline/judged.yaml` — **without it the call is a dry run**),
 `context_lines`, `config`, `trust_judge_config`, and `trust_judge_policy`.
-Codex uses `codex login` state and needs no OpenRouter key; OpenRouter needs
-`WARDLINE_OPENROUTER_API_KEY`.
+Codex uses `codex login` state and needs no OpenRouter key. OpenRouter uses
+`WARDLINE_OPENROUTER_API_KEY` from the server environment, or the scan-root
+`.env` fallback shared by CLI and MCP when that variable is unset.
 
 **Returns:** `verdicts[]` (each with `fingerprint`, `rule_id`, `path`, `line`,
 `label` — the TRUE/FALSE-positive classification — `confidence`, and
