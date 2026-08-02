@@ -148,9 +148,9 @@ def test_codex_prompt_keeps_source_and_project_policy_in_untrusted_block() -> No
 
 def test_codex_policy_hash_has_exact_transport_reasoning_descriptor() -> None:
     policy = "exact effective policy bytes\n"
-    expected = "sha256:" + hashlib.sha256(
-        b"transport=codex-cli\nreasoning_effort=high\n" + policy.encode("utf-8")
-    ).hexdigest()
+    expected = (
+        "sha256:" + hashlib.sha256(b"transport=codex-cli\nreasoning_effort=high\n" + policy.encode("utf-8")).hexdigest()
+    )
 
     assert _policy_hash(policy, JudgeTransport.CODEX_CLI) == expected
 
@@ -284,8 +284,7 @@ def test_codex_jsonl_splits_only_lf_and_accepts_crlf_records() -> None:
             "error event",
         ),
         (
-            '{"type":"turn.completed","type":"turn.completed",'
-            '"usage":{"input_tokens":1,"output_tokens":1}}',
+            '{"type":"turn.completed","type":"turn.completed","usage":{"input_tokens":1,"output_tokens":1}}',
             "duplicate JSON object key",
         ),
         (_events("{}").replace("20", "NaN", 1), "non-finite JSON number"),
@@ -323,10 +322,7 @@ def test_codex_oversized_json_integer_is_sanitized_contract_error() -> None:
 
 @pytest.mark.parametrize("literal", ["1e400", "-1e400"])
 def test_codex_ignored_event_field_rejects_overflowed_json_float(literal: str) -> None:
-    stdout = (
-        f'{{"type":"thread.started","ATTACKER_KEY":{literal}}}\n'
-        + _events(_verdict())
-    )
+    stdout = f'{{"type":"thread.started","ATTACKER_KEY":{literal}}}\n' + _events(_verdict())
 
     with pytest.raises(JudgeContractError, match="non-finite JSON number") as exc_info:
         _parse_codex_jsonl(stdout, requested_model="MODEL_SENTINEL")
@@ -1013,9 +1009,7 @@ def test_consecutive_codex_calls_reproject_from_unchanged_ambient_auth(
         assert len(runner.calls) == 1
         assert runner.auth_bytes is not None
         assert _REAL_REFRESH_TOKEN.encode() not in runner.auth_bytes
-        assert json.loads(runner.auth_bytes)["tokens"]["refresh_token"] == (
-            _INERT_REFRESH_TOKEN
-        )
+        assert json.loads(runner.auth_bytes)["tokens"]["refresh_token"] == (_INERT_REFRESH_TOKEN)
         assert runner.execution_codex_home is not None
         assert not runner.execution_codex_home.exists()
     assert runners[0].execution_codex_home != runners[1].execution_codex_home
@@ -1323,9 +1317,7 @@ def test_codex_nonzero_diagnostic_is_bounded_and_never_echoes_provider_bytes(
 
 
 def test_codex_zero_exit_output_overflow_is_contract_error(tmp_path: Path) -> None:
-    runner = _RecordingProcessRunner(
-        _process_result(stdout="x" * 2_000, stdout_truncated=True)
-    )
+    runner = _RecordingProcessRunner(_process_result(stdout="x" * 2_000, stdout_truncated=True))
 
     with pytest.raises(JudgeContractError, match="output limit"):
         _call_codex_cli(
@@ -1432,7 +1424,7 @@ def test_default_bounded_runner_flags_invalid_utf8_without_dropping_bytes_into_j
         [
             sys.executable,
             "-c",
-            "import sys; sys.stdout.buffer.write(b'\\xff{\\\"type\\\":\\\"turn.completed\\\"}')",
+            'import sys; sys.stdout.buffer.write(b\'\\xff{\\"type\\":\\"turn.completed\\"}\')',
         ],
         input_text=None,
         timeout=10,

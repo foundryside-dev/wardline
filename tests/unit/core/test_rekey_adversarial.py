@@ -130,9 +130,7 @@ def _seed_snapshot(root: Path) -> None:
         "non_mapping_entry",
     ],
 )
-def test_judged_carry_rejects_incomplete_or_malformed_records(
-    tmp_path: Path, version: int, defect: str
-) -> None:
+def test_judged_carry_rejects_incomplete_or_malformed_records(tmp_path: Path, version: int, defect: str) -> None:
     entry = _valid_judged_entry(version=version)
     entries: list[object] = [entry]
     if defect.startswith("missing_"):
@@ -195,9 +193,7 @@ def test_fresh_rekey_rejects_invalid_judged_before_snapshot_or_journal_publicati
     assert not snapshot_dir(root).exists() or not tuple(snapshot_dir(root).iterdir())
 
 
-def test_fresh_rekey_snapshots_the_single_validated_live_read(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_fresh_rekey_snapshots_the_single_validated_live_read(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from wardline.core import rekey as rekey_module  # noqa: PLC0415
 
     root = tmp_path

@@ -62,9 +62,7 @@ def finding_to_request(finding: Finding, *, excerpt: str) -> JudgeRequest:
 def active_defects(findings: Sequence[Finding]) -> list[Finding]:
     """Return the findings eligible for judge triage, preserving scan order."""
     return [
-        finding
-        for finding in findings
-        if finding.kind is Kind.DEFECT and finding.suppressed is SuppressionState.ACTIVE
+        finding for finding in findings if finding.kind is Kind.DEFECT and finding.suppressed is SuppressionState.ACTIVE
     ]
 
 

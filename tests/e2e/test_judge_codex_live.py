@@ -53,10 +53,7 @@ def _completed_read_file_paths(stdout: str) -> set[str]:
 def test_live_codex_triage_round_trip(tmp_path: Path) -> None:
     availability = probe_codex_cli()
     assert availability.is_available, availability
-    assert (
-        resolve_judge_transport(JudgeTransport.AUTO, probe=lambda: availability)
-        is JudgeTransport.CODEX_CLI
-    )
+    assert resolve_judge_transport(JudgeTransport.AUTO, probe=lambda: availability) is JudgeTransport.CODEX_CLI
     (tmp_path / "svc.py").write_text("def validate(x):\n    return x\n", encoding="utf-8")
     request = JudgeRequest(
         rule_id="PY-WL-102",
@@ -98,9 +95,7 @@ def test_live_codex_explores_helper_for_load_bearing_context(tmp_path: Path) -> 
     helper_path = tmp_path / "judge_helper.py"
     helper_path.write_text(helper_source, encoding="utf-8")
     (tmp_path / "svc.py").write_text(
-        "from judge_helper import evaluate_value\n"
-        "def validate(value):\n"
-        "    return evaluate_value(value)\n",
+        "from judge_helper import evaluate_value\ndef validate(value):\n    return evaluate_value(value)\n",
         encoding="utf-8",
     )
     request = JudgeRequest(
@@ -116,9 +111,7 @@ def test_live_codex_explores_helper_for_load_bearing_context(tmp_path: Path) -> 
         fingerprint="b" * 64,
         taint_summary="declared_return=GUARDED, actual_return=EXTERNAL_RAW",
         surrounding_code=(
-            "1: from judge_helper import evaluate_value\n"
-            "2: def validate(value):\n"
-            "3:     return evaluate_value(value)"
+            "1: from judge_helper import evaluate_value\n2: def validate(value):\n3:     return evaluate_value(value)"
         ),
     )
 
@@ -156,10 +149,7 @@ def test_live_codex_explores_helper_for_load_bearing_context(tmp_path: Path) -> 
     # The completed JSONL tool event is the transport oracle. Citation wording is
     # prompt guidance, not a structured response field, and is model-nondeterministic.
     process_count = len(captured_stdout)
-    helper_read_completed = (
-        process_count == 1
-        and "judge_helper.py" in _completed_read_file_paths(captured_stdout[0])
-    )
+    helper_read_completed = process_count == 1 and "judge_helper.py" in _completed_read_file_paths(captured_stdout[0])
     has_rationale = bool(response.rationale.strip())
     verdict = response.verdict
     transport = response.judge_transport

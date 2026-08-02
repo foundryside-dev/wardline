@@ -253,9 +253,7 @@ def test_run_judge_triages_same_active_defect_fingerprints_as_scan_with_packs(
         sys.modules.pop("judge_parity_pack", None)
 
 
-def test_run_judge_auto_probes_once_and_reuses_one_codex_scope(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_run_judge_auto_probes_once_and_reuses_one_codex_scope(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     root = _multi_leaky_project(tmp_path)
     probes = 0
     captured: list[dict[str, object]] = []
@@ -289,9 +287,7 @@ def test_run_judge_auto_probes_once_and_reuses_one_codex_scope(
     assert all("tool_scope" not in call for call in captured)
 
 
-def test_run_judge_auto_unavailable_selects_openrouter_once(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_run_judge_auto_unavailable_selects_openrouter_once(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     root = _leaky_project(tmp_path)
     probes = 0
     key_loads = 0
@@ -328,9 +324,7 @@ def test_run_judge_auto_unavailable_selects_openrouter_once(
     assert all("codex_tool_scope" not in call for call in captured)
 
 
-def test_run_judge_explicit_openrouter_never_probes_codex(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_run_judge_explicit_openrouter_never_probes_codex(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     root = _leaky_project(tmp_path)
     captured: list[dict[str, object]] = []
 
@@ -644,10 +638,7 @@ def test_selected_codex_outage_state_raises_only_fixed_sanitized_errors(
     assert attempts == 1
     assert len(errors) == 2
     assert {str(error) for error in errors} == {"Codex CLI transport failed for this judge run"}
-    assert all(
-        error.__cause__ is None and error.__context__ is None and error.__suppress_context__
-        for error in errors
-    )
+    assert all(error.__cause__ is None and error.__context__ is None and error.__suppress_context__ for error in errors)
     assert all("raw-provider-secret" not in repr(error) for error in errors)
 
 
@@ -680,9 +671,7 @@ def test_untrusted_project_transport_and_models_are_ignored_but_guarded_policy_i
     assert {call["project_policy"] for call in captured} == {"Prefer short rationales.\n"}
 
 
-def test_trusted_project_transport_and_model_are_honored(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_trusted_project_transport_and_model_are_honored(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     root = _leaky_project(tmp_path)
     (root / "weft.toml").write_text(
         '[wardline.judge]\ntransport = "openrouter"\nmodel = "trusted/openrouter"\n',

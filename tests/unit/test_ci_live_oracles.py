@@ -58,9 +58,7 @@ def test_codex_live_oracle_is_registered_and_default_excluded() -> None:
 
 
 def test_codex_live_oracle_proves_tool_use_without_logging_model_output() -> None:
-    source = (ROOT / "tests" / "e2e" / "test_judge_codex_live.py").read_text(
-        encoding="utf-8"
-    )
+    source = (ROOT / "tests" / "e2e" / "test_judge_codex_live.py").read_text(encoding="utf-8")
     tree = ast.parse(source)
 
     assert "codex_process_runner=" in source
@@ -71,20 +69,13 @@ def test_codex_live_oracle_proves_tool_use_without_logging_model_output() -> Non
         if not isinstance(node, ast.Assert):
             continue
         assert not any(
-            isinstance(test_node, ast.Name)
-            and test_node.id in {"captured_stdout", "response"}
+            isinstance(test_node, ast.Name) and test_node.id in {"captured_stdout", "response"}
             for test_node in ast.walk(node.test)
         )
         if node.msg is not None:
             assert not any(
-                (
-                    isinstance(message_node, ast.Attribute)
-                    and message_node.attr == "rationale"
-                )
-                or (
-                    isinstance(message_node, ast.Name)
-                    and message_node.id in {"captured_stdout", "response"}
-                )
+                (isinstance(message_node, ast.Attribute) and message_node.attr == "rationale")
+                or (isinstance(message_node, ast.Name) and message_node.id in {"captured_stdout", "response"})
                 for message_node in ast.walk(node.msg)
             )
 

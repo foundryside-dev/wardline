@@ -161,9 +161,7 @@ def validate_judged_document(
         # Provenance is the audit primitive — never default it. A judged record with
         # no attributable model / policy / confidence is an unauditable suppression.
         model_id = _require_str(e, "model_id", idx, store_name)
-        judge_transport = (
-            JudgeTransport.OPENROUTER if version == 1 else _require_concrete_transport(e, idx, store_name)
-        )
+        judge_transport = JudgeTransport.OPENROUTER if version == 1 else _require_concrete_transport(e, idx, store_name)
         policy_hash = _require_str(e, "policy_hash", idx, store_name)
         confidence = _require_confidence(e, idx, store_name)
         recorded_at = _parse_dt(e.get("recorded_at"), idx, store_name)

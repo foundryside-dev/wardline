@@ -186,9 +186,7 @@ def test_rekey_carry_preserves_v2_codex_transport(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize("version", [None, True, False, 0, 3, "2"])
-def test_rekey_carry_rejects_missing_unknown_or_noninteger_judged_version(
-    tmp_path: Path, version: object
-) -> None:
+def test_rekey_carry_rejects_missing_unknown_or_noninteger_judged_version(tmp_path: Path, version: object) -> None:
     source = tmp_path / "judged.yaml"
     document: dict[str, object] = {
         "fingerprint_scheme": "wlfp1",

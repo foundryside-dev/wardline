@@ -334,11 +334,7 @@ def _run_bounded_process(
             env=dict(env),
             cwd=str(cwd) if cwd is not None else None,
             start_new_session=is_posix,
-            creationflags=(
-                0
-                if is_posix
-                else getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
-            ),
+            creationflags=(0 if is_posix else getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)),
         )
         assert process.stdout is not None and process.stderr is not None
         stdout_thread = threading.Thread(
@@ -432,9 +428,7 @@ def codex_child_env(source: Mapping[str, str] | None = None) -> dict[str, str]:
     """Build the minimal environment shared by Codex preflight and execution."""
     environ = os.environ if source is None else source
     child = {
-        key: value
-        for key, value in environ.items()
-        if value and (key in _CHILD_ENV_KEYS or key in _LOCALE_ENV_KEYS)
+        key: value for key, value in environ.items() if value and (key in _CHILD_ENV_KEYS or key in _LOCALE_ENV_KEYS)
     }
     child["NO_COLOR"] = "1"
     return child
@@ -452,9 +446,7 @@ def _ambient_codex_auth_path(source: Mapping[str, str] | None = None) -> Path:
         elif source is None:
             codex_home = Path.home() / ".codex"
         else:
-            raise JudgeTransportError(
-                "Codex CLI authentication material could not be staged safely"
-            )
+            raise JudgeTransportError("Codex CLI authentication material could not be staged safely")
     if not codex_home.is_absolute():
         raise JudgeTransportError("Codex CLI authentication material could not be staged safely")
     return codex_home / "auth.json"
@@ -862,15 +854,9 @@ def probe_codex_cli(*, runner: Runner | None = None) -> CodexAvailability:
         validate_codex_auth_projection(source=operator_env)
     except JudgeTransportError:
         if not _private_auth_projection_supported():
-            detail = (
-                "Codex CLI file-auth projection is unsupported on this platform; "
-                "select OpenRouter instead"
-            )
+            detail = "Codex CLI file-auth projection is unsupported on this platform; select OpenRouter instead"
         else:
-            detail = (
-                "Codex CLI ChatGPT authentication cannot be projected safely; "
-                "run `codex login` and retry"
-            )
+            detail = "Codex CLI ChatGPT authentication cannot be projected safely; run `codex login` and retry"
         return CodexAvailability(
             reason=CodexUnavailableReason.AUTH_UNPROJECTABLE,
             detail=detail,

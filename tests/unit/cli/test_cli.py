@@ -1983,8 +1983,7 @@ def test_judge_delegates_config_trust_and_renders_outcome_floor(
 
     proj = _make_judge_proj(tmp_path)
     (proj / "weft.toml").write_text(
-        '[wardline.judge]\ntransport = "codex-cli"\ncodex_model = "attacker/model"\n'
-        "write_confidence_floor = 0.1\n",
+        '[wardline.judge]\ntransport = "codex-cli"\ncodex_model = "attacker/model"\nwrite_confidence_floor = 0.1\n',
         encoding="utf-8",
     )
     captured: dict[str, object] = {}
@@ -2064,9 +2063,7 @@ def test_judge_trust_judge_config_uses_project_model(monkeypatch, tmp_path) -> N
     monkeypatch.setattr("wardline.core.judge_run.call_judge", _capture)
     monkeypatch.setenv("WARDLINE_OPENROUTER_API_KEY", "k")
 
-    result = CliRunner().invoke(
-        cli, ["judge", str(proj), "--transport", "openrouter", "--trust-judge-config"]
-    )
+    result = CliRunner().invoke(cli, ["judge", str(proj), "--transport", "openrouter", "--trust-judge-config"])
     assert result.exit_code == 0, result.output
     assert captured["model_id"] == "attacker/model"
 
@@ -2103,9 +2100,7 @@ def test_judge_trusted_policy_file_is_user_context_not_system(monkeypatch, tmp_p
     monkeypatch.setattr("wardline.core.judge_run.call_judge", _capture)
     monkeypatch.setenv("WARDLINE_OPENROUTER_API_KEY", "k")
 
-    result = CliRunner().invoke(
-        cli, ["judge", str(proj), "--transport", "openrouter", "--trust-judge-policy"]
-    )
+    result = CliRunner().invoke(cli, ["judge", str(proj), "--transport", "openrouter", "--trust-judge-policy"])
     assert result.exit_code == 0, result.output
     assert captured["policy_block"] == _STATIC_POLICY_BLOCK
     assert captured["project_policy"] == project_policy

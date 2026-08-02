@@ -285,19 +285,13 @@ def test_apply_rejects_invalid_global_remap_before_baseline_or_waiver_mutation(
     journal_path = paths.migration_journal_path(root)
     write_journal(journal_path, journal, root=root)
     bytes_before = {path: path.read_bytes() for path in [*live_paths, journal_path]}
-    legs_before = [
-        (leg.done, list(leg.carried), list(leg.orphaned), leg.debt)
-        for leg in journal.legs
-    ]
+    legs_before = [(leg.done, list(leg.carried), list(leg.orphaned), leg.debt) for leg in journal.legs]
 
     with pytest.raises(ConfigError, match=error):
         apply_pending_legs(root, journal)
 
     assert {path: path.read_bytes() for path in bytes_before} == bytes_before
-    assert [
-        (leg.done, list(leg.carried), list(leg.orphaned), leg.debt)
-        for leg in journal.legs
-    ] == legs_before
+    assert [(leg.done, list(leg.carried), list(leg.orphaned), leg.debt) for leg in journal.legs] == legs_before
 
 
 def test_resume_preflights_every_pending_snapshot_scheme_before_any_write(tmp_path: Path) -> None:

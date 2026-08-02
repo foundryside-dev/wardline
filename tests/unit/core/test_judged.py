@@ -83,9 +83,7 @@ def test_legacy_v1_record_infers_openrouter_without_rewrite(tmp_path: Path) -> N
         (True, "unknown"),
     ],
 )
-def test_v2_rejects_missing_or_nonconcrete_transport(
-    tmp_path: Path, include_transport: bool, value: object
-) -> None:
+def test_v2_rejects_missing_or_nonconcrete_transport(tmp_path: Path, include_transport: bool, value: object) -> None:
     entry: dict[str, object] = {
         "fingerprint": "a" * 64,
         "rule_id": "PY-WL-101",

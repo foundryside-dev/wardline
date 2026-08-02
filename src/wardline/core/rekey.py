@@ -1048,9 +1048,7 @@ def run_rekey(root: Path, findings: Sequence[Finding], *, filigree: Any = None) 
     live_payloads = _read_live_store_payloads(root)
     journal = new_journal(compute_old_new_fingerprints(findings))
     _preflight_store_payloads(live_payloads, journal)
-    populated_schemes = [
-        scheme for scheme, _fps in _store_fingerprints_from_payloads(live_payloads).values()
-    ]
+    populated_schemes = [scheme for scheme, _fps in _store_fingerprints_from_payloads(live_payloads).values()]
     if populated_schemes and all(s == FINGERPRINT_SCHEME for s in populated_schemes):
         raise WardlineError(
             f"every store is already at the {FINGERPRINT_SCHEME} fingerprint scheme — "

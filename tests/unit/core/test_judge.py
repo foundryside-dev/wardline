@@ -375,9 +375,7 @@ def test_call_judge_openrouter_status_error_does_not_echo_provider_body(monkeypa
     with pytest.raises(JudgeTransportError) as exc_info:
         call_judge(
             _req(),
-            openrouter_transport=_FakeTransport(
-                Response(503, '{"ATTACKER_KEY":"ATTACKER_VALUE"}')
-            ),
+            openrouter_transport=_FakeTransport(Response(503, '{"ATTACKER_KEY":"ATTACKER_VALUE"}')),
         )
     assert "ATTACKER_KEY" not in str(exc_info.value)
     assert "ATTACKER_VALUE" not in str(exc_info.value)
@@ -460,10 +458,7 @@ def test_shared_verdict_parser_rejects_huge_integer_confidence_without_overflow(
 
     def _fake(_request: JudgeRequest, _model: str, _max_tokens: int) -> _TransportResult:
         return _TransportResult(
-            raw_text=(
-                '{"verdict":"TRUE_POSITIVE","rationale":"safe rationale",'
-                f'"confidence":{huge}}}'
-            ),
+            raw_text=(f'{{"verdict":"TRUE_POSITIVE","rationale":"safe rationale","confidence":{huge}}}'),
             served_model_id="served-model",
             prompt_tokens_total=1,
             prompt_tokens_cached=None,

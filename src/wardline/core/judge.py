@@ -298,19 +298,12 @@ def _policy_hash(
     policy_block: str | None,
     judge_transport: JudgeTransport = JudgeTransport.OPENROUTER,
 ) -> str:
-    effective = (
-        _default_policy_block(judge_transport)
-        if policy_block is None
-        else policy_block
-    )
+    effective = _default_policy_block(judge_transport) if policy_block is None else policy_block
     if judge_transport is JudgeTransport.OPENROUTER and effective == _STATIC_POLICY_BLOCK:
         return JUDGE_POLICY_HASH
     policy_bytes = effective.encode("utf-8")
     if judge_transport is JudgeTransport.CODEX_CLI:
-        policy_bytes = (
-            f"transport=codex-cli\nreasoning_effort={CODEX_JUDGE_REASONING_EFFORT}\n".encode()
-            + policy_bytes
-        )
+        policy_bytes = f"transport=codex-cli\nreasoning_effort={CODEX_JUDGE_REASONING_EFFORT}\n".encode() + policy_bytes
     return "sha256:" + hashlib.sha256(policy_bytes).hexdigest()
 
 
@@ -401,11 +394,7 @@ def _codex_prompt(
     project_policy: str | None = None,
 ) -> str:
     """Render controlling policy followed by one explicitly untrusted request."""
-    effective_policy = (
-        _default_policy_block(JudgeTransport.CODEX_CLI)
-        if policy_block is None
-        else policy_block
-    )
+    effective_policy = _default_policy_block(JudgeTransport.CODEX_CLI) if policy_block is None else policy_block
     messages = build_messages(
         request,
         policy_block=effective_policy,
@@ -728,16 +717,10 @@ def call_judge(
         raise ValueError("judge transport 'auto' must be resolved before call_judge")
 
     default_model = (
-        DEFAULT_CODEX_JUDGE_MODEL
-        if judge_transport is JudgeTransport.CODEX_CLI
-        else DEFAULT_OPENROUTER_JUDGE_MODEL
+        DEFAULT_CODEX_JUDGE_MODEL if judge_transport is JudgeTransport.CODEX_CLI else DEFAULT_OPENROUTER_JUDGE_MODEL
     )
     requested_model = default_model if model_id is None else model_id
-    effective_policy_block = (
-        _default_policy_block(judge_transport)
-        if policy_block is None
-        else policy_block
-    )
+    effective_policy_block = _default_policy_block(judge_transport) if policy_block is None else policy_block
     if transport_impl is not None:
         result = transport_impl(request, requested_model, max_tokens)
     elif judge_transport is JudgeTransport.OPENROUTER:
@@ -750,11 +733,7 @@ def call_judge(
             http_transport=openrouter_transport,
         )
     elif judge_transport is JudgeTransport.CODEX_CLI:
-        process_runner = (
-            _run_bounded_process
-            if codex_process_runner is None
-            else codex_process_runner
-        )
+        process_runner = _run_bounded_process if codex_process_runner is None else codex_process_runner
         result = _call_codex_cli(
             request,
             requested_model,
@@ -829,9 +808,7 @@ def _parse_codex_jsonl(stdout: str, *, requested_model: str) -> _TransportResult
             message = str(exc)
             if "duplicate JSON object key" in message or "non-finite JSON number" in message:
                 raise
-            raise JudgeContractError(
-                f"Codex CLI emitted malformed JSONL at line {line_number}"
-            ) from exc
+            raise JudgeContractError(f"Codex CLI emitted malformed JSONL at line {line_number}") from exc
         if not isinstance(event, dict):
             raise JudgeContractError("Codex CLI JSONL event must be an object")
         event_type = event.get("type")
