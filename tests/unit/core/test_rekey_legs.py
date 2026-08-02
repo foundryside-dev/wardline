@@ -79,6 +79,22 @@ def _seed_snapshot_judged_v1(root: Path) -> None:
     )
 
 
+def _seed_snapshot_waivers(root: Path) -> None:
+    sdir = snapshot_dir(root)
+    sdir.mkdir(parents=True, exist_ok=True)
+    (sdir / "waivers.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "fingerprint_scheme": "wlfp1",
+                "version": 1,
+                "waivers": [{"fingerprint": B, "reason": "accepted risk"}],
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+
 def test_legs_idempotent_and_gate_green_after_yaml(tmp_path: Path) -> None:
     root = tmp_path
     _seed_snapshot_baseline(root)
@@ -209,10 +225,10 @@ def test_preflight_rejects_incomplete_v1_judged_before_baseline_or_journal_mutat
     ("remap", "second_entry", "error"),
     [
         ({A: "short"}, False, "fingerprint"),
-        ({A: NA, B: NA}, True, "duplicate fingerprint"),
+        ({A: NA, B: NA}, True, "target collision"),
     ],
 )
-def test_preflight_rejects_invalid_remapped_judged_output_before_any_mutation(
+def test_preflight_rejects_invalid_or_colliding_judged_remap_before_any_mutation(
     tmp_path: Path,
     remap: dict[str, str],
     second_entry: bool,
@@ -242,6 +258,46 @@ def test_preflight_rejects_invalid_remapped_judged_output_before_any_mutation(
 
     assert {path: path.read_bytes() for path in before} == before
     assert all(not leg.done for leg in journal.legs)
+
+
+@pytest.mark.parametrize(
+    ("remap", "error"),
+    [
+        ({"short": NA}, "source fingerprint"),
+        ({A: "short"}, "target fingerprint"),
+        ({A: NA, B: NA}, "target collision"),
+    ],
+)
+def test_apply_rejects_invalid_global_remap_before_baseline_or_waiver_mutation(
+    tmp_path: Path,
+    remap: dict[str, str],
+    error: str,
+) -> None:
+    root = tmp_path
+    _seed_snapshot_baseline(root)
+    _seed_snapshot_waivers(root)
+    assert not (snapshot_dir(root) / "judged.yaml").exists()
+
+    live_paths = [paths.baseline_path(root), paths.judged_path(root), paths.waivers_path(root)]
+    for index, live_path in enumerate(live_paths):
+        live_path.write_bytes(f"live-before-{index}".encode())
+    journal = Journal(remap=remap)
+    journal_path = paths.migration_journal_path(root)
+    write_journal(journal_path, journal, root=root)
+    bytes_before = {path: path.read_bytes() for path in [*live_paths, journal_path]}
+    legs_before = [
+        (leg.done, list(leg.carried), list(leg.orphaned), leg.debt)
+        for leg in journal.legs
+    ]
+
+    with pytest.raises(ConfigError, match=error):
+        apply_pending_legs(root, journal)
+
+    assert {path: path.read_bytes() for path in bytes_before} == bytes_before
+    assert [
+        (leg.done, list(leg.carried), list(leg.orphaned), leg.debt)
+        for leg in journal.legs
+    ] == legs_before
 
 
 def test_resume_preflights_every_pending_snapshot_scheme_before_any_write(tmp_path: Path) -> None:

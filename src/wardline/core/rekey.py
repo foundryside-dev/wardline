@@ -495,6 +495,7 @@ JOURNAL_SCHEMA_VERSION = 1
 # Legs in apply order: YAML first (gate-critical — baseline restores the local gate),
 # Filigree last (reconciliation debt, no remap endpoint).
 LEG_NAMES: tuple[str, ...] = ("baseline", "judged", "waivers", "filigree")
+_FINGERPRINT_HEX = frozenset("0123456789abcdef")
 # Maps a YAML leg to (snapshot filename, live-store path fn, list key, store version).
 _YAML_LEGS: dict[str, tuple[str, Any, str, int]] = {
     "baseline": ("baseline.yaml", paths.baseline_path, "entries", BASELINE_VERSION),
@@ -659,6 +660,35 @@ def _load_journal_collisions(raw: object, *, path: Path) -> list[RekeyCollision]
     return collisions
 
 
+def _validate_journal_remap(raw: object, *, journal_name: str) -> dict[str, str]:
+    """Return a valid one-to-one fingerprint remap or reject it without echoing input."""
+    if not isinstance(raw, dict):
+        raise ConfigError(f"malformed migration journal {journal_name}: remap must be a mapping")
+
+    validated: dict[str, str] = {}
+    target_entries: dict[str, int] = {}
+    for index, (old_fp, new_fp) in enumerate(raw.items()):
+        if not isinstance(old_fp, str) or len(old_fp) != 64 or not set(old_fp) <= _FINGERPRINT_HEX:
+            raise ConfigError(
+                f"malformed migration journal {journal_name}: remap source fingerprint at entry {index} "
+                "must be a 64-char lowercase hex string"
+            )
+        if not isinstance(new_fp, str) or len(new_fp) != 64 or not set(new_fp) <= _FINGERPRINT_HEX:
+            raise ConfigError(
+                f"malformed migration journal {journal_name}: remap target fingerprint at entry {index} "
+                "must be a 64-char lowercase hex string"
+            )
+        first_entry = target_entries.get(new_fp)
+        if first_entry is not None:
+            raise ConfigError(
+                f"malformed migration journal {journal_name}: remap target collision between entries "
+                f"{first_entry} and {index}; target fingerprints must be injective"
+            )
+        validated[old_fp] = new_fp
+        target_entries[new_fp] = index
+    return validated
+
+
 def load_journal(path: Path) -> Journal:
     yaml = require_yaml("loading the rekey journal")
     try:
@@ -673,11 +703,7 @@ def load_journal(path: Path) -> Journal:
             f"{path.name}: unsupported migration journal schema_version {schema_version!r}; "
             f"expected {JOURNAL_SCHEMA_VERSION}"
         )
-    raw_remap = loaded["remap"]
-    if not isinstance(raw_remap, dict) or not all(
-        isinstance(old_fp, str) and isinstance(new_fp, str) for old_fp, new_fp in raw_remap.items()
-    ):
-        raise ConfigError(f"malformed migration journal {path.name}: remap must be a string-to-string mapping")
+    remap = _validate_journal_remap(loaded["remap"], journal_name=path.name)
     legs = _load_journal_legs(loaded.get("legs"), path=path)
     collisions = _load_journal_collisions(loaded.get("collisions"), path=path)
     scheme_from = loaded.get("fingerprint_scheme_from", FINGERPRINT_SCHEME_V0)
@@ -693,7 +719,7 @@ def load_journal(path: Path) -> Journal:
     if not isinstance(snapshot_prescheme, bool):
         raise ConfigError(f"malformed migration journal {path.name}: snapshot_prescheme must be a bool")
     return Journal(
-        remap=dict(raw_remap),
+        remap=remap,
         collisions=collisions,
         legs=legs,
         schema_version=schema_version,
@@ -770,8 +796,9 @@ def apply_pending_legs(
     identical content — never an empty store, because carry NEVER reads the live store.
     YAML legs are idempotent; the Filigree leg soft-fails into recorded debt and never
     aborts the (already-complete) YAML migration."""
-    snapshot_payloads = _preflight_pending_snapshot_payloads(root, journal)
     jpath = paths.migration_journal_path(root)
+    _validate_journal_remap(journal.remap, journal_name=jpath.name)
+    snapshot_payloads = _preflight_pending_snapshot_payloads(root, journal)
     for leg in journal.legs:
         if leg.done:
             continue
