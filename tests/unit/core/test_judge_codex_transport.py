@@ -13,6 +13,7 @@ from pathlib import Path
 
 import pytest
 
+import wardline.core.judge_transport as judge_transport_module
 from wardline.core.errors import JudgeContractError, JudgeTransportError
 from wardline.core.judge import (
     _CODEX_EXPLORATION_ADDENDUM,
@@ -778,6 +779,23 @@ class _FakeTimedOutProcess:
         self.signals.append(sig)
 
 
+def _patch_trusted_windows_taskkill(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        judge_transport_module,
+        "_resolve_windows_taskkill",
+        lambda: (
+            "/trusted/windows/System32/taskkill.exe",
+            "/trusted/windows/System32",
+            {
+                "SystemRoot": "/trusted/windows",
+                "WINDIR": "/trusted/windows",
+                "PATH": "/trusted/windows/System32",
+            },
+        ),
+        raising=False,
+    )
+
+
 def test_posix_timeout_terminates_escalates_and_reaps_process_group(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -809,6 +827,8 @@ def test_nonposix_timeout_terminates_escalates_and_reaps_process_tree(
 ) -> None:
     process = _FakeTimedOutProcess()
     taskkill_calls: list[tuple[list[str], dict[str, object]]] = []
+    _patch_trusted_windows_taskkill(monkeypatch)
+    monkeypatch.setenv("AMBIENT_SECRET", "ENV_SENTINEL")
 
     def _taskkill(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
         taskkill_calls.append((args, kwargs))
@@ -819,10 +839,48 @@ def test_nonposix_timeout_terminates_escalates_and_reaps_process_tree(
     _terminate_process_tree(process, posix=False, grace_seconds=0.01)  # type: ignore[arg-type]
 
     assert process.signals
-    assert taskkill_calls[0][0] == ["taskkill", "/PID", "1234", "/T", "/F"]
+    assert taskkill_calls[0][0] == [
+        "/trusted/windows/System32/taskkill.exe",
+        "/PID",
+        "1234",
+        "/T",
+        "/F",
+    ]
     assert taskkill_calls[0][1]["stdout"] is subprocess.DEVNULL
     assert taskkill_calls[0][1]["stderr"] is subprocess.DEVNULL
+    assert taskkill_calls[0][1]["cwd"] == "/trusted/windows/System32"
+    assert taskkill_calls[0][1]["env"] == {
+        "SystemRoot": "/trusted/windows",
+        "WINDIR": "/trusted/windows",
+        "PATH": "/trusted/windows/System32",
+    }
+    assert "ENV_SENTINEL" not in str(taskkill_calls[0][1])
     assert process.kill_calls == 0
+    assert process.wait_calls == 2
+
+
+def test_nonposix_ctrl_break_oserror_still_runs_checked_tree_cleanup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _CtrlBreakFailure(_FakeTimedOutProcess):
+        def send_signal(self, sig: object) -> None:
+            del sig
+            raise OSError("best-effort CTRL_BREAK unavailable")
+
+    process = _CtrlBreakFailure()
+    taskkill_calls = 0
+    _patch_trusted_windows_taskkill(monkeypatch)
+
+    def _taskkill(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+        nonlocal taskkill_calls
+        taskkill_calls += 1
+        return subprocess.CompletedProcess(args[0], 0, "", "")
+
+    monkeypatch.setattr(subprocess, "run", _taskkill)
+
+    _terminate_process_tree(process, posix=False, grace_seconds=0.01)  # type: ignore[arg-type]
+
+    assert taskkill_calls == 1
     assert process.wait_calls == 2
 
 
@@ -830,6 +888,7 @@ def test_nonposix_taskkill_failure_hard_kills_leader_and_fails_loud(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     process = _FakeTimedOutProcess()
+    _patch_trusted_windows_taskkill(monkeypatch)
 
     monkeypatch.setattr(
         subprocess,
@@ -853,6 +912,7 @@ def test_nonposix_repeated_wait_timeout_is_bounded_and_hard_kills_leader(
             raise subprocess.TimeoutExpired(["codex"], timeout)
 
     process = _NeverReapedProcess()
+    _patch_trusted_windows_taskkill(monkeypatch)
     monkeypatch.setattr(
         subprocess,
         "run",
@@ -866,3 +926,52 @@ def test_nonposix_repeated_wait_timeout_is_bounded_and_hard_kills_leader(
     assert time.monotonic() - started < 1
     assert process.kill_calls >= 1
     assert process.wait_calls <= 3
+
+
+def test_windows_taskkill_context_is_derived_only_from_absolute_system_directory(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SystemRoot", "/project-controlled-root")
+    monkeypatch.setenv("PATH", "/project-controlled-path")
+    monkeypatch.setenv("AMBIENT_SECRET", "ENV_SENTINEL")
+
+    executable, cwd, env = judge_transport_module._windows_taskkill_context(  # type: ignore[attr-defined]
+        Path("/trusted/windows/System32")
+    )
+
+    assert executable == "/trusted/windows/System32/taskkill.exe"
+    assert cwd == "/trusted/windows/System32"
+    assert env == {
+        "SystemRoot": "/trusted/windows",
+        "WINDIR": "/trusted/windows",
+        "PATH": "/trusted/windows/System32",
+    }
+    assert "ENV_SENTINEL" not in str(env)
+    with pytest.raises(OSError, match="absolute"):
+        judge_transport_module._windows_taskkill_context(Path("relative/System32"))  # type: ignore[attr-defined]
+
+
+def test_nonposix_taskkill_resolver_failure_hard_kills_and_fails_loud(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    process = _FakeTimedOutProcess()
+
+    def _resolver_failure() -> tuple[str, str, dict[str, str]]:
+        raise OSError("native system directory unavailable")
+
+    monkeypatch.setattr(
+        judge_transport_module,
+        "_resolve_windows_taskkill",
+        _resolver_failure,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *args, **kwargs: pytest.fail("taskkill must not run without a trusted path"),
+    )
+
+    with pytest.raises(OSError, match="cleanup"):
+        _terminate_process_tree(process, posix=False, grace_seconds=0.01)  # type: ignore[arg-type]
+
+    assert process.kill_calls == 1

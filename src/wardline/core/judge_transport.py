@@ -177,6 +177,42 @@ def _drain_stream(stream: IO[bytes], capture: _BoundedCapture) -> None:
         capture.read_failed = True
 
 
+def _windows_taskkill_context(
+    system_directory: Path,
+) -> tuple[str, str, dict[str, str]]:
+    """Derive an absolute cleanup command and environment from a trusted OS path."""
+    if not system_directory.is_absolute():
+        raise OSError("Windows system directory must be absolute")
+    system_root = system_directory.parent
+    executable = system_directory / "taskkill.exe"
+    cleanup_env = {
+        "SystemRoot": str(system_root),
+        "WINDIR": str(system_root),
+        "PATH": str(system_directory),
+    }
+    return str(executable), str(system_directory), cleanup_env
+
+
+def _resolve_windows_taskkill() -> tuple[str, str, dict[str, str]]:
+    """Resolve System32 through the native Windows API, never process environment."""
+    if os.name != "nt":
+        raise OSError("native Windows system-directory lookup is unavailable")
+    import ctypes
+
+    win_dll = getattr(ctypes, "WinDLL", None)
+    if win_dll is None:
+        raise OSError("native Windows system-directory lookup is unavailable")
+    kernel32 = win_dll("kernel32", use_last_error=True)
+    get_system_directory = kernel32.GetSystemDirectoryW
+    get_system_directory.argtypes = [ctypes.c_wchar_p, ctypes.c_uint]
+    get_system_directory.restype = ctypes.c_uint
+    buffer = ctypes.create_unicode_buffer(32_768)
+    length = get_system_directory(buffer, len(buffer))
+    if length == 0 or length >= len(buffer):
+        raise OSError("native Windows system-directory lookup failed")
+    return _windows_taskkill_context(Path(buffer.value))
+
+
 def _terminate_process_tree(
     process: subprocess.Popen[bytes],
     *,
@@ -202,7 +238,7 @@ def _terminate_process_tree(
         with suppress(ProcessLookupError):
             os.killpg(process.pid, signal.SIGTERM)
     else:
-        with suppress(ProcessLookupError):
+        with suppress(OSError):
             process.send_signal(getattr(signal, "CTRL_BREAK_EVENT", signal.SIGTERM))
     leader_reaped = _wait_leader(grace_seconds / 2)
 
@@ -221,13 +257,16 @@ def _terminate_process_tree(
 
     taskkill_succeeded = False
     try:
+        taskkill_executable, taskkill_cwd, taskkill_env = _resolve_windows_taskkill()
         taskkill = subprocess.run(  # noqa: S603,S607 - Windows process-tree teardown
-            ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+            [taskkill_executable, "/PID", str(process.pid), "/T", "/F"],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             timeout=max(_remaining(), 0.001),
             check=False,
+            cwd=taskkill_cwd,
+            env=taskkill_env,
         )
         taskkill_succeeded = taskkill.returncode == 0
     except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
