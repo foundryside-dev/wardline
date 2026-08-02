@@ -283,9 +283,13 @@ _SHELL_SHEBANG_RE = re.compile(
     r"|/usr/bin/env(?:[ \t]+-S)?[ \t]+(?:sh|bash|zsh))(?:[ \t]+[^\r\n]{0,128})?$"
 )
 _SCHEMA_CREDENTIAL_KEY_RE = re.compile(rf"(?imx){_CREDENTIAL_LABEL_PATTERN}[ \t]*[:=]")
-_YAML_BLOCK_HEADER_RE = re.compile(
-    r"(?P<indent>[ \t]*)(?:-[ \t]+)?[^#\r\n]+:[ \t]*[|>]"
-    r"(?:[1-9][+-]?|[+-][1-9]?)?[ \t]*(?:#.*)?"
+_SAFE_SCHEMA_DESCRIPTION_VALUE_RE = re.compile(
+    r"(?i)^must[ \t]+be[ \t]+at[ \t]+least[ \t]+[1-9][0-9]{0,4}[ \t]+characters?$"
+)
+_SAFE_SCHEMA_TITLE_VALUE_RE = re.compile(r"(?i)^account[ \t]+credential$")
+_SAFE_SCHEMA_CREDENTIAL_PATTERN_RE = re.compile(
+    r"(?i)^\^(?:api[_-]?key|client[_-]?secret|password|passwd|secret|token):"
+    r"\[[A-Za-z0-9-]{1,128}\]\{[1-9][0-9]{0,3}\}\$$"
 )
 
 
@@ -569,8 +573,96 @@ def _starts_hash_comment(text: str, index: int, mode: str) -> bool:
 def _yaml_block_header_indent(text: str, start: int, end: int) -> int | None:
     if end > start and text[end - 1] == "\r":
         end -= 1
-    header = _YAML_BLOCK_HEADER_RE.fullmatch(text, start, end)
-    return header.end("indent") - header.start("indent") if header is not None else None
+    index = start
+    while index < end and text[index] in " \t":
+        index += 1
+    effective_indent = index - start
+    if index + 1 < end and text[index] == "-" and text[index + 1] in " \t":
+        index += 1
+        while index < end and text[index] in " \t":
+            index += 1
+        effective_indent = index - start
+    key_start = index
+    quote: str | None = None
+    escaped = False
+    colon = -1
+    while index < end:
+        character = text[index]
+        if quote is not None:
+            if quote == '"' and escaped:
+                escaped = False
+            elif quote == '"' and character == "\\":
+                escaped = True
+            elif character == quote:
+                if quote == "'" and index + 1 < end and text[index + 1] == "'":
+                    index += 1
+                else:
+                    quote = None
+        elif character in ('"', "'"):
+            quote = character
+        elif character == "#":
+            return None
+        elif character == ":" and index + 1 < end and text[index + 1] in " \t":
+            colon = index
+            break
+        index += 1
+    if colon <= key_start or quote is not None:
+        return None
+    index = colon + 1
+    while index < end and text[index] in " \t":
+        index += 1
+    properties = 0
+    while index < end and text[index] in "!&":
+        marker = text[index]
+        token_start = index
+        index += 1
+        if marker == "!" and index < end and text[index] == "<":
+            index += 1
+            value_start = index
+            while index < end and text[index] != ">" and index - token_start <= _MAX_PATTERN_CHARS:
+                if text[index] in " \t\r\n":
+                    return None
+                index += 1
+            if index >= end or text[index] != ">" or index == value_start:
+                return None
+            index += 1
+        else:
+            value_start = index
+            while index < end and text[index] not in " \t" and index - token_start <= _MAX_PATTERN_CHARS:
+                character = text[index]
+                if marker == "!":
+                    if not (character.isalnum() or character in "!_:/.,%-"):
+                        return None
+                elif not (character.isalnum() or character in "_.-"):
+                    return None
+                index += 1
+            if index == value_start:
+                return None
+        if index - token_start > _MAX_PATTERN_CHARS or index >= end or text[index] not in " \t":
+            return None
+        while index < end and text[index] in " \t":
+            index += 1
+        properties += 1
+        if properties > 2:
+            return None
+    if index >= end or text[index] not in "|>":
+        return None
+    index += 1
+    if index < end and text[index] in "+-":
+        index += 1
+        if index < end and text[index] in "123456789":
+            index += 1
+    elif index < end and text[index] in "123456789":
+        index += 1
+        if index < end and text[index] in "+-":
+            index += 1
+    if index == end:
+        return effective_indent
+    if text[index] not in " \t":
+        return None
+    while index < end and text[index] in " \t":
+        index += 1
+    return effective_indent if index == end or text[index] == "#" else None
 
 
 def _credential_scalar_starts(text: str, *, source_suffix: str, source_name: str) -> Iterator[tuple[int, bool, str]]:
@@ -833,10 +925,15 @@ def _safe_json_schema_shape(scalar: str, *, source_suffix: str, flow_context: bo
         description = schema.get(schema_field)
         if not isinstance(description, str):
             continue
+        if schema_field == "pattern" and _SAFE_SCHEMA_CREDENTIAL_PATTERN_RE.fullmatch(description) is not None:
+            continue
         for credential in _SCHEMA_CREDENTIAL_KEY_RE.finditer(description):
             scan = _scan_schema_credential_clause(description, credential.end())
             value, _is_literal = _normalized_credential_scalar(scan.value)
-            if not scan.complete or not value or not _safe_credential_scalar(value):
+            safe_field_value = (
+                schema_field == "description" and _SAFE_SCHEMA_DESCRIPTION_VALUE_RE.fullmatch(value) is not None
+            ) or (schema_field == "title" and _SAFE_SCHEMA_TITLE_VALUE_RE.fullmatch(value) is not None)
+            if not scan.complete or not value or not (_safe_credential_scalar(value) or safe_field_value):
                 return False
     for schema_field in ("maxLength", "minLength"):
         if schema_field in schema and (

@@ -1456,6 +1456,71 @@ def test_yaml_block_scalar_brace_does_not_create_flow_context(tmp_path: Path, co
     assert content not in message
 
 
+@pytest.mark.parametrize(
+    "content",
+    [
+        "- note: |\n    harmless\n  password: null,real-secret",
+        "- note: |\n    {\n  password: null,real-secret",
+        "items:\n  - note: |\n      harmless\n    password: null,real-secret",
+        "items:\n  - note: |\n      {\n    password: null,real-secret",
+    ],
+)
+def test_yaml_sequence_block_scalar_sibling_credential_is_denied_without_echo(tmp_path: Path, content: str) -> None:
+    literal = "real-secret"
+    parsed = yaml.safe_load(content)
+    if isinstance(parsed, list):
+        assert parsed[0]["password"] == f"null,{literal}"
+    else:
+        assert isinstance(parsed, dict)
+        assert parsed["items"][0]["password"] == f"null,{literal}"
+    (tmp_path / "config.yaml").write_text(content, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="credential_assignment") as exc_info:
+        _read_file(_ctx(tmp_path), {"file_path": "config.yaml"})
+
+    message = str(exc_info.value)
+    assert literal not in message
+    assert content not in message
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        "note: !!str |\n  {\npassword: null,real-secret",
+        "note: &body |\n  {\npassword: null,real-secret",
+        '"note#body": |\n  {\npassword: null,real-secret',
+    ],
+)
+def test_yaml_decorated_block_header_brace_does_not_create_flow_context(tmp_path: Path, content: str) -> None:
+    literal = "real-secret"
+    parsed = yaml.safe_load(content)
+    assert isinstance(parsed, dict)
+    assert parsed["password"] == f"null,{literal}"
+    (tmp_path / "config.yaml").write_text(content, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="credential_assignment") as exc_info:
+        _read_file(_ctx(tmp_path), {"file_path": "config.yaml"})
+
+    message = str(exc_info.value)
+    assert literal not in message
+    assert content not in message
+
+
+@pytest.mark.parametrize(
+    ("field", "prose"),
+    [
+        ("description", "Password: must be at least 12 characters"),
+        ("title", "Password: Account credential"),
+        ("pattern", "^token:[A-F0-9]{32}$"),
+    ],
+)
+def test_json_schema_bounded_credential_prose_remains_readable(tmp_path: Path, field: str, prose: str) -> None:
+    content = json.dumps({"properties": {"password": {"type": "string", field: prose}}})
+    (tmp_path / "schema.json").write_text(content, encoding="utf-8")
+
+    assert content in _read_file(_ctx(tmp_path), {"file_path": "schema.json"})
+
+
 @pytest.mark.parametrize("field", ["description", "title", "pattern"])
 @pytest.mark.parametrize(
     "clause",
