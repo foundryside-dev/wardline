@@ -277,6 +277,16 @@ def test_judge_tool_success_via_monkeypatch(tmp_path: Path, monkeypatch: pytest.
 
 def test_judge_tool_missing_key_is_iserror_with_guidance(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("WARDLINE_OPENROUTER_API_KEY", raising=False)
+
+    def _select_openrouter(requested: JudgeTransport, *, probe: object) -> JudgeTransport:
+        del probe
+        assert requested is JudgeTransport.AUTO
+        return JudgeTransport.OPENROUTER
+
+    # This test exercises OpenRouter's missing-key guidance, not auto-selection.
+    # Pin the concrete transport so an authenticated developer Codex installation
+    # cannot turn a unit test into a live provider call.
+    monkeypatch.setattr("wardline.core.judge_run.resolve_judge_transport", _select_openrouter)
     proj = _leaky_project(tmp_path)  # no .env in this bare project
     server = WardlineMCPServer(root=proj)
     resp = server.rpc.dispatch(
