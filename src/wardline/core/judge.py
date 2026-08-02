@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import subprocess
 import sys
@@ -729,11 +730,18 @@ def _strict_json_loads(raw: str) -> Any:
     def _constant(_value: str) -> None:
         raise JudgeContractError("JSON document contains a non-finite JSON number")
 
+    def _float(value: str) -> float:
+        parsed = float(value)
+        if not math.isfinite(parsed):
+            raise JudgeContractError("JSON document contains a non-finite JSON number")
+        return parsed
+
     try:
         return json.loads(
             raw,
             object_pairs_hook=_pairs,
             parse_constant=_constant,
+            parse_float=_float,
         )
     except (json.JSONDecodeError, RecursionError, ValueError) as exc:
         raise JudgeContractError("JSON document is malformed") from exc

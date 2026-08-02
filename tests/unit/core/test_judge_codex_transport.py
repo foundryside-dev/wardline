@@ -274,6 +274,22 @@ def test_codex_oversized_json_integer_is_sanitized_contract_error() -> None:
         _parse_codex_jsonl(stdout, requested_model="gpt-test")
 
 
+@pytest.mark.parametrize("literal", ["1e400", "-1e400"])
+def test_codex_ignored_event_field_rejects_overflowed_json_float(literal: str) -> None:
+    stdout = (
+        f'{{"type":"thread.started","ATTACKER_KEY":{literal}}}\n'
+        + _events(_verdict())
+    )
+
+    with pytest.raises(JudgeContractError, match="non-finite JSON number") as exc_info:
+        _parse_codex_jsonl(stdout, requested_model="MODEL_SENTINEL")
+
+    message = str(exc_info.value)
+    assert "ATTACKER_KEY" not in message
+    assert "MODEL_SENTINEL" not in message
+    assert literal not in message
+
+
 class _RecordingProcessRunner:
     def __init__(self, result: _BoundedProcessResult | BaseException) -> None:
         self.result = result
