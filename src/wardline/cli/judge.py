@@ -2,9 +2,8 @@
 """`wardline judge` — opt-in LLM triage of active DEFECTs (SP5).
 
 The analyze -> suppress -> triage -> persist pipeline lives in
-``core.judge_run.run_judge`` (shared with the SP8 MCP judge tool). This command
-builds the real urllib-backed caller, delegates the pipeline ONCE, and formats the
-human-readable report from the returned ``JudgeOutcome``.
+``core.judge_run.run_judge`` (shared with the SP8 MCP judge tool). This command is
+a thin option-and-report adapter around that single provider-selection boundary.
 """
 
 from __future__ import annotations
@@ -13,22 +12,11 @@ from pathlib import Path
 
 import click
 
-from wardline.core import config as config_mod
-from wardline.core.config import parse_judge_settings
 from wardline.core.confinement import SourceRootConfinement
 from wardline.core.errors import JudgeContractError, WardlineError
-from wardline.core.judge import JudgeRequest, JudgeResponse, JudgeVerdict, call_judge
-from wardline.core.judge_run import (
-    JudgeOutcome,
-    effective_judge_settings,
-    resolve_policy_block,
-    resolve_project_policy,
-    run_judge,
-)
-from wardline.core.judge_run import (
-    load_env_key as _load_env_key,  # re-exported: tests import _load_env_key from here
-)
-from wardline.core.paths import weft_config_path
+from wardline.core.judge import JudgeVerdict
+from wardline.core.judge_run import JudgeOutcome, run_judge
+from wardline.core.judge_types import JudgeTransport
 from wardline.core.triage import TriageResult
 
 
@@ -40,7 +28,14 @@ from wardline.core.triage import TriageResult
     type=click.Path(exists=True, file_okay=True, dir_okay=False, path_type=Path),
     default=None,
 )
+@click.option(
+    "--transport",
+    type=click.Choice([item.value for item in JudgeTransport], case_sensitive=True),
+    default=None,
+    help="Judge transport: auto, codex-cli, or openrouter (default auto).",
+)
 @click.option("--model", default=None, help="OpenRouter model slug (overrides config).")
+@click.option("--codex-model", default=None, help="Codex CLI model id (overrides config).")
 @click.option("--context-lines", type=int, default=None, help="Excerpt radius (default 30).")
 @click.option("--max-findings", type=int, default=None, help="Cap findings triaged this run.")
 @click.option(
@@ -60,7 +55,7 @@ from wardline.core.triage import TriageResult
     "--trust-judge-config",
     is_flag=True,
     default=False,
-    help="Allow project judge config to select model, context, cap, and write confidence floor.",
+    help="Allow project judge config to select transport, both models, context, cap, and write confidence floor.",
 )
 @click.option(
     "--trust-pack",
@@ -84,7 +79,9 @@ from wardline.core.triage import TriageResult
 def judge(
     path: Path,
     config_path: Path | None,
+    transport: str | None,
     model: str | None,
+    codex_model: str | None,
     context_lines: int | None,
     max_findings: int | None,
     do_write: bool,
@@ -96,30 +93,12 @@ def judge(
 ) -> None:
     """Triage active DEFECTs with the opt-in LLM judge."""
     try:
-        cfg = config_mod.load(
-            config_path or weft_config_path(path),
-            explicit=config_path is not None,
-            trust_local_packs=trust_local_packs,
-            trusted_packs=trusted_packs,
-            strict_defaults=strict_defaults,
-        )
-        settings = effective_judge_settings(parse_judge_settings(cfg.judge), trust_judge_config=trust_judge_config)
-        model_id = model or settings.model
-        # Build the real network caller here so test monkeypatching of this module's
-        # `call_judge` still intercepts, and so run_judge never takes its own default
-        # (network) caller branch from the CLI.
-        _load_env_key(path)
-        policy_block = resolve_policy_block(path, settings)
-
-        project_policy = resolve_project_policy(path, settings, trust_judge_policy=trust_judge_policy)
-
-        def _caller(req: JudgeRequest) -> JudgeResponse:
-            return call_judge(req, model_id=model_id, policy_block=policy_block, project_policy=project_policy)
-
         outcome = run_judge(
             path,
             config_path=config_path,
+            transport=transport,
             model=model,
+            codex_model=codex_model,
             context_lines=context_lines,
             max_findings=max_findings,
             write=do_write,
@@ -129,7 +108,6 @@ def judge(
             trust_judge_config=trust_judge_config,
             trust_judge_policy=trust_judge_policy,
             strict_defaults=strict_defaults,
-            judge_caller=_caller,
         )
     except JudgeContractError as exc:
         # The model violated the response contract — the audit primitive is corrupt.
@@ -140,22 +118,25 @@ def judge(
         click.echo(f"error: {exc}", err=True)
         raise SystemExit(2) from exc
 
-    _report(outcome, floor=settings.write_confidence_floor, do_write=do_write)
+    _report(outcome, do_write=do_write)
 
 
-def _report(outcome: JudgeOutcome, *, floor: float, do_write: bool) -> None:
+def _report(outcome: JudgeOutcome, *, do_write: bool) -> None:
     result: TriageResult = outcome.result
     wrote, held_back = outcome.wrote, outcome.held_back
     for tv in result.verdicts:
         f, r = tv.finding, tv.response
         is_fp = r.verdict is JudgeVerdict.FALSE_POSITIVE
-        low = is_fp and r.confidence < floor
+        low = is_fp and r.confidence < outcome.write_confidence_floor
         tag = "FP?" if low else ("FP" if is_fp else "TP")
         loc = f"{f.location.path}:{f.location.line_start}"
         # Surface the low-confidence caveat in BOTH modes — especially under --write,
         # where a low-confidence FP would otherwise be silently held back.
         note = "  (low confidence — held back from --write)" if low else ""
-        click.echo(f"{tag} [{r.confidence:.2f}] {f.rule_id} {loc} {f.qualname or ''}\n    {r.rationale}{note}")
+        click.echo(
+            f"{tag} [{r.confidence:.2f}] {f.rule_id} {loc} "
+            f"via {r.judge_transport.value}/{r.model_id} {f.qualname or ''}\n    {r.rationale}{note}"
+        )
     summary = f"triaged {len(result.verdicts)} defect(s): {result.n_true} true / {result.n_false} false"
     if do_write:
         summary += f" ({wrote} wrote"

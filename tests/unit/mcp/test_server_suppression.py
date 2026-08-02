@@ -15,8 +15,10 @@ import yaml
 
 from wardline.core.finding import FINGERPRINT_SCHEME
 from wardline.core.judge import JudgeResponse, JudgeVerdict
+from wardline.core.judge_run import JudgeOutcome
 from wardline.core.judge_types import JudgeTransport
 from wardline.core.paths import baseline_path
+from wardline.core.triage import TriageResult
 from wardline.mcp.server import WardlineMCPServer
 
 FIXTURE = Path("tests/fixtures/sample_project")
@@ -216,6 +218,34 @@ def test_judge_tool_is_advertised_with_network_flag() -> None:
     resp = server.rpc.dispatch({"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}})
     judge = next(t for t in resp["result"]["tools"] if t["name"] == "judge")
     assert "network" in judge["description"].lower()
+    assert "openrouter-only" not in judge["description"].lower()
+    assert judge["inputSchema"]["properties"]["transport"]["enum"] == ["auto", "codex-cli", "openrouter"]
+    assert judge["inputSchema"]["properties"]["codex_model"] == {"type": "string"}
+
+
+def test_judge_tool_forwards_transport_and_codex_model(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, object] = {}
+
+    def _run(root: Path, **kwargs: object) -> JudgeOutcome:
+        captured.update(kwargs)
+        return JudgeOutcome(
+            verdicts=[],
+            wrote=0,
+            held_back=0,
+            result=TriageResult(),
+            write_confidence_floor=0.5,
+        )
+
+    monkeypatch.setattr("wardline.mcp.server.run_judge", _run)
+    server = WardlineMCPServer(root=_leaky_project(tmp_path))
+
+    assert _call(server, "judge", {"transport": "codex-cli", "codex_model": "gpt-test"}) == {
+        "verdicts": [],
+        "wrote": 0,
+        "held_back": 0,
+    }
+    assert captured["transport"] == "codex-cli"
+    assert captured["codex_model"] == "gpt-test"
 
 
 def test_prompts_list_has_loop() -> None:

@@ -362,6 +362,20 @@ def test_judge_structured_output(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     server = WardlineMCPServer(root=_leaky_project(tmp_path))
     out = _validated(server, "judge", {})
     assert out["verdicts"], out
+    verdict = out["verdicts"][0]
+    assert set(verdict) == {
+        "fingerprint",
+        "rule_id",
+        "path",
+        "line",
+        "label",
+        "confidence",
+        "rationale",
+        "judge_transport",
+        "model_id",
+    }
+    assert verdict["judge_transport"] == "openrouter"
+    assert verdict["model_id"] == "fake/model"
 
 
 def test_baseline_structured_output(tmp_path: Path) -> None:

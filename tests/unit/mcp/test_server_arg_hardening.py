@@ -218,6 +218,38 @@ def test_destructive_boolean_rejected_before_side_effect_without_jsonschema(
     assert called is False
 
 
+@pytest.mark.parametrize(
+    ("arguments", "error"),
+    [
+        ({"transport": "codex"}, "transport must be one of auto/codex-cli/openrouter"),
+        ({"model": 1}, "model must be a string"),
+        ({"codex_model": False}, "codex_model must be a string"),
+    ],
+)
+def test_judge_provider_arguments_rejected_before_run_without_jsonschema(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    arguments: dict[str, object],
+    error: str,
+) -> None:
+    _block_jsonschema(monkeypatch)
+    called = False
+
+    def forbidden(*args, **kwargs):  # noqa: ANN002, ANN003, ANN202
+        nonlocal called
+        called = True
+        raise AssertionError("run_judge ran before provider argument validation")
+
+    monkeypatch.setattr("wardline.mcp.server.run_judge", forbidden)
+    server = WardlineMCPServer(root=_leaky_project(tmp_path))
+
+    resp = _dispatch(server, "judge", arguments)
+
+    assert resp["result"]["isError"] is True
+    assert error in resp["result"]["content"][0]["text"]
+    assert called is False
+
+
 class _SpyFiler:
     def __init__(self) -> None:
         self.file_calls = 0
