@@ -551,9 +551,7 @@ def codex_auth_projection_supported() -> bool:
         "unlink",
         "write",
     )
-    if os.name != "posix" or not all(
-        hasattr(os, name) for name in (*required_flags, *required_functions)
-    ):
+    if os.name != "posix" or not all(hasattr(os, name) for name in (*required_flags, *required_functions)):
         return False
     dir_fd_functions = (os.open, os.rmdir, os.stat, os.unlink)
     return all(function in os.supports_dir_fd for function in dir_fd_functions) and (

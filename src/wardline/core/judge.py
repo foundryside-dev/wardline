@@ -38,6 +38,7 @@ from wardline.core.judge_transport import (
     CODEX_DISABLED_FEATURES,
     _BoundedProcessResult,
     _run_bounded_process,
+    codex_auth_projection_supported,
     codex_execution_env,
     stage_codex_execution_auth,
     verify_codex_execution_auth,
@@ -418,37 +419,13 @@ class _ProjectedCodexAuth:
             raise OSError("projected Codex authentication descriptor cleanup failed")
 
 
-def _projected_codex_auth_scrub_supported() -> bool:
-    """Return whether this platform can anchor and scrub projected auth safely."""
-    required_flags = ("O_CLOEXEC", "O_DIRECTORY", "O_NOFOLLOW", "O_NONBLOCK")
-    required_functions = (
-        "close",
-        "fchmod",
-        "fstat",
-        "fsync",
-        "ftruncate",
-        "lseek",
-        "open",
-        "rmdir",
-        "stat",
-        "unlink",
-        "write",
-    )
-    if not all(hasattr(os, name) for name in (*required_flags, *required_functions)):
-        return False
-    dir_fd_functions = (os.open, os.rmdir, os.stat, os.unlink)
-    return all(function in os.supports_dir_fd for function in dir_fd_functions) and (
-        os.stat in os.supports_follow_symlinks
-    )
-
-
 def _open_projected_codex_auth(
     codex_home: Path,
     *,
     require_nonempty: bool,
 ) -> _ProjectedCodexAuth:
     """Open anchored auth descriptors without following replacement links."""
-    if not _projected_codex_auth_scrub_supported():
+    if not codex_auth_projection_supported():
         raise OSError("projected Codex authentication cleanup is unsupported")
     directory_flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | os.O_DIRECTORY | os.O_NOFOLLOW
     file_flags = os.O_RDWR | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NONBLOCK", 0) | os.O_NOFOLLOW
@@ -738,7 +715,7 @@ def _call_codex_cli(
             execution_home.mkdir(mode=0o700)
             os.chmod(execution_home, 0o700)
             execution_codex_home = temp_root / "codex-home"
-            if not _projected_codex_auth_scrub_supported():
+            if not codex_auth_projection_supported():
                 raise JudgeTransportError("Codex CLI authentication material could not be staged safely")
             auth_stage_attempted = True
             auth_digest = stage_codex_execution_auth(

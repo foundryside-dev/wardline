@@ -1791,14 +1791,14 @@ def test_codex_safe_scrub_support_requires_every_platform_capability(
 ) -> None:
     monkeypatch.delattr(judge_module.os, missing_capability)
 
-    assert judge_module._projected_codex_auth_scrub_supported() is False
+    assert judge_transport_module.codex_auth_projection_supported() is False
 
 
 def test_codex_file_auth_projection_fails_closed_when_safe_scrub_is_unsupported(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(judge_module, "_projected_codex_auth_scrub_supported", lambda: False)
+    monkeypatch.setattr(judge_module, "codex_auth_projection_supported", lambda: False)
 
     with pytest.raises(JudgeTransportError, match="authentication material") as exc_info:
         _call_codex_cli(
