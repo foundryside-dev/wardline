@@ -189,6 +189,55 @@ def _drain_stream(stream: IO[bytes], capture: _BoundedCapture) -> None:
         capture.read_failed = True
 
 
+def _finalize_bounded_process(
+    process: subprocess.Popen[bytes],
+    *,
+    posix: bool,
+    terminate_tree: bool,
+    started_threads: tuple[threading.Thread, ...],
+    stdout_thread: threading.Thread | None,
+    stderr_thread: threading.Thread | None,
+) -> None:
+    """Terminate when required, reap readers, and close both capture pipes."""
+    cleanup_failed = False
+    if terminate_tree:
+        try:
+            _terminate_process_tree(process, posix=posix)
+        except BaseException:
+            cleanup_failed = True
+
+    reader_deadline = time.monotonic() + _PROCESS_TERMINATION_GRACE_SECONDS
+    for thread in started_threads:
+        try:
+            thread.join(timeout=max(0.0, reader_deadline - time.monotonic()))
+        except BaseException:
+            cleanup_failed = True
+
+    for stream, stream_thread in (
+        (process.stdout, stdout_thread),
+        (process.stderr, stderr_thread),
+    ):
+        alive = False
+        if stream_thread in started_threads:
+            try:
+                assert stream_thread is not None
+                alive = stream_thread.is_alive()
+            except BaseException:
+                cleanup_failed = True
+                alive = True
+        if alive:
+            cleanup_failed = True
+            continue
+        if stream is not None:
+            try:
+                stream.close()
+            except BaseException:
+                cleanup_failed = True
+
+    if cleanup_failed:
+        raise OSError("bounded subprocess process-tree cleanup failed") from None
+
+
 def _windows_taskkill_context(
     system_directory: Path,
 ) -> tuple[str, str, dict[str, str]]:
@@ -336,53 +385,65 @@ def _run_bounded_process(
             start_new_session=is_posix,
             creationflags=(0 if is_posix else getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)),
         )
-        assert process.stdout is not None and process.stderr is not None
-        stdout_thread = threading.Thread(
-            target=_drain_stream,
-            args=(process.stdout, stdout_capture),
-            daemon=True,
-        )
-        stderr_thread = threading.Thread(
-            target=_drain_stream,
-            args=(process.stderr, stderr_capture),
-            daemon=True,
-        )
-        stdout_thread.start()
-        stderr_thread.start()
-        timed_out = False
-        cleanup_error: OSError | None = None
+        stdout_thread: threading.Thread | None = None
+        stderr_thread: threading.Thread | None = None
+        started_threads: list[threading.Thread] = []
+        cleanup_attempted = False
         try:
-            returncode = process.wait(timeout=timeout)
-        except subprocess.TimeoutExpired:
-            timed_out = True
-            returncode = -1
-
-        if not timed_out and not is_posix:
-            drain_deadline = time.monotonic() + _PROCESS_DRAIN_GRACE_SECONDS
-            for thread in (stdout_thread, stderr_thread):
-                thread.join(timeout=max(0.0, drain_deadline - time.monotonic()))
-
-        if timed_out or is_posix or stdout_thread.is_alive() or stderr_thread.is_alive():
+            assert process.stdout is not None and process.stderr is not None
+            stdout_thread = threading.Thread(
+                target=_drain_stream,
+                args=(process.stdout, stdout_capture),
+                daemon=True,
+            )
+            stderr_thread = threading.Thread(
+                target=_drain_stream,
+                args=(process.stderr, stderr_capture),
+                daemon=True,
+            )
+            stdout_thread.start()
+            started_threads.append(stdout_thread)
+            stderr_thread.start()
+            started_threads.append(stderr_thread)
+            timed_out = False
             try:
-                _terminate_process_tree(process, posix=is_posix)
-            except OSError as exc:
-                cleanup_error = exc
+                returncode = process.wait(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                timed_out = True
+                returncode = -1
 
-        reader_deadline = time.monotonic() + _PROCESS_TERMINATION_GRACE_SECONDS
-        for thread in (stdout_thread, stderr_thread):
-            thread.join(timeout=max(0.0, reader_deadline - time.monotonic()))
+            if not timed_out and not is_posix:
+                drain_deadline = time.monotonic() + _PROCESS_DRAIN_GRACE_SECONDS
+                for thread in started_threads:
+                    thread.join(timeout=max(0.0, drain_deadline - time.monotonic()))
 
-        readers_alive = stdout_thread.is_alive() or stderr_thread.is_alive()
-        if not stdout_thread.is_alive():
-            process.stdout.close()
-        if not stderr_thread.is_alive():
-            process.stderr.close()
-        if cleanup_error is not None:
-            raise OSError("bounded subprocess process-tree cleanup failed") from None
-        if readers_alive:
-            raise OSError("bounded subprocess output drain did not terminate")
-        if timed_out:
-            raise subprocess.TimeoutExpired(args, timeout) from None
+            terminate_tree = timed_out or is_posix or any(thread.is_alive() for thread in started_threads)
+            cleanup_attempted = True
+            _finalize_bounded_process(
+                process,
+                posix=is_posix,
+                terminate_tree=terminate_tree,
+                started_threads=tuple(started_threads),
+                stdout_thread=stdout_thread,
+                stderr_thread=stderr_thread,
+            )
+            if timed_out:
+                raise subprocess.TimeoutExpired(args, timeout) from None
+        except BaseException:
+            if not cleanup_attempted:
+                cleanup_attempted = True
+                try:
+                    _finalize_bounded_process(
+                        process,
+                        posix=is_posix,
+                        terminate_tree=True,
+                        started_threads=tuple(started_threads),
+                        stdout_thread=stdout_thread,
+                        stderr_thread=stderr_thread,
+                    )
+                except OSError:
+                    raise OSError("bounded subprocess process-tree cleanup failed") from None
+            raise
 
     if stdout_capture.read_failed or stderr_capture.read_failed:
         raise OSError("bounded subprocess output drain failed")
@@ -483,7 +544,7 @@ def _strict_auth_json_object(payload: bytes) -> dict[str, object]:
             parse_constant=_constant,
             parse_float=_finite_float,
         )
-    except (UnicodeDecodeError, ValueError, TypeError, json.JSONDecodeError):
+    except (UnicodeDecodeError, ValueError, TypeError, json.JSONDecodeError, RecursionError):
         raise JudgeTransportError("Codex CLI authentication material could not be staged safely") from None
     if not isinstance(parsed, dict) or not all(isinstance(key, str) for key in parsed):
         raise JudgeTransportError("Codex CLI authentication material could not be staged safely")

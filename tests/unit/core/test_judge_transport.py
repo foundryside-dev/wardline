@@ -81,6 +81,16 @@ def _fake_jwt(claims: dict[str, object]) -> str:
     return f"{_part({'alg': 'none'})}.{_part(claims)}.fake-signature"
 
 
+def _jwt_with_raw_payload(payload: bytes) -> str:
+    return _jwt_with_raw_parts(b'{"alg":"none"}', payload)
+
+
+def _jwt_with_raw_parts(header_payload: bytes, claims_payload: bytes) -> str:
+    header = base64.urlsafe_b64encode(header_payload).decode("ascii").rstrip("=")
+    encoded_payload = base64.urlsafe_b64encode(claims_payload).decode("ascii").rstrip("=")
+    return f"{header}.{encoded_payload}.fake-signature"
+
+
 def _fake_auth_bytes(
     *,
     exp: object = 4_000_000_000,
@@ -658,6 +668,49 @@ def test_probe_requires_safely_projectable_chatgpt_file_auth(
         assert "unsupported on this platform" in availability.detail
         assert "OpenRouter" in availability.detail
         assert "codex login" not in availability.detail
+
+
+@pytest.mark.parametrize(
+    "nested_location",
+    [
+        "auth-document",
+        "access-jwt-header",
+        "access-jwt-payload",
+        "id-jwt-payload",
+    ],
+)
+def test_probe_maps_recursively_nested_auth_to_typed_unavailability(
+    nested_location: str,
+) -> None:
+    nested_value = b"[" * 10_000 + b"0" + b"]" * 10_000
+    auth_path = Path(os.environ["CODEX_HOME"]) / "auth.json"
+    if nested_location == "auth-document":
+        payload = _fake_auth_bytes()[:-1] + b',"nested":' + nested_value + b"}"
+    else:
+        parsed = json.loads(_fake_auth_bytes())
+        access_payload = b'{"exp":4000000000,"https://api.openai.com/auth":{"chatgpt_account_id":"fake-account-id"}}'
+        if nested_location == "access-jwt-header":
+            nested_header = b'{"alg":"none","nested":' + nested_value + b"}"
+            parsed["tokens"]["access_token"] = _jwt_with_raw_parts(nested_header, access_payload)
+        elif nested_location == "access-jwt-payload":
+            nested_access_payload = access_payload[:-1] + b',"nested":' + nested_value + b"}"
+            parsed["tokens"]["access_token"] = _jwt_with_raw_payload(nested_access_payload)
+        else:
+            nested_id_payload = b'{"sub":"fake-user","nested":' + nested_value + b"}"
+            parsed["tokens"]["id_token"] = _jwt_with_raw_payload(nested_id_payload)
+        payload = json.dumps(parsed, separators=(",", ":")).encode("utf-8")
+    auth_path.write_bytes(payload)
+    auth_path.chmod(0o600)
+    runner = _successful_runner()
+
+    availability = probe_codex_cli(runner=runner)
+
+    assert availability.reason is CodexUnavailableReason.AUTH_UNPROJECTABLE
+    assert availability.version == "codex-cli 0.146.0"
+    assert resolve_judge_transport(JudgeTransport.AUTO, probe=lambda: availability) is JudgeTransport.OPENROUTER
+    with pytest.raises(JudgeConfigurationError, match="auth_unprojectable"):
+        resolve_judge_transport(JudgeTransport.CODEX_CLI, probe=lambda: availability)
+    assert len(runner.calls) == 4
 
 
 @pytest.mark.parametrize(

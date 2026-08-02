@@ -1438,6 +1438,171 @@ def test_default_bounded_runner_flags_invalid_utf8_without_dropping_bytes_into_j
     assert result.stdout_decode_error is True
 
 
+class _FakeCapturePipe:
+    def __init__(self) -> None:
+        self.close_calls = 0
+
+    def close(self) -> None:
+        self.close_calls += 1
+
+
+class _FakeExceptionalProcess:
+    def __init__(self, failure: BaseException) -> None:
+        self.pid = 4321
+        self.stdout = _FakeCapturePipe()
+        self.stderr = _FakeCapturePipe()
+        self.failure = failure
+        self.wait_calls = 0
+
+    def wait(self, timeout: float | None = None) -> int:
+        del timeout
+        self.wait_calls += 1
+        raise self.failure
+
+
+class _FakeReaderThread:
+    def __init__(self, ordinal: int, *, fail_start: int | None) -> None:
+        self.ordinal = ordinal
+        self.fail_start = fail_start
+        self.started = False
+        self.join_calls = 0
+
+    def start(self) -> None:
+        if self.ordinal == self.fail_start:
+            raise RuntimeError(f"reader {self.ordinal} could not start")
+        self.started = True
+
+    def join(self, timeout: float | None = None) -> None:
+        del timeout
+        assert self.started
+        self.join_calls += 1
+
+    def is_alive(self) -> bool:
+        return False
+
+
+def _install_exceptional_process_harness(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    failure: BaseException,
+    fail_start: int | None = None,
+    cleanup_failure: bool = False,
+) -> tuple[_FakeExceptionalProcess, list[_FakeReaderThread], list[bool]]:
+    process = _FakeExceptionalProcess(failure)
+    threads: list[_FakeReaderThread] = []
+    termination_calls: list[bool] = []
+
+    def _thread_factory(**_kwargs: object) -> _FakeReaderThread:
+        thread = _FakeReaderThread(len(threads) + 1, fail_start=fail_start)
+        threads.append(thread)
+        return thread
+
+    def _terminate(_process: object, *, posix: bool) -> None:
+        assert _process is process
+        termination_calls.append(posix)
+        if cleanup_failure:
+            raise OSError("CLEANUP_SECRET_SENTINEL")
+
+    monkeypatch.setattr(judge_transport_module.subprocess, "Popen", lambda *_args, **_kwargs: process)
+    monkeypatch.setattr(judge_transport_module.threading, "Thread", _thread_factory)
+    monkeypatch.setattr(judge_transport_module, "_terminate_process_tree", _terminate)
+    return process, threads, termination_calls
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        KeyboardInterrupt("operator interrupt"),
+        OSError("wait failed"),
+        RuntimeError("unexpected wait failure"),
+    ],
+    ids=["keyboard-interrupt", "os-error", "runtime-error"],
+)
+def test_bounded_runner_reaps_process_tree_when_wait_raises(
+    monkeypatch: pytest.MonkeyPatch,
+    failure: BaseException,
+) -> None:
+    process, threads, termination_calls = _install_exceptional_process_harness(
+        monkeypatch,
+        failure=failure,
+    )
+
+    with pytest.raises(type(failure), match=str(failure)):
+        _run_bounded_process(
+            ["codex"],
+            input_text=None,
+            timeout=10,
+            env={},
+            cwd=None,
+            stdout_limit=4096,
+            stderr_limit=4096,
+        )
+
+    assert termination_calls == [os.name == "posix"]
+    assert len(threads) == 2
+    assert [thread.join_calls for thread in threads] == [1, 1]
+    assert process.stdout.close_calls == 1
+    assert process.stderr.close_calls == 1
+
+
+@pytest.mark.parametrize("failed_reader", [1, 2])
+def test_bounded_runner_reaps_process_tree_when_reader_start_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    failed_reader: int,
+) -> None:
+    process, threads, termination_calls = _install_exceptional_process_harness(
+        monkeypatch,
+        failure=AssertionError("wait must not run"),
+        fail_start=failed_reader,
+    )
+
+    with pytest.raises(RuntimeError, match=rf"reader {failed_reader} could not start"):
+        _run_bounded_process(
+            ["codex"],
+            input_text=None,
+            timeout=10,
+            env={},
+            cwd=None,
+            stdout_limit=4096,
+            stderr_limit=4096,
+        )
+
+    assert process.wait_calls == 0
+    assert termination_calls == [os.name == "posix"]
+    assert len(threads) == 2
+    assert [thread.join_calls for thread in threads] == ([0, 0] if failed_reader == 1 else [1, 0])
+    assert process.stdout.close_calls == 1
+    assert process.stderr.close_calls == 1
+
+
+def test_bounded_runner_cleanup_failure_replaces_primary_with_sanitized_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    process, threads, termination_calls = _install_exceptional_process_harness(
+        monkeypatch,
+        failure=KeyboardInterrupt("PRIMARY_SECRET_SENTINEL"),
+        cleanup_failure=True,
+    )
+
+    with pytest.raises(OSError, match="bounded subprocess process-tree cleanup failed") as exc_info:
+        _run_bounded_process(
+            ["codex"],
+            input_text=None,
+            timeout=10,
+            env={},
+            cwd=None,
+            stdout_limit=4096,
+            stderr_limit=4096,
+        )
+
+    assert "PRIMARY_SECRET_SENTINEL" not in str(exc_info.value)
+    assert "CLEANUP_SECRET_SENTINEL" not in str(exc_info.value)
+    assert termination_calls == [os.name == "posix"]
+    assert [thread.join_calls for thread in threads] == [1, 1]
+    assert process.stdout.close_calls == 1
+    assert process.stderr.close_calls == 1
+
+
 def _pid_is_running(pid: int) -> bool:
     stat_path = Path(f"/proc/{pid}/stat")
     try:
