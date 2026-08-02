@@ -76,10 +76,15 @@ def test_live_codex_triage_round_trip(tmp_path: Path) -> None:
         codex_tool_scope=CodexToolScope(root=tmp_path.resolve()),
     )
 
-    assert response.judge_transport is JudgeTransport.CODEX_CLI
-    assert response.verdict in (JudgeVerdict.TRUE_POSITIVE, JudgeVerdict.FALSE_POSITIVE)
-    assert bool(response.rationale.strip()), "Codex returned an empty rationale"
-    assert 0.0 <= response.confidence <= 1.0
+    transport = response.judge_transport
+    verdict = response.verdict
+    has_rationale = bool(response.rationale.strip())
+    confidence = response.confidence
+    del response
+    assert transport is JudgeTransport.CODEX_CLI
+    assert verdict in (JudgeVerdict.TRUE_POSITIVE, JudgeVerdict.FALSE_POSITIVE)
+    assert has_rationale, "Codex returned an empty rationale"
+    assert 0.0 <= confidence <= 1.0
 
 
 @pytest.mark.skipif(os.environ.get("WARDLINE_CODEX_LIVE") != "1", reason="set WARDLINE_CODEX_LIVE=1")
@@ -156,9 +161,12 @@ def test_live_codex_explores_helper_for_load_bearing_context(tmp_path: Path) -> 
         and "judge_helper.py" in _completed_read_file_paths(captured_stdout[0])
     )
     has_rationale = bool(response.rationale.strip())
+    verdict = response.verdict
+    transport = response.judge_transport
+    del response
     captured_stdout.clear()
     assert process_count == 1, "Codex process runner did not complete exactly once"
     assert helper_read_completed, "Codex did not complete a read_file call for the helper"
-    assert response.verdict is JudgeVerdict.FALSE_POSITIVE
-    assert response.judge_transport is JudgeTransport.CODEX_CLI
+    assert verdict is JudgeVerdict.FALSE_POSITIVE
+    assert transport is JudgeTransport.CODEX_CLI
     assert has_rationale, "Codex returned an empty rationale"

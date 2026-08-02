@@ -71,13 +71,20 @@ def test_codex_live_oracle_proves_tool_use_without_logging_model_output() -> Non
         if not isinstance(node, ast.Assert):
             continue
         assert not any(
-            isinstance(test_node, ast.Name) and test_node.id == "captured_stdout"
+            isinstance(test_node, ast.Name)
+            and test_node.id in {"captured_stdout", "response"}
             for test_node in ast.walk(node.test)
         )
         if node.msg is not None:
             assert not any(
-                isinstance(message_node, ast.Attribute)
-                and message_node.attr == "rationale"
+                (
+                    isinstance(message_node, ast.Attribute)
+                    and message_node.attr == "rationale"
+                )
+                or (
+                    isinstance(message_node, ast.Name)
+                    and message_node.id in {"captured_stdout", "response"}
+                )
                 for message_node in ast.walk(node.msg)
             )
 
