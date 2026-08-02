@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 import pytest
+import yaml
 
 import wardline.mcp.codex_judge_tools as tools_module
 from wardline.core.judge_types import CodexToolScope
@@ -1415,6 +1416,113 @@ def test_quoted_brace_does_not_create_yaml_flow_context(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="credential_assignment"):
         _read_file(_ctx(tmp_path), {"file_path": "config.yaml"})
+
+
+def test_column_zero_yaml_comment_brace_does_not_create_flow_context(tmp_path: Path) -> None:
+    literal = "correct-horse-battery-staple"
+    content = f"# {{\npassword: null,{literal}"
+    assert yaml.safe_load(content) == {"password": f"null,{literal}"}
+    (tmp_path / "config.yaml").write_text(content, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="credential_assignment") as exc_info:
+        _read_file(_ctx(tmp_path), {"file_path": "config.yaml"})
+
+    message = str(exc_info.value)
+    assert literal not in message
+    assert content not in message
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        "note: |\n  {\npassword: null,correct-horse-battery-staple",
+        "note: >\n  {\npassword: null,correct-horse-battery-staple",
+        "  note: |\n    {\n  password: null,correct-horse-battery-staple",
+        "  note: >\n    {\n  password: null,correct-horse-battery-staple",
+    ],
+)
+def test_yaml_block_scalar_brace_does_not_create_flow_context(tmp_path: Path, content: str) -> None:
+    literal = "correct-horse-battery-staple"
+    parsed = yaml.safe_load(content)
+    assert isinstance(parsed, dict)
+    assert parsed["password"] == f"null,{literal}"
+    (tmp_path / "config.yaml").write_text(content, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="credential_assignment") as exc_info:
+        _read_file(_ctx(tmp_path), {"file_path": "config.yaml"})
+
+    message = str(exc_info.value)
+    assert literal not in message
+    assert content not in message
+
+
+@pytest.mark.parametrize("field", ["description", "title", "pattern"])
+@pytest.mark.parametrize(
+    "clause",
+    [
+        "password: placeholder-password, token: correct horse battery staple",
+        "password=placeholder-password; token=correct horse battery staple",
+    ],
+)
+def test_json_schema_multiple_credential_clauses_are_all_denied_without_echo(
+    tmp_path: Path, field: str, clause: str
+) -> None:
+    literal = "correct horse battery staple"
+    content = json.dumps({"properties": {"password": {"type": "string", field: clause}}})
+    (tmp_path / "schema.json").write_text(content, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="credential_assignment") as exc_info:
+        _read_file(_ctx(tmp_path), {"file_path": "schema.json"})
+
+    message = str(exc_info.value)
+    assert literal not in message
+    assert content not in message
+
+
+@pytest.mark.parametrize(
+    ("filename", "reference"),
+    [
+        ("configuration.c", 'getenv("PASSWORD")'),
+        ("configuration.cc", 'getenv("PASSWORD")'),
+        ("configuration.cc", 'std::getenv("PASSWORD")'),
+        ("configuration.cpp", 'getenv("PASSWORD")'),
+        ("configuration.cpp", 'std::getenv("PASSWORD")'),
+        ("configuration.h", 'getenv("PASSWORD")'),
+        ("configuration.h", 'std::getenv("PASSWORD")'),
+        ("configuration.hpp", 'getenv("PASSWORD")'),
+        ("configuration.hpp", 'std::getenv("PASSWORD")'),
+        ("Configuration.swift", 'ProcessInfo.processInfo.environment["PASSWORD"]!'),
+    ],
+)
+def test_final_native_source_reference_forms_remain_readable(tmp_path: Path, filename: str, reference: str) -> None:
+    content = f"password = {reference}"
+    (tmp_path / filename).write_text(content, encoding="utf-8")
+
+    assert content in _read_file(_ctx(tmp_path), {"file_path": filename})
+
+
+@pytest.mark.parametrize(
+    ("filename", "reference", "operator"),
+    [
+        ("configuration.c", 'getenv("PASSWORD")', "+"),
+        ("configuration.cpp", 'getenv("PASSWORD")', "+"),
+        ("configuration.hpp", 'std::getenv("PASSWORD")', "+"),
+        ("Configuration.swift", 'ProcessInfo.processInfo.environment["PASSWORD"]!', "??"),
+    ],
+)
+def test_final_native_source_reference_with_appended_literal_is_denied_without_echo(
+    tmp_path: Path, filename: str, reference: str, operator: str
+) -> None:
+    literal = "correct horse battery staple"
+    content = f'password = {reference} {operator} "{literal}"'
+    (tmp_path / filename).write_text(content, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="credential_assignment") as exc_info:
+        _read_file(_ctx(tmp_path), {"file_path": filename})
+
+    message = str(exc_info.value)
+    assert literal not in message
+    assert content not in message
 
 
 @pytest.mark.parametrize(

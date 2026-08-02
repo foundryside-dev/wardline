@@ -244,7 +244,7 @@ _PYTHON_SOURCE_REFERENCE_RE = re.compile(
 _JAVA_SOURCE_REFERENCE_RE = re.compile(
     r"(?i)^(?:config|settings)\.get(?:Password|Passwd|ApiKey|ClientSecret|Secret|Token)\(\)$"
 )
-_C_SOURCE_REFERENCE_RE = re.compile(rf"^std::getenv[ \t]*\([ \t]*{_REFERENCE_STRING_PATTERN}[ \t]*\)$")
+_C_SOURCE_REFERENCE_RE = re.compile(rf"^(?:std::)?getenv[ \t]*\([ \t]*{_REFERENCE_STRING_PATTERN}[ \t]*\)$")
 _GO_SOURCE_REFERENCE_RE = re.compile(rf"^os\.Getenv[ \t]*\([ \t]*{_REFERENCE_STRING_PATTERN}[ \t]*\)$")
 _PHP_SOURCE_REFERENCE_RE = re.compile(r"(?i)^\$config->(?:password|passwd|apiKey|clientSecret|secret|token)$")
 _RUBY_SOURCE_REFERENCE_RE = re.compile(
@@ -255,7 +255,7 @@ _JAVASCRIPT_SOURCE_REFERENCE_RE = re.compile(
     rf"^process\.env(?:\.[A-Z_][A-Z0-9_]*|[ \t]*\[[ \t]*{_REFERENCE_STRING_PATTERN}[ \t]*\])$"
 )
 _SWIFT_SOURCE_REFERENCE_RE = re.compile(
-    rf"^ProcessInfo\.processInfo\.environment[ \t]*\[[ \t]*{_REFERENCE_STRING_PATTERN}[ \t]*\]$"
+    rf"^ProcessInfo\.processInfo\.environment[ \t]*\[[ \t]*{_REFERENCE_STRING_PATTERN}[ \t]*\]!?$"
 )
 _DOTTED_REFERENCE_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+$")
 _CONSTANT_REFERENCE_RE = re.compile(r"^[A-Z][A-Z0-9_]*$")
@@ -282,8 +282,10 @@ _SHELL_SHEBANG_RE = re.compile(
     r"^#![ \t]*(?:/(?:usr/)?bin/(?:sh|bash|zsh)"
     r"|/usr/bin/env(?:[ \t]+-S)?[ \t]+(?:sh|bash|zsh))(?:[ \t]+[^\r\n]{0,128})?$"
 )
-_SCHEMA_DESCRIPTION_CREDENTIAL_RE = re.compile(
-    rf"(?imx){_CREDENTIAL_LABEL_PATTERN}[ \t]*[:=][ \t]*(?P<value>[^\r\n]{{1,{_MAX_PATTERN_CHARS}}})"
+_SCHEMA_CREDENTIAL_KEY_RE = re.compile(rf"(?imx){_CREDENTIAL_LABEL_PATTERN}[ \t]*[:=]")
+_YAML_BLOCK_HEADER_RE = re.compile(
+    r"(?P<indent>[ \t]*)(?:-[ \t]+)?[^#\r\n]+:[ \t]*[|>]"
+    r"(?:[1-9][+-]?|[+-][1-9]?)?[ \t]*(?:#.*)?"
 )
 
 
@@ -561,7 +563,14 @@ def _hash_comment_mode(source_suffix: str, text: str) -> str:
 
 
 def _starts_hash_comment(text: str, index: int, mode: str) -> bool:
-    return mode == "adjacent" or (mode == "separated" and index > 0 and text[index - 1] in " \t")
+    return mode == "adjacent" or (mode == "separated" and (index == 0 or text[index - 1] in " \t\r\n"))
+
+
+def _yaml_block_header_indent(text: str, start: int, end: int) -> int | None:
+    if end > start and text[end - 1] == "\r":
+        end -= 1
+    header = _YAML_BLOCK_HEADER_RE.fullmatch(text, start, end)
+    return header.end("indent") - header.start("indent") if header is not None else None
 
 
 def _credential_scalar_starts(text: str, *, source_suffix: str, source_name: str) -> Iterator[tuple[int, bool, str]]:
@@ -571,13 +580,45 @@ def _credential_scalar_starts(text: str, *, source_suffix: str, source_name: str
     flow_brace_depth = 0
     substitution_depth = 0
     in_comment = False
+    line_start = 0
+    line_indent = 0
+    line_content_started = False
+    yaml_block_indent: int | None = None
+    yaml_block_line = False
+    yaml_source = source_suffix in {".yaml", ".yml"}
     hash_comment_mode = _hash_comment_mode(source_suffix, text)
     for credential in _CREDENTIAL_KEY_RE.finditer(text):
         index = cursor
         while index < credential.start():
             character = text[index]
+            if character == "\n":
+                if yaml_source and yaml_block_indent is None and not yaml_block_line:
+                    header_indent = _yaml_block_header_indent(text, line_start, index)
+                    if header_indent is not None:
+                        yaml_block_indent = header_indent
+                line_start = index + 1
+                line_indent = 0
+                line_content_started = False
+                yaml_block_line = False
+                in_comment = False
+                index += 1
+                continue
+            if not line_content_started:
+                if character in " \t":
+                    line_indent += 1
+                    index += 1
+                    continue
+                line_content_started = True
+                if yaml_block_indent is not None:
+                    if line_indent > yaml_block_indent:
+                        yaml_block_line = True
+                    else:
+                        yaml_block_indent = None
+            if yaml_block_line:
+                index += 1
+                continue
             if in_comment:
-                if character in "\r\n":
+                if character == "\r":
                     in_comment = False
                 index += 1
                 continue
@@ -610,7 +651,17 @@ def _credential_scalar_starts(text: str, *, source_suffix: str, source_name: str
             elif character == "}" and flow_brace_depth:
                 flow_brace_depth -= 1
             index += 1
-        if quote is not None or substitution_depth or in_comment:
+        if yaml_source and not line_content_started and credential.group("flow") is None:
+            matched = credential.group(0)
+            credential_indent = len(matched) - len(matched.lstrip(" \t"))
+            line_indent = credential_indent
+            line_content_started = True
+            if yaml_block_indent is not None:
+                if credential_indent > yaml_block_indent:
+                    yaml_block_line = True
+                else:
+                    yaml_block_indent = None
+        if quote is not None or substitution_depth or in_comment or yaml_block_line:
             cursor = credential.start()
             continue
         flow_context = source_suffix == ".json" or flow_brace_depth > 0
@@ -693,6 +744,49 @@ def _scan_credential_scalar(text: str, start: int, *, flow_context: bool, hash_c
     return _ScalarScan(value=text[start:index].strip(), complete=terminated or index == len(text))
 
 
+def _scan_schema_credential_clause(text: str, start: int) -> _ScalarScan:
+    limit = min(len(text), start + _MAX_PATTERN_CHARS)
+    while start < limit and text[start] in " \t":
+        start += 1
+    index = start
+    quote: str | None = None
+    escaped = False
+    square_depth = 0
+    brace_depth = 0
+    parenthesis_depth = 0
+    terminated = False
+    while index < limit:
+        character = text[index]
+        if quote is not None:
+            if escaped:
+                escaped = False
+            elif character == "\\":
+                escaped = True
+            elif character == quote:
+                quote = None
+            index += 1
+            continue
+        if character in ('"', "'"):
+            quote = character
+        elif character == "[":
+            square_depth += 1
+        elif character == "{":
+            brace_depth += 1
+        elif character == "(":
+            parenthesis_depth += 1
+        elif character == "]" and square_depth:
+            square_depth -= 1
+        elif character == "}" and brace_depth:
+            brace_depth -= 1
+        elif character == ")" and parenthesis_depth:
+            parenthesis_depth -= 1
+        elif not (square_depth or brace_depth or parenthesis_depth) and character in ",;\r\n":
+            terminated = True
+            break
+        index += 1
+    return _ScalarScan(value=text[start:index].strip(), complete=terminated or index == len(text))
+
+
 def _safe_credential_scalar(value: str) -> bool:
     if _placeholder(value) or _SAFE_CREDENTIAL_SENTINEL_RE.fullmatch(value) is not None:
         return True
@@ -735,13 +829,14 @@ def _safe_json_schema_shape(scalar: str, *, source_suffix: str, flow_context: bo
     for schema_field in ("description", "format", "pattern", "title"):
         if schema_field in schema and not isinstance(schema[schema_field], str):
             return False
-    for schema_field in ("description", "title"):
+    for schema_field in ("description", "pattern", "title"):
         description = schema.get(schema_field)
         if not isinstance(description, str):
             continue
-        for credential in _SCHEMA_DESCRIPTION_CREDENTIAL_RE.finditer(description):
-            value, _is_literal = _normalized_credential_scalar(credential.group("value"))
-            if not _safe_credential_scalar(value):
+        for credential in _SCHEMA_CREDENTIAL_KEY_RE.finditer(description):
+            scan = _scan_schema_credential_clause(description, credential.end())
+            value, _is_literal = _normalized_credential_scalar(scan.value)
+            if not scan.complete or not value or not _safe_credential_scalar(value):
                 return False
     for schema_field in ("maxLength", "minLength"):
         if schema_field in schema and (
