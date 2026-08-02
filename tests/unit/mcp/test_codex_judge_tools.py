@@ -1389,7 +1389,10 @@ def test_final_suffix_specific_reference_with_literal_is_denied_without_echo(
 
 
 def test_multiline_yaml_flow_safe_scalars_remain_readable(tmp_path: Path) -> None:
-    content = "{\n  password: null,\n  token: false,\n  api_key: ${DATABASE_PASSWORD},\n  user: alice\n}"
+    content = (
+        "{\n  password: null,\n  token: false,\n  api_key: ${DATABASE_PASSWORD},\n"
+        "  client_secret: placeholder-value,\n  user: alice\n}"
+    )
     (tmp_path / "config.yaml").write_text(content, encoding="utf-8")
 
     result = _read_file(_ctx(tmp_path), {"file_path": "config.yaml"})
@@ -1408,6 +1411,24 @@ def test_multiline_yaml_flow_later_literal_is_denied_without_echo(tmp_path: Path
     message = str(exc_info.value)
     assert literal not in message
     assert content not in message
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        "{password: null,real-secret}",
+        "password: null,,",
+        "password: null,real-secret,",
+        "password: null, appended text",
+    ],
+)
+def test_yaml_safe_prefix_comma_with_extra_content_is_denied_without_echo(tmp_path: Path, content: str) -> None:
+    (tmp_path / "config.yaml").write_text(content, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="credential_assignment") as exc_info:
+        _read_file(_ctx(tmp_path), {"file_path": "config.yaml"})
+
+    assert content not in str(exc_info.value)
 
 
 def test_quoted_brace_does_not_create_yaml_flow_context(tmp_path: Path) -> None:
@@ -1554,6 +1575,42 @@ def test_yaml_direct_block_scalar_header_brace_does_not_create_flow_context(tmp_
     ],
 )
 def test_yaml_plain_scalar_adjacent_brace_does_not_create_flow_context(tmp_path: Path, content: str) -> None:
+    literal = "real-secret"
+    parsed = yaml.safe_load(content)
+    assert isinstance(parsed, dict)
+    assert parsed["password"] == f"null,{literal}"
+    (tmp_path / "config.yaml").write_text(content, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="credential_assignment") as exc_info:
+        _read_file(_ctx(tmp_path), {"file_path": "config.yaml"})
+
+    message = str(exc_info.value)
+    assert literal not in message
+    assert content not in message
+
+
+def test_yaml_plain_scalar_whitespace_adjacent_brace_does_not_create_flow_context(tmp_path: Path) -> None:
+    literal = "real-secret"
+    content = f"note: foo {{bar\npassword: null,{literal}"
+    assert yaml.safe_load(content) == {"note": "foo {bar", "password": f"null,{literal}"}
+    (tmp_path / "config.yaml").write_text(content, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="credential_assignment") as exc_info:
+        _read_file(_ctx(tmp_path), {"file_path": "config.yaml"})
+
+    message = str(exc_info.value)
+    assert literal not in message
+    assert content not in message
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        "? note\n: |\n  {\npassword: null,real-secret",
+        "? |\n  {\n: value\npassword: null,real-secret",
+    ],
+)
+def test_yaml_explicit_mapping_block_scalar_does_not_create_flow_context(tmp_path: Path, content: str) -> None:
     literal = "real-secret"
     parsed = yaml.safe_load(content)
     assert isinstance(parsed, dict)
