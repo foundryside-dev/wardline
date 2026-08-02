@@ -447,7 +447,14 @@ def _ambient_codex_auth_path(source: Mapping[str, str] | None = None) -> Path:
         codex_home = Path(configured_codex_home)
     else:
         configured_home = environ.get("HOME")
-        codex_home = Path(configured_home) / ".codex" if configured_home else Path.home() / ".codex"
+        if configured_home:
+            codex_home = Path(configured_home) / ".codex"
+        elif source is None:
+            codex_home = Path.home() / ".codex"
+        else:
+            raise JudgeTransportError(
+                "Codex CLI authentication material could not be staged safely"
+            )
     if not codex_home.is_absolute():
         raise JudgeTransportError("Codex CLI authentication material could not be staged safely")
     return codex_home / "auth.json"
@@ -582,13 +589,16 @@ def _project_codex_auth(
     ).encode("utf-8")
 
 
-def _auth_file_snapshot(metadata: os.stat_result) -> tuple[int, int, int, int, int]:
+def _auth_file_snapshot(
+    metadata: os.stat_result,
+) -> tuple[int, int, int, int, int, int]:
     return (
         metadata.st_dev,
         metadata.st_ino,
         metadata.st_mode,
         metadata.st_size,
         metadata.st_mtime_ns,
+        metadata.st_ctime_ns,
     )
 
 
@@ -851,9 +861,19 @@ def probe_codex_cli(*, runner: Runner | None = None) -> CodexAvailability:
     try:
         validate_codex_auth_projection(source=operator_env)
     except JudgeTransportError:
+        if not _private_auth_projection_supported():
+            detail = (
+                "Codex CLI file-auth projection is unsupported on this platform; "
+                "select OpenRouter instead"
+            )
+        else:
+            detail = (
+                "Codex CLI ChatGPT authentication cannot be projected safely; "
+                "run `codex login` and retry"
+            )
         return CodexAvailability(
             reason=CodexUnavailableReason.AUTH_UNPROJECTABLE,
-            detail=("Codex CLI ChatGPT authentication cannot be projected safely; run `codex login` and retry"),
+            detail=detail,
             version=version,
         )
     return CodexAvailability.available(version)

@@ -12,6 +12,7 @@ import time
 import traceback
 from collections.abc import Mapping
 from pathlib import Path
+from typing import cast
 
 import pytest
 
@@ -651,6 +652,21 @@ def test_codex_execution_finds_default_auth_beneath_ambient_home(
     assert projected["tokens"]["refresh_token"] == _INERT_REFRESH_TOKEN
 
 
+def test_supplied_environment_snapshot_without_auth_root_fails_closed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    live_home = tmp_path / "live-home"
+    _write_fake_codex_auth(live_home / ".codex" / "auth.json")
+    monkeypatch.setenv("HOME", str(live_home))
+
+    with pytest.raises(JudgeTransportError, match="authentication material"):
+        stage_codex_execution_auth(
+            tmp_path / "isolated-codex-home",
+            source={},
+        )
+
+
 @pytest.mark.skipif(os.name != "posix", reason="POSIX permission contract")
 def test_codex_execution_rejects_ambient_auth_readable_by_other_users(
     tmp_path: Path,
@@ -934,6 +950,77 @@ def test_codex_auth_source_descriptor_must_remain_stable_through_read(
         stage_codex_execution_auth(tmp_path / "isolated-codex-home")
 
     assert calls >= 2
+
+
+def test_codex_auth_source_detects_rewrite_with_reused_inode_size_and_mtime(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ambient_codex_home = tmp_path / "operator-codex-home"
+    _write_fake_codex_auth(ambient_codex_home / "auth.json")
+    monkeypatch.setenv("CODEX_HOME", str(ambient_codex_home))
+    original_fstat = judge_transport_module.os.fstat
+    calls = 0
+
+    class _CtimeOnlyRewrite:
+        def __init__(self, original: os.stat_result) -> None:
+            self._original = original
+            self.st_ctime_ns = original.st_ctime_ns + 1
+
+        def __getattr__(self, name: str) -> object:
+            return getattr(self._original, name)
+
+    def _rewritten_fstat(descriptor: int) -> os.stat_result:
+        nonlocal calls
+        calls += 1
+        result = original_fstat(descriptor)
+        if calls == 1:
+            return result
+        return cast(os.stat_result, _CtimeOnlyRewrite(result))
+
+    monkeypatch.setattr(judge_transport_module.os, "fstat", _rewritten_fstat)
+
+    with pytest.raises(JudgeTransportError, match="authentication material"):
+        stage_codex_execution_auth(tmp_path / "isolated-codex-home")
+
+    assert calls >= 2
+
+
+def test_consecutive_codex_calls_reproject_from_unchanged_ambient_auth(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ambient_codex_home = tmp_path / "operator-codex-home"
+    auth_path = ambient_codex_home / "auth.json"
+    ambient_bytes = _write_fake_codex_auth(auth_path)
+    ambient_mtime = auth_path.stat().st_mtime_ns
+    monkeypatch.setenv("CODEX_HOME", str(ambient_codex_home))
+    runners = [
+        _InspectingProcessRunner(_process_result()),
+        _InspectingProcessRunner(_process_result()),
+    ]
+
+    for runner in runners:
+        _call_codex_cli(
+            _request(),
+            "gpt-test",
+            1024,
+            tool_scope=CodexToolScope(root=tmp_path.resolve()),
+            process_runner=runner,
+        )
+
+    for runner in runners:
+        assert len(runner.calls) == 1
+        assert runner.auth_bytes is not None
+        assert _REAL_REFRESH_TOKEN.encode() not in runner.auth_bytes
+        assert json.loads(runner.auth_bytes)["tokens"]["refresh_token"] == (
+            _INERT_REFRESH_TOKEN
+        )
+        assert runner.execution_codex_home is not None
+        assert not runner.execution_codex_home.exists()
+    assert runners[0].execution_codex_home != runners[1].execution_codex_home
+    assert auth_path.read_bytes() == ambient_bytes
+    assert auth_path.stat().st_mtime_ns == ambient_mtime
 
 
 def test_codex_file_auth_projection_fails_closed_when_private_acl_is_unsupported(

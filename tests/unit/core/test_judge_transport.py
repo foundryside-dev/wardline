@@ -654,6 +654,10 @@ def test_probe_requires_safely_projectable_chatgpt_file_auth(
     assert "API_KEY_SENTINEL" not in availability.detail
     assert _FAKE_ACCOUNT_ID not in availability.detail
     assert len(availability.detail) <= 1_000
+    if unsafe_auth == "private-acl-unsupported":
+        assert "unsupported on this platform" in availability.detail
+        assert "OpenRouter" in availability.detail
+        assert "codex login" not in availability.detail
 
 
 @pytest.mark.parametrize(
