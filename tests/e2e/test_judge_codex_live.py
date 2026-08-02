@@ -1,16 +1,53 @@
 from __future__ import annotations
 
+import json
 import os
 import re
+from collections.abc import Mapping
 from pathlib import Path
 
 import pytest
 
 from wardline.core.judge import JudgeRequest, JudgeVerdict, call_judge
-from wardline.core.judge_transport import probe_codex_cli, resolve_judge_transport
+from wardline.core.judge_transport import (
+    _BoundedProcessResult,
+    _run_bounded_process,
+    probe_codex_cli,
+    resolve_judge_transport,
+)
 from wardline.core.judge_types import CodexToolScope, JudgeTransport
 
 pytestmark = pytest.mark.codex_live
+
+
+def _completed_read_file_paths(stdout: str) -> set[str]:
+    paths: set[str] = set()
+    for raw_line in stdout.splitlines():
+        try:
+            event = json.loads(raw_line)
+        except (json.JSONDecodeError, TypeError):
+            continue
+        if not isinstance(event, dict) or event.get("type") != "item.completed":
+            continue
+        item = event.get("item")
+        if not isinstance(item, dict):
+            continue
+        if not (
+            item.get("type") == "mcp_tool_call"
+            and item.get("server") == "wardline_judge_tools"
+            and item.get("tool") == "read_file"
+            and item.get("status") == "completed"
+        ):
+            continue
+        arguments = item.get("arguments")
+        if isinstance(arguments, str):
+            try:
+                arguments = json.loads(arguments)
+            except json.JSONDecodeError:
+                continue
+        if isinstance(arguments, dict) and isinstance(arguments.get("file_path"), str):
+            paths.add(arguments["file_path"])
+    return paths
 
 
 @pytest.mark.skipif(os.environ.get("WARDLINE_CODEX_LIVE") != "1", reason="set WARDLINE_CODEX_LIVE=1")
@@ -42,7 +79,7 @@ def test_live_codex_triage_round_trip(tmp_path: Path) -> None:
 
     assert response.judge_transport is JudgeTransport.CODEX_CLI
     assert response.verdict in (JudgeVerdict.TRUE_POSITIVE, JudgeVerdict.FALSE_POSITIVE)
-    assert response.rationale.strip()
+    assert bool(response.rationale.strip()), "Codex returned an empty rationale"
     assert 0.0 <= response.confidence <= 1.0
 
 
@@ -83,17 +120,46 @@ def test_live_codex_explores_helper_for_load_bearing_context(tmp_path: Path) -> 
         ),
     )
 
+    captured_stdout: list[str] = []
+
+    def recording_runner(
+        args: list[str],
+        *,
+        input_text: str | None,
+        timeout: float,
+        env: Mapping[str, str],
+        cwd: Path | None,
+        stdout_limit: int,
+        stderr_limit: int,
+    ) -> _BoundedProcessResult:
+        result = _run_bounded_process(
+            args,
+            input_text=input_text,
+            timeout=timeout,
+            env=env,
+            cwd=cwd,
+            stdout_limit=stdout_limit,
+            stderr_limit=stderr_limit,
+        )
+        captured_stdout.append(result.stdout)
+        return result
+
     response = call_judge(
         request,
         judge_transport=JudgeTransport.CODEX_CLI,
         codex_tool_scope=CodexToolScope(root=tmp_path.resolve()),
+        codex_process_runner=recording_runner,
     )
 
     citation = re.compile(r"(?i)(?<![\w./-])judge_helper\.py:(\d+)(?:-(\d+))?\b")
     match = citation.search(response.rationale)
-    assert match is not None, response.rationale
+    assert match is not None, "Codex rationale did not cite the helper file"
     cited_first = int(match.group(1))
     cited_last = int(match.group(2) or match.group(1))
-    assert cited_first <= sentinel_line <= cited_last, response.rationale
+    assert cited_first <= sentinel_line <= cited_last, "Codex citation missed the sentinel line"
+    assert len(captured_stdout) == 1, "Codex process runner did not complete exactly once"
+    assert "judge_helper.py" in _completed_read_file_paths(captured_stdout[0]), (
+        "Codex did not complete a read_file call for the helper"
+    )
     assert response.verdict is JudgeVerdict.FALSE_POSITIVE
     assert response.judge_transport is JudgeTransport.CODEX_CLI
