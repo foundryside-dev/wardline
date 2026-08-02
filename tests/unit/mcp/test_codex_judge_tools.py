@@ -1069,6 +1069,36 @@ def test_malformed_toml_escape_remains_fail_closed_without_echo(tmp_path: Path) 
     assert content not in message
 
 
+def test_parser_invalid_python_with_closed_string_remains_fail_closed_without_echo(tmp_path: Path) -> None:
+    literal = "correct-horse-battery-staple"
+    content = f'note =\n"""documentation\npassword = {literal}\n"""\n'
+    with pytest.raises(SyntaxError):
+        ast.parse(content)
+    (tmp_path / "configuration.py").write_text(content, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="credential_assignment") as exc_info:
+        _read_file(_ctx(tmp_path), {"file_path": "configuration.py"})
+
+    message = str(exc_info.value)
+    assert literal not in message
+    assert content not in message
+
+
+def test_parser_invalid_toml_with_closed_string_remains_fail_closed_without_echo(tmp_path: Path) -> None:
+    literal = "correct-horse-battery-staple"
+    content = f'= """documentation\npassword = {literal}\n"""\n'
+    with pytest.raises(tomllib.TOMLDecodeError):
+        tomllib.loads(content)
+    (tmp_path / "config.toml").write_text(content, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="credential_assignment") as exc_info:
+        _read_file(_ctx(tmp_path), {"file_path": "config.toml"})
+
+    message = str(exc_info.value)
+    assert literal not in message
+    assert content not in message
+
+
 def test_separated_yaml_comment_after_placeholder_remains_readable(tmp_path: Path) -> None:
     content = "password: changeme # replace outside production"
     (tmp_path / "config.yaml").write_text(content, encoding="utf-8")

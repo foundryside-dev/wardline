@@ -8,6 +8,7 @@ filters instruction and credential files, and returns bounded text-only results.
 from __future__ import annotations
 
 import argparse
+import ast
 import fnmatch
 import io
 import json
@@ -15,6 +16,7 @@ import os
 import re
 import stat
 import tokenize
+import tomllib
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import suppress
 from dataclasses import dataclass, field
@@ -580,6 +582,10 @@ def _starts_hash_comment(text: str, index: int, mode: str) -> bool:
 def _python_ignored_credential_spans(text: str) -> tuple[tuple[int, int], ...] | None:
     if len(text) > _MAX_FILE_BYTES:
         return None
+    try:
+        ast.parse(text)
+    except (MemoryError, OverflowError, RecursionError, SyntaxError, ValueError):
+        return None
     line_starts = [0]
     line_starts.extend(match.end() for match in re.finditer("\n", text))
 
@@ -665,6 +671,10 @@ def _toml_string_end(text: str, start: int, *, quote: str, multiline: bool) -> i
 
 def _toml_ignored_credential_spans(text: str) -> tuple[tuple[int, int], ...] | None:
     if len(text) > _MAX_FILE_BYTES:
+        return None
+    try:
+        tomllib.loads(text)
+    except (MemoryError, OverflowError, RecursionError, tomllib.TOMLDecodeError, ValueError):
         return None
     spans: list[tuple[int, int]] = []
     index = 0
