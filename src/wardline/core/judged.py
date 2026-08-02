@@ -105,49 +105,68 @@ def load_judged(path: Path) -> JudgedSet:
         return JudgedSet([])
     yaml = require_yaml("loading judged.yaml")
     try:
-        raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        raw = yaml.safe_load(path.read_text(encoding="utf-8"))
     except yaml.YAMLError as exc:
         raise ConfigError(f"malformed {path.name}: {exc}") from exc
+    if raw is None:
+        return JudgedSet([])
+    return validate_judged_document(
+        raw,
+        store_name=path.name,
+        require_current_scheme=True,
+        allow_empty=True,
+    )
+
+
+def validate_judged_document(
+    raw: object,
+    *,
+    store_name: str,
+    require_current_scheme: bool,
+    allow_empty: bool,
+) -> JudgedSet:
+    """Validate and parse one already-decoded judged document without mutating it."""
     if not isinstance(raw, dict):
-        raise ConfigError(f"{path.name}: must be a mapping at top level")
-    if not raw:
+        raise ConfigError(f"{store_name}: must be a mapping at top level")
+    if not raw and allow_empty:
         return JudgedSet([])
     # Loader order is load-bearing: empty-guard (above) → scheme → version.
-    require_fingerprint_scheme(raw, store_name=path.name)
+    if require_current_scheme:
+        require_fingerprint_scheme(raw, store_name=store_name)
     version = raw.get("version")
     if type(version) is not int or version not in _SUPPORTED_JUDGED_VERSIONS:
-        raise ConfigError(f"{path.name}: version must be exactly 1 or {JUDGED_VERSION}, got {version!r}")
-    findings = raw.get("findings") or []
+        raise ConfigError(f"{store_name}: version must be exactly 1 or {JUDGED_VERSION}, got {version!r}")
+    findings = raw.get("findings", [])
     if not isinstance(findings, list):
-        raise ConfigError(f"{path.name}: 'findings' must be a list")
+        raise ConfigError(f"{store_name}: 'findings' must be a list")
     entries: list[JudgedFP] = []
     seen: set[str] = set()
     for idx, e in enumerate(findings):
         if not isinstance(e, dict):
-            raise ConfigError(f"{path.name} findings[{idx}] must be a mapping")
+            raise ConfigError(f"{store_name} findings[{idx}] must be a mapping")
         fp = e.get("fingerprint")
         if not isinstance(fp, str) or len(fp) != 64 or not set(fp) <= _HEX:
-            raise ConfigError(f"{path.name} findings[{idx}].fingerprint must be a 64-char lowercase hex string")
+            raise ConfigError(f"{store_name} findings[{idx}].fingerprint must be a 64-char lowercase hex string")
         if fp in seen:
-            raise ConfigError(f"{path.name} findings[{idx}]: duplicate fingerprint {fp!r}")
+            raise ConfigError(f"{store_name} findings[{idx}]: duplicate fingerprint {fp!r}")
         seen.add(fp)
         # A judged record suppresses a finding ONLY as a FALSE_POSITIVE verdict. Require
         # the field and reject any other value so a hand-edited TRUE_POSITIVE (or a
         # missing verdict) cannot be smuggled in as a silent suppression. write_judged
         # always emits verdict: FALSE_POSITIVE, so machine round-trips stay valid.
-        verdict = _require_str(e, "verdict", idx, path.name)
+        verdict = _require_str(e, "verdict", idx, store_name)
         if verdict != "FALSE_POSITIVE":
-            raise ConfigError(f"{path.name} findings[{idx}].verdict must be FALSE_POSITIVE, got {verdict!r}")
-        rationale = _require_str(e, "rationale", idx, path.name)
+            raise ConfigError(f"{store_name} findings[{idx}].verdict must be FALSE_POSITIVE, got {verdict!r}")
+        rationale = _require_str(e, "rationale", idx, store_name)
         # Provenance is the audit primitive — never default it. A judged record with
         # no attributable model / policy / confidence is an unauditable suppression.
-        model_id = _require_str(e, "model_id", idx, path.name)
+        model_id = _require_str(e, "model_id", idx, store_name)
         judge_transport = (
-            JudgeTransport.OPENROUTER if version == 1 else _require_concrete_transport(e, idx, path.name)
+            JudgeTransport.OPENROUTER if version == 1 else _require_concrete_transport(e, idx, store_name)
         )
-        policy_hash = _require_str(e, "policy_hash", idx, path.name)
-        confidence = _require_confidence(e, idx, path.name)
-        recorded_at = _parse_dt(e.get("recorded_at"), idx, path.name)
+        policy_hash = _require_str(e, "policy_hash", idx, store_name)
+        confidence = _require_confidence(e, idx, store_name)
+        recorded_at = _parse_dt(e.get("recorded_at"), idx, store_name)
         entries.append(
             JudgedFP(
                 fingerprint=fp,

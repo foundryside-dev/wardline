@@ -24,8 +24,8 @@ from wardline.core.baseline import BASELINE_VERSION
 from wardline.core.errors import ConfigError, FiligreeEmitError, WardlineError
 from wardline.core.finding import FINGERPRINT_SCHEME, Finding, Kind
 from wardline.core.fingerprint_v0 import FINGERPRINT_SCHEME_V0, compute_finding_fingerprint_v0
-from wardline.core.judge_types import CONCRETE_JUDGE_TRANSPORTS, JudgeTransport
-from wardline.core.judged import JUDGED_VERSION
+from wardline.core.judge_types import JudgeTransport
+from wardline.core.judged import JUDGED_VERSION, validate_judged_document
 from wardline.core.optional_deps import require_yaml
 from wardline.core.safe_paths import read_bytes_no_follow, safe_project_file, write_text_no_follow
 from wardline.core.waivers import WAIVERS_VERSION
@@ -300,14 +300,9 @@ def _refuse_preexisting_snapshot_without_journal(root: Path) -> None:
         )
 
 
-def snapshot_stores(root: Path) -> tuple[str, ...]:
-    """Copy each EXISTING YAML store into ``.rekey_snapshot/`` byte-identical. The
-    snapshot is the immutable provenance source the carry legs read — resume NEVER
-    re-reads the (already-rewritten) live store. Idempotent: an existing snapshot is
-    the pre-migration truth and is NEVER clobbered (a second invocation keeps it)."""
-    sdir = snapshot_dir(root)
+def _read_live_store_payloads(root: Path) -> dict[str, bytes]:
     state = paths.weft_state_dir(root)
-    present: list[str] = []
+    payloads: dict[str, bytes] = {}
     for name, _key, _ver in _STORES:
         live = state / name
         # Read the live store WITHOUT following a symlink: an untrusted checkout could
@@ -318,6 +313,17 @@ def snapshot_stores(root: Path) -> tuple[str, ...]:
         data = _read_project_store_bytes(root, live)
         if data is None:
             continue
+        payloads[name] = data
+    return payloads
+
+
+def _publish_snapshot_payloads(root: Path, payloads: dict[str, bytes]) -> tuple[str, ...]:
+    sdir = snapshot_dir(root)
+    present: list[str] = []
+    for name, _key, _ver in _STORES:
+        data = payloads.get(name)
+        if data is None:
+            continue
         present.append(name)
         dest = safe_project_file(root, sdir / name, label=name)
         if dest.exists():
@@ -325,6 +331,14 @@ def snapshot_stores(root: Path) -> tuple[str, ...]:
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_bytes(data)
     return tuple(present)
+
+
+def snapshot_stores(root: Path) -> tuple[str, ...]:
+    """Copy each EXISTING YAML store into ``.rekey_snapshot/`` byte-identical. The
+    snapshot is the immutable provenance source the carry legs read — resume NEVER
+    re-reads the (already-rewritten) live store. Idempotent: an existing snapshot is
+    the pre-migration truth and is NEVER clobbered (a second invocation keeps it)."""
+    return _publish_snapshot_payloads(root, _read_live_store_payloads(root))
 
 
 # --- S5: carry verdicts from the SNAPSHOT, preserving ALL provenance --------------
@@ -349,14 +363,22 @@ def _read_old_store(path: Path) -> dict[str, Any]:
     return _load_old_store_bytes(data, path.name)
 
 
-def _load_old_store_bytes(data: bytes, name: str) -> dict[str, Any]:
+def _load_old_store_bytes(
+    data: bytes,
+    name: str,
+    *,
+    preserve_falsey_types: bool = False,
+) -> dict[str, Any]:
     yaml = require_yaml("reading the rekey snapshot")
     try:
-        loaded = yaml.safe_load(data.decode("utf-8")) or {}
+        decoded = yaml.safe_load(data.decode("utf-8"))
     except UnicodeDecodeError as exc:
         raise ConfigError(f"malformed snapshot {name}: not valid UTF-8") from exc
     except yaml.YAMLError as exc:  # pragma: no cover - defensive
         raise ConfigError(f"malformed snapshot {name}: {exc}") from exc
+    loaded = decoded if preserve_falsey_types else decoded or {}
+    if loaded is None:
+        loaded = {}
     if not isinstance(loaded, dict):
         raise ConfigError(f"snapshot {name} is not a mapping")
     return loaded
@@ -415,30 +437,13 @@ def carry_baseline_forward(snapshot_path: Path, old_to_new: dict[str, str]) -> C
 
 
 def _validate_judged_source_for_carry(loaded: dict[str, Any], *, store_name: str) -> None:
-    source_version = loaded.get("version")
-    if type(source_version) is not int or source_version not in {1, 2}:
-        raise ConfigError(f"{store_name}: judged source version must be exactly 1 or 2, got {source_version!r}")
-    if source_version == 1:
-        return
-    findings = loaded.get("findings") or []
-    if not isinstance(findings, list):
-        raise ConfigError(f"{store_name}: 'findings' must be a list")
-    for index, entry in enumerate(findings):
-        value = entry.get("judge_transport") if isinstance(entry, dict) else None
-        if not isinstance(value, str):
-            raise ConfigError(
-                f"{store_name} findings[{index}].judge_transport must be codex-cli or openrouter"
-            )
-        try:
-            transport = JudgeTransport(value)
-        except ValueError:
-            raise ConfigError(
-                f"{store_name} findings[{index}].judge_transport must be codex-cli or openrouter"
-            ) from None
-        if transport not in CONCRETE_JUDGE_TRANSPORTS:
-            raise ConfigError(
-                f"{store_name} findings[{index}].judge_transport must be codex-cli or openrouter"
-            )
+    _require_rekey_store_scheme(loaded.get("fingerprint_scheme"), store_name=store_name)
+    validate_judged_document(
+        loaded,
+        store_name=store_name,
+        require_current_scheme=False,
+        allow_empty=False,
+    )
 
 
 def _carry_judged_loaded_store(
@@ -459,12 +464,22 @@ def _carry_judged_loaded_store(
     if source_version == 1:
         for entry in result.document["findings"]:
             entry["judge_transport"] = JudgeTransport.OPENROUTER.value
+    # The source contract alone is insufficient: a resumed journal can contain a
+    # malformed or colliding target fingerprint. Validate the exact v2 document we
+    # would publish after remapping and legacy transport injection.
+    validate_judged_document(
+        result.document,
+        store_name=store_name,
+        require_current_scheme=True,
+        allow_empty=False,
+    )
     return result
 
 
 def carry_judged_forward(snapshot_path: Path, old_to_new: dict[str, str]) -> CarryResult:
+    data = read_bytes_no_follow(snapshot_path)
     return _carry_judged_loaded_store(
-        _read_old_store(snapshot_path),
+        {} if data is None else _load_old_store_bytes(data, snapshot_path.name, preserve_falsey_types=True),
         old_to_new,
         store_name=snapshot_path.name,
     )
@@ -700,6 +715,26 @@ def _write_store_doc(root: Path, live_path: Path, document: dict[str, Any]) -> N
     )
 
 
+def _validate_store_payload(data: bytes, store_name: str) -> dict[str, Any]:
+    loaded = _load_old_store_bytes(
+        data,
+        store_name,
+        preserve_falsey_types=store_name == "judged.yaml",
+    )
+    if store_name == "judged.yaml":
+        _validate_judged_source_for_carry(loaded, store_name=store_name)
+    else:
+        _require_rekey_store_scheme(loaded.get("fingerprint_scheme"), store_name=store_name)
+    return loaded
+
+
+def _preflight_store_payloads(payloads: dict[str, bytes], journal: Journal) -> None:
+    for store_name, data in payloads.items():
+        loaded = _validate_store_payload(data, store_name)
+        if store_name == "judged.yaml":
+            _carry_judged_loaded_store(loaded, journal.remap, store_name=store_name)
+
+
 def _preflight_pending_snapshot_payloads(root: Path, journal: Journal) -> dict[str, bytes | None]:
     """Read and validate every pending YAML snapshot before any migration write.
 
@@ -719,10 +754,9 @@ def _preflight_pending_snapshot_payloads(root: Path, journal: Journal) -> dict[s
             payloads[leg.name] = None
             continue
         data = _read_required_snapshot_bytes(root, snap)
-        loaded = _load_old_store_bytes(data, snap_name)
-        _require_rekey_store_scheme(loaded.get("fingerprint_scheme"), store_name=snap_name)
+        loaded = _validate_store_payload(data, snap_name)
         if leg.name == "judged":
-            _validate_judged_source_for_carry(loaded, store_name=snap_name)
+            _carry_judged_loaded_store(loaded, journal.remap, store_name=snap_name)
         payloads[leg.name] = data
     return payloads
 
@@ -754,7 +788,7 @@ def apply_pending_legs(
             continue
         if leg.name == "judged":
             result = _carry_judged_loaded_store(
-                _load_old_store_bytes(snapshot_data, snap_name),
+                _load_old_store_bytes(snapshot_data, snap_name, preserve_falsey_types=True),
                 journal.remap,
                 store_name=snap_name,
             )
@@ -833,20 +867,13 @@ def _apply_filigree_leg(leg: Leg, findings: Sequence[Finding] | None, filigree: 
 # --- S9: --probe (read-only cross-check; writes NOTHING) --------------------------
 
 
-def _store_fingerprints(root: Path) -> dict[str, tuple[str | None, set[str]]]:
-    """Per live store: its ``fingerprint_scheme`` header (None when pre-scheme) and the
-    fingerprints it records, read RAW (a pre-migration store would SCHEME_MISMATCH the
-    enforcing loaders). The scheme is load-bearing: a store ALREADY at the live scheme
-    holds wlfp2 fingerprints, and judging it against the wlfp1-reconstructed remap keys
-    misreads every healthy entry as orphaned (A7, weft-dda1a6d8dd). Read-only."""
+def _store_fingerprints_from_payloads(payloads: dict[str, bytes]) -> dict[str, tuple[str | None, set[str]]]:
     out: dict[str, tuple[str | None, set[str]]] = {}
-    state = paths.weft_state_dir(root)
     for name, key, _ver in _STORES:
-        p = state / name
-        data = _read_project_store_bytes(root, p)
+        data = payloads.get(name)
         if data is None:
             continue
-        loaded = _load_old_store_bytes(data, p.name)
+        loaded = _load_old_store_bytes(data, name)
         scheme = _require_rekey_store_scheme(loaded.get("fingerprint_scheme"), store_name=name)
         fps = {
             e["fingerprint"]
@@ -856,6 +883,26 @@ def _store_fingerprints(root: Path) -> dict[str, tuple[str | None, set[str]]]:
         if fps:
             out[name] = (scheme, fps)
     return out
+
+
+def _store_fingerprints(root: Path) -> dict[str, tuple[str | None, set[str]]]:
+    """Per live store: its ``fingerprint_scheme`` header (None when pre-scheme) and the
+    fingerprints it records, read RAW (a pre-migration store would SCHEME_MISMATCH the
+    enforcing loaders). The scheme is load-bearing: a store ALREADY at the live scheme
+    holds wlfp2 fingerprints, and judging it against the wlfp1-reconstructed remap keys
+    misreads every healthy entry as orphaned (A7, weft-dda1a6d8dd). Read-only."""
+    return _store_fingerprints_from_payloads(_read_live_store_payloads(root))
+
+
+def _payloads_have_prescheme_store(payloads: dict[str, bytes]) -> bool:
+    for name, key, _ver in _STORES:
+        data = payloads.get(name)
+        if data is None:
+            continue
+        loaded = _load_old_store_bytes(data, name)
+        if loaded.get(key) and not loaded.get("fingerprint_scheme"):
+            return True
+    return False
 
 
 def _dir_has_prescheme_store(dir_path: Path, *, root: Path | None = None) -> bool:
@@ -950,8 +997,8 @@ def probe(root: Path, findings: Sequence[Finding]) -> ProbeReport:
 
 
 def run_rekey(root: Path, findings: Sequence[Finding], *, filigree: Any = None) -> Journal:
-    """Fresh migration: snapshot FIRST (pre-migration provenance), plan the remap from
-    the single scan, write the journal, then apply the legs. Idempotent via the snapshot."""
+    """Fresh migration: validate then publish one exact live-store byte snapshot,
+    plan the remap from the single scan, write the journal, then apply the legs."""
     # Refuse a forward re-run over an ALREADY-COMPLETE migration. The snapshot (wlfp1) and
     # journal persist after success (only --rollback clears them), and the live stores are
     # now wlfp2; re-snapshot never clobbers, so a second forward run would re-carry from the
@@ -971,7 +1018,12 @@ def run_rekey(root: Path, findings: Sequence[Finding], *, filigree: Any = None) 
     # is nothing to migrate, and re-keying wlfp2 entries through the wlfp1 remap would
     # orphan every healthy verdict (the destructive twin of the A7 probe misread,
     # weft-dda1a6d8dd). Checked BEFORE the snapshot — a refused run writes nothing.
-    populated_schemes = [scheme for scheme, _fps in _store_fingerprints(root).values()]
+    live_payloads = _read_live_store_payloads(root)
+    journal = new_journal(compute_old_new_fingerprints(findings))
+    _preflight_store_payloads(live_payloads, journal)
+    populated_schemes = [
+        scheme for scheme, _fps in _store_fingerprints_from_payloads(live_payloads).values()
+    ]
     if populated_schemes and all(s == FINGERPRINT_SCHEME for s in populated_schemes):
         raise WardlineError(
             f"every store is already at the {FINGERPRINT_SCHEME} fingerprint scheme — "
@@ -979,11 +1031,10 @@ def run_rekey(root: Path, findings: Sequence[Finding], *, filigree: Any = None) 
             "verdicts. Nothing to do (run `wardline rekey --probe` for the per-store view)."
         )
     _refuse_preexisting_snapshot_without_journal(root)
-    snapshot_stores(root)  # must precede any store write
-    journal = new_journal(compute_old_new_fingerprints(findings))
+    _publish_snapshot_payloads(root, live_payloads)  # exact preflighted bytes; no second live read
     # Detect from the immutable snapshot (byte-identical to the pre-migration live stores)
     # so the caution persists onto the journal for --resume display too.
-    journal.snapshot_prescheme = _dir_has_prescheme_store(snapshot_dir(root), root=root)
+    journal.snapshot_prescheme = _payloads_have_prescheme_store(live_payloads)
     write_journal(jpath, journal, root=root)
     return apply_pending_legs(root, journal, findings=findings, filigree=filigree)
 

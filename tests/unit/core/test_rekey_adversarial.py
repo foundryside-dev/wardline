@@ -27,7 +27,7 @@ yaml = pytest.importorskip("yaml")
 
 from wardline.core import paths  # noqa: E402
 from wardline.core.baseline import load_baseline  # noqa: E402
-from wardline.core.errors import WardlineError  # noqa: E402
+from wardline.core.errors import ConfigError, WardlineError  # noqa: E402
 from wardline.core.finding import Finding, Kind, Location, Severity  # noqa: E402
 from wardline.core.fingerprint_v0 import compute_finding_fingerprint_v0  # noqa: E402
 from wardline.core.judged import load_judged  # noqa: E402
@@ -35,6 +35,7 @@ from wardline.core.rekey import (  # noqa: E402
     Journal,
     Leg,
     carry_baseline_forward,
+    carry_judged_forward,
     resume_rekey,
     rollback,
     run_rekey,
@@ -45,6 +46,24 @@ from wardline.core.rekey import (  # noqa: E402
 # Old (wlfp1) / new (wlfp2) fingerprints for two distinct verdicts.
 A_OLD, A_NEW = "a" * 64, "1" * 64
 B_OLD, B_NEW = "b" * 64, "2" * 64
+
+
+def _valid_judged_entry(*, version: int, fingerprint: str = B_OLD) -> dict[str, object]:
+    entry: dict[str, object] = {
+        "fingerprint": fingerprint,
+        "rule_id": "PY-WL-108",
+        "path": "m.py",
+        "message": "shell",
+        "verdict": "FALSE_POSITIVE",
+        "rationale": "sanitized at the boundary",
+        "model_id": "test-model",
+        "policy_hash": "deadbeef",
+        "confidence": 0.97,
+        "recorded_at": "2026-06-10T00:00:00Z",
+    }
+    if version == 2:
+        entry["judge_transport"] = "codex-cli"
+    return entry
 
 
 def _join_finding() -> Finding:
@@ -89,23 +108,160 @@ def _seed_snapshot(root: Path) -> None:
             {
                 "fingerprint_scheme": "wlfp1",
                 "version": 1,
-                "findings": [
-                    {
-                        "fingerprint": B_OLD,
-                        "rule_id": "PY-WL-108",
-                        "path": "m.py",
-                        "verdict": "FALSE_POSITIVE",
-                        "rationale": "sanitized at the boundary",
-                        "model_id": "test-model",
-                        "policy_hash": "deadbeef",
-                        "confidence": 0.97,
-                        "recorded_at": "2026-06-10T00:00:00Z",
-                    }
-                ],
+                "findings": [_valid_judged_entry(version=1)],
             }
         ),
         encoding="utf-8",
     )
+
+
+@pytest.mark.parametrize("version", [1, 2])
+@pytest.mark.parametrize(
+    "defect",
+    [
+        "missing_verdict",
+        "missing_rationale",
+        "missing_model_id",
+        "missing_policy_hash",
+        "malformed_fingerprint",
+        "duplicate_fingerprint",
+        "bad_confidence",
+        "bad_datetime",
+        "non_mapping_entry",
+    ],
+)
+def test_judged_carry_rejects_incomplete_or_malformed_records(
+    tmp_path: Path, version: int, defect: str
+) -> None:
+    entry = _valid_judged_entry(version=version)
+    entries: list[object] = [entry]
+    if defect.startswith("missing_"):
+        entry.pop(defect.removeprefix("missing_"))
+    elif defect == "malformed_fingerprint":
+        entry["fingerprint"] = "short"
+    elif defect == "duplicate_fingerprint":
+        entries.append(dict(entry))
+    elif defect == "bad_confidence":
+        entry["confidence"] = True
+    elif defect == "bad_datetime":
+        entry["recorded_at"] = "not-a-datetime"
+    elif defect == "non_mapping_entry":
+        entries = ["not-a-mapping"]
+    source = tmp_path / "judged.yaml"
+    source.write_text(
+        yaml.safe_dump(
+            {
+                "fingerprint_scheme": "wlfp1",
+                "version": version,
+                "findings": entries,
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigError):
+        carry_judged_forward(source, {B_OLD: B_NEW})
+
+
+def test_fresh_rekey_rejects_invalid_judged_before_snapshot_or_journal_publication(tmp_path: Path) -> None:
+    root = tmp_path
+    state = paths.weft_state_dir(root)
+    state.mkdir(parents=True)
+    baseline_doc = {
+        "fingerprint_scheme": "wlfp1",
+        "version": 1,
+        "entries": [{"fingerprint": A_OLD, "rule_id": "PY-WL-108", "path": "m.py", "message": "x"}],
+    }
+    invalid_judged_entry = _valid_judged_entry(version=1)
+    invalid_judged_entry.pop("verdict")
+    judged_doc = {
+        "fingerprint_scheme": "wlfp1",
+        "version": 1,
+        "findings": [invalid_judged_entry],
+    }
+    (state / "baseline.yaml").write_text(yaml.safe_dump(baseline_doc, sort_keys=False), encoding="utf-8")
+    (state / "judged.yaml").write_text(yaml.safe_dump(judged_doc, sort_keys=False), encoding="utf-8")
+    before = {
+        state / "baseline.yaml": (state / "baseline.yaml").read_bytes(),
+        state / "judged.yaml": (state / "judged.yaml").read_bytes(),
+    }
+
+    with pytest.raises(ConfigError, match="verdict"):
+        run_rekey(root, [])
+
+    assert {path: path.read_bytes() for path in before} == before
+    assert not paths.migration_journal_path(root).exists()
+    assert not snapshot_dir(root).exists() or not tuple(snapshot_dir(root).iterdir())
+
+
+def test_fresh_rekey_snapshots_the_single_validated_live_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from wardline.core import rekey as rekey_module  # noqa: PLC0415
+
+    root = tmp_path
+    state = paths.weft_state_dir(root)
+    state.mkdir(parents=True)
+    live = state / "judged.yaml"
+    live.write_text(
+        yaml.safe_dump(
+            {
+                "fingerprint_scheme": "wlfp1",
+                "version": 1,
+                "findings": [_valid_judged_entry(version=1)],
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    expected_snapshot = live.read_bytes()
+    original_read = rekey_module._read_project_store_bytes
+    live_reads = 0
+
+    def _counted_read(candidate_root: Path, candidate_path: Path) -> bytes | None:
+        nonlocal live_reads
+        if candidate_path == live:
+            live_reads += 1
+        return original_read(candidate_root, candidate_path)
+
+    monkeypatch.setattr(rekey_module, "_read_project_store_bytes", _counted_read)
+
+    run_rekey(root, [])
+
+    assert live_reads == 1
+    assert (snapshot_dir(root) / "judged.yaml").read_bytes() == expected_snapshot
+
+
+def test_fresh_rekey_preflights_remapped_judged_output_before_publication(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from wardline.core import rekey as rekey_module  # noqa: PLC0415
+
+    root = tmp_path
+    state = paths.weft_state_dir(root)
+    state.mkdir(parents=True)
+    live = state / "judged.yaml"
+    live.write_text(
+        yaml.safe_dump(
+            {
+                "fingerprint_scheme": "wlfp1",
+                "version": 1,
+                "findings": [_valid_judged_entry(version=1)],
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    live_before = live.read_bytes()
+    monkeypatch.setattr(rekey_module, "new_journal", lambda _remaps: Journal(remap={B_OLD: "short"}))
+
+    with pytest.raises(ConfigError, match="fingerprint"):
+        run_rekey(root, [])
+
+    assert live.read_bytes() == live_before
+    assert not paths.migration_journal_path(root).exists()
+    assert not snapshot_dir(root).exists() or not tuple(snapshot_dir(root).iterdir())
 
 
 # --- (0) untrusted snapshot provenance -------------------------------------------

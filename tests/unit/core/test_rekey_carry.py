@@ -202,6 +202,14 @@ def test_rekey_carry_rejects_missing_unknown_or_noninteger_judged_version(
         carry_judged_forward(source, REMAP)
 
 
+def test_rekey_carry_rejects_an_empty_unversioned_judged_document(tmp_path: Path) -> None:
+    source = tmp_path / "judged.yaml"
+    source.write_text("{}\n", encoding="utf-8")
+
+    with pytest.raises(ConfigError, match="version"):
+        carry_judged_forward(source, REMAP)
+
+
 @pytest.mark.parametrize(
     ("include_transport", "transport"),
     [
@@ -218,7 +226,18 @@ def test_rekey_carry_rejects_invalid_v2_judged_transport(
     tmp_path: Path, include_transport: bool, transport: object
 ) -> None:
     source = tmp_path / "judged.yaml"
-    entry: dict[str, object] = {"fingerprint": A}
+    entry: dict[str, object] = {
+        "fingerprint": A,
+        "rule_id": "PY-WL-108",
+        "path": "m.py",
+        "message": "shell",
+        "verdict": "FALSE_POSITIVE",
+        "rationale": "otherwise valid provenance",
+        "confidence": 0.97,
+        "model_id": "test-model",
+        "recorded_at": "2026-06-01T00:00:00+00:00",
+        "policy_hash": "deadbeef",
+    }
     if include_transport:
         entry["judge_transport"] = transport
     _seed(

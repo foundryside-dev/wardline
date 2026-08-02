@@ -215,6 +215,42 @@ def test_empty_mapping_is_empty_no_scheme_error(tmp_path: Path) -> None:
     assert load_judged(path).match("a" * 64) is None
 
 
+@pytest.mark.parametrize("contents", ["false\n", "0\n", "[]\n", '""\n'])
+def test_falsey_nonmapping_top_level_is_rejected(tmp_path: Path, contents: str) -> None:
+    path = tmp_path / "judged.yaml"
+    path.write_text(contents, encoding="utf-8")
+
+    with pytest.raises(ConfigError, match="mapping at top level"):
+        load_judged(path)
+
+
+@pytest.mark.parametrize("contents", ["", "null\n"])
+def test_empty_or_null_document_remains_empty(tmp_path: Path, contents: str) -> None:
+    path = tmp_path / "judged.yaml"
+    path.write_text(contents, encoding="utf-8")
+
+    assert load_judged(path).fingerprints() == frozenset()
+
+
+@pytest.mark.parametrize("findings", [False, 0, None, {}])
+def test_present_findings_must_be_an_actual_list(tmp_path: Path, findings: object) -> None:
+    path = tmp_path / "judged.yaml"
+    path.write_text(
+        yaml.safe_dump(
+            {
+                "fingerprint_scheme": FINGERPRINT_SCHEME,
+                "version": 2,
+                "findings": findings,
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigError, match="findings.*list"):
+        load_judged(path)
+
+
 def test_roundtrip_preserves_all_provenance(tmp_path: Path) -> None:
     path = tmp_path / "judged.yaml"
     write_judged(path, [_fp()])
