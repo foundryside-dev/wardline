@@ -35,7 +35,8 @@ from wardline.core.judge_transport import (
     CODEX_DISABLED_FEATURES,
     _BoundedProcessResult,
     _run_bounded_process,
-    codex_child_env,
+    codex_execution_env,
+    stage_codex_execution_auth,
 )
 from wardline.core.judge_types import (
     CODEX_JUDGE_REASONING_EFFORT,
@@ -511,8 +512,14 @@ def _call_codex_cli(
         f'model_reasoning_effort="{CODEX_JUDGE_REASONING_EFFORT}"',
         *(f"features.{feature}=false" for feature in sorted(CODEX_DISABLED_FEATURES)),
     ]
+    operator_env = dict(os.environ)
     with tempfile.TemporaryDirectory(prefix="wardline-judge-codex-") as temp_dir:
         temp_root = Path(temp_dir)
+        execution_home = temp_root / "home"
+        execution_home.mkdir(mode=0o700)
+        os.chmod(execution_home, 0o700)
+        execution_codex_home = temp_root / "codex-home"
+        stage_codex_execution_auth(execution_codex_home, source=operator_env)
         work_root = temp_root / "work"
         work_root.mkdir()
         schema_path = temp_root / "judge-response.schema.json"
@@ -548,7 +555,11 @@ def _call_codex_cli(
                 command,
                 input_text=prompt,
                 timeout=timeout_seconds,
-                env=codex_child_env(),
+                env=codex_execution_env(
+                    home=execution_home,
+                    codex_home=execution_codex_home,
+                    source=operator_env,
+                ),
                 cwd=work_root,
                 stdout_limit=_CODEX_STDOUT_BYTE_LIMIT,
                 stderr_limit=_CODEX_STDERR_BYTE_LIMIT,

@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import re
 import signal
+import stat
 import subprocess
 import tempfile
 import threading
@@ -14,13 +15,14 @@ from enum import StrEnum
 from pathlib import Path
 from typing import IO
 
-from wardline.core.errors import JudgeConfigurationError
+from wardline.core.errors import JudgeConfigurationError, JudgeTransportError
 from wardline.core.judge_types import JudgeTransport
 
 _CODEX_PREFLIGHT_TIMEOUT_SECONDS = 10
 _DIAGNOSTIC_CHAR_LIMIT = 1_000
 _PREFLIGHT_STDOUT_BYTE_LIMIT = 256 * 1024
 _PREFLIGHT_STDERR_BYTE_LIMIT = 64 * 1024
+_CODEX_AUTH_BYTE_LIMIT = 1024 * 1024
 _PROCESS_TERMINATION_GRACE_SECONDS = 2.0
 _PROCESS_DRAIN_GRACE_SECONDS = 0.05
 
@@ -425,6 +427,99 @@ def codex_child_env(source: Mapping[str, str] | None = None) -> dict[str, str]:
         if value and (key in _CHILD_ENV_KEYS or key in _LOCALE_ENV_KEYS)
     }
     child["NO_COLOR"] = "1"
+    return child
+
+
+def _ambient_codex_auth_path(source: Mapping[str, str] | None = None) -> Path:
+    environ = os.environ if source is None else source
+    configured_codex_home = environ.get("CODEX_HOME")
+    if configured_codex_home:
+        codex_home = Path(configured_codex_home)
+    else:
+        configured_home = environ.get("HOME")
+        codex_home = Path(configured_home) / ".codex" if configured_home else Path.home() / ".codex"
+    if not codex_home.is_absolute():
+        raise JudgeTransportError("Codex CLI authentication material could not be staged safely")
+    return codex_home / "auth.json"
+
+
+def _read_bounded_codex_auth(source_path: Path) -> bytes:
+    try:
+        before = source_path.lstat()
+        if not stat.S_ISREG(before.st_mode):
+            raise OSError
+        if os.name == "posix" and stat.S_IMODE(before.st_mode) & 0o077:
+            raise OSError
+        flags = os.O_RDONLY
+        flags |= getattr(os, "O_BINARY", 0)
+        flags |= getattr(os, "O_CLOEXEC", 0)
+        flags |= getattr(os, "O_NOFOLLOW", 0)
+        descriptor = os.open(source_path, flags)
+        try:
+            after = os.fstat(descriptor)
+            if not stat.S_ISREG(after.st_mode):
+                raise OSError
+            if (before.st_dev, before.st_ino) != (after.st_dev, after.st_ino):
+                raise OSError
+            chunks: list[bytes] = []
+            remaining = _CODEX_AUTH_BYTE_LIMIT + 1
+            while remaining > 0:
+                chunk = os.read(descriptor, min(64 * 1024, remaining))
+                if not chunk:
+                    break
+                chunks.append(chunk)
+                remaining -= len(chunk)
+            payload = b"".join(chunks)
+            if not payload or len(payload) > _CODEX_AUTH_BYTE_LIMIT:
+                raise OSError
+            return payload
+        finally:
+            os.close(descriptor)
+    except (OSError, ValueError):
+        raise JudgeTransportError("Codex CLI authentication material could not be staged safely") from None
+
+
+def stage_codex_execution_auth(
+    destination_codex_home: Path,
+    *,
+    source: Mapping[str, str] | None = None,
+) -> None:
+    """Copy only bounded auth state into one private ephemeral Codex home."""
+    payload = _read_bounded_codex_auth(_ambient_codex_auth_path(source))
+    try:
+        destination_codex_home.mkdir(mode=0o700)
+        os.chmod(destination_codex_home, 0o700)
+        destination = destination_codex_home / "auth.json"
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+        flags |= getattr(os, "O_BINARY", 0)
+        flags |= getattr(os, "O_CLOEXEC", 0)
+        descriptor = os.open(destination, flags, 0o600)
+        try:
+            view = memoryview(payload)
+            while view:
+                written = os.write(descriptor, view)
+                if written <= 0:
+                    raise OSError
+                view = view[written:]
+        finally:
+            os.close(descriptor)
+        os.chmod(destination, 0o600)
+    except (OSError, ValueError):
+        raise JudgeTransportError("Codex CLI authentication material could not be staged safely") from None
+
+
+def codex_execution_env(
+    *,
+    home: Path,
+    codex_home: Path,
+    source: Mapping[str, str] | None = None,
+) -> dict[str, str]:
+    """Build the sealed execution environment with no ambient state roots."""
+    if not home.is_absolute() or not codex_home.is_absolute():
+        raise ValueError("Codex execution homes must be absolute")
+    child = codex_child_env(source)
+    child["HOME"] = str(home)
+    child["CODEX_HOME"] = str(codex_home)
     return child
 
 

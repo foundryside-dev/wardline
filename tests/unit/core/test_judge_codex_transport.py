@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import signal
+import stat
 import subprocess
 import sys
 import time
@@ -368,6 +369,53 @@ class _RecordingProcessRunner:
         return self.result
 
 
+class _InspectingProcessRunner(_RecordingProcessRunner):
+    def __init__(self, result: _BoundedProcessResult) -> None:
+        super().__init__(result)
+        self.execution_home: Path | None = None
+        self.execution_codex_home: Path | None = None
+        self.home_entries: list[str] = []
+        self.codex_home_entries: list[str] = []
+        self.auth_bytes: bytes | None = None
+        self.home_mode: int | None = None
+        self.codex_home_mode: int | None = None
+        self.auth_mode: int | None = None
+
+    def __call__(
+        self,
+        command: list[str],
+        *,
+        input_text: str | None,
+        timeout: float,
+        env: Mapping[str, str],
+        cwd: Path | None,
+        stdout_limit: int,
+        stderr_limit: int,
+    ) -> _BoundedProcessResult:
+        self.execution_home = Path(env["HOME"])
+        self.execution_codex_home = Path(env["CODEX_HOME"])
+        self.home_entries = sorted(
+            str(path.relative_to(self.execution_home)) for path in self.execution_home.rglob("*")
+        )
+        self.codex_home_entries = sorted(
+            str(path.relative_to(self.execution_codex_home)) for path in self.execution_codex_home.rglob("*")
+        )
+        staged_auth = self.execution_codex_home / "auth.json"
+        self.auth_bytes = staged_auth.read_bytes()
+        self.home_mode = stat.S_IMODE(self.execution_home.stat().st_mode)
+        self.codex_home_mode = stat.S_IMODE(self.execution_codex_home.stat().st_mode)
+        self.auth_mode = stat.S_IMODE(staged_auth.stat().st_mode)
+        return super().__call__(
+            command,
+            input_text=input_text,
+            timeout=timeout,
+            env=env,
+            cwd=cwd,
+            stdout_limit=stdout_limit,
+            stderr_limit=stderr_limit,
+        )
+
+
 def _process_result(
     *,
     returncode: int = 0,
@@ -404,6 +452,162 @@ def _command_option_names(command: list[str]) -> frozenset[str]:
         else:
             index += 1
     return frozenset(names)
+
+
+def _write_fake_codex_auth(path: Path, content: bytes = b'{"fake":"auth"}') -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(content)
+    path.chmod(0o600)
+
+
+@pytest.fixture(autouse=True)
+def _use_fake_codex_auth(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    codex_home = tmp_path / "fixture-codex-home"
+    _write_fake_codex_auth(codex_home / "auth.json")
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
+
+
+def test_codex_execution_stages_only_auth_in_isolated_homes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ambient_home = tmp_path / "operator-home"
+    ambient_codex_home = tmp_path / "operator-codex-home"
+    ambient_home.mkdir()
+    (ambient_home / "AGENTS.md").write_text("AMBIENT_RULE_SENTINEL", encoding="utf-8")
+    (ambient_home / ".agents" / "skills" / "ambient").mkdir(parents=True)
+    (ambient_home / ".agents" / "skills" / "ambient" / "SKILL.md").write_text(
+        "AMBIENT_SKILL_SENTINEL",
+        encoding="utf-8",
+    )
+    fake_auth = b'{"fake":"TEST_AUTH_SENTINEL"}'
+    _write_fake_codex_auth(ambient_codex_home / "auth.json", fake_auth)
+    (ambient_codex_home / "config.toml").write_text(
+        "AMBIENT_CONFIG_SENTINEL",
+        encoding="utf-8",
+    )
+    (ambient_codex_home / "skills" / "ambient").mkdir(parents=True)
+    (ambient_codex_home / "skills" / "ambient" / "SKILL.md").write_text(
+        "AMBIENT_CODEX_SKILL_SENTINEL",
+        encoding="utf-8",
+    )
+    (ambient_codex_home / "plugins").mkdir()
+    (ambient_codex_home / "plugins" / "ambient.json").write_text(
+        "AMBIENT_PLUGIN_SENTINEL",
+        encoding="utf-8",
+    )
+    (ambient_codex_home / "rules").mkdir()
+    (ambient_codex_home / "rules" / "ambient.rules").write_text(
+        "AMBIENT_RULE_SENTINEL",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("HOME", str(ambient_home))
+    monkeypatch.setenv("CODEX_HOME", str(ambient_codex_home))
+    runner = _InspectingProcessRunner(_process_result())
+
+    _call_codex_cli(
+        _request(),
+        "gpt-test",
+        1024,
+        tool_scope=CodexToolScope(root=tmp_path.resolve()),
+        process_runner=runner,
+    )
+
+    assert runner.execution_home is not None
+    assert runner.execution_codex_home is not None
+    assert runner.execution_home != ambient_home
+    assert runner.execution_codex_home != ambient_codex_home
+    assert runner.home_entries == []
+    assert runner.codex_home_entries == ["auth.json"]
+    assert runner.auth_bytes == fake_auth
+    if os.name == "posix":
+        assert runner.home_mode == 0o700
+        assert runner.codex_home_mode == 0o700
+        assert runner.auth_mode == 0o600
+    call_env = runner.calls[0]["env"]
+    assert isinstance(call_env, dict)
+    assert all(str(ambient_home) not in value for value in call_env.values())
+    assert all(str(ambient_codex_home) not in value for value in call_env.values())
+    assert not runner.execution_home.exists()
+    assert not runner.execution_codex_home.exists()
+
+
+def test_codex_execution_finds_default_auth_beneath_ambient_home(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ambient_home = tmp_path / "operator-home"
+    fake_auth = b'{"fake":"HOME_FALLBACK_AUTH"}'
+    _write_fake_codex_auth(ambient_home / ".codex" / "auth.json", fake_auth)
+    monkeypatch.setenv("HOME", str(ambient_home))
+    monkeypatch.delenv("CODEX_HOME")
+    runner = _InspectingProcessRunner(_process_result())
+
+    _call_codex_cli(
+        _request(),
+        "gpt-test",
+        1024,
+        tool_scope=CodexToolScope(root=tmp_path.resolve()),
+        process_runner=runner,
+    )
+
+    assert runner.auth_bytes == fake_auth
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX permission contract")
+def test_codex_execution_rejects_ambient_auth_readable_by_other_users(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ambient_codex_home = tmp_path / "operator-codex-home"
+    auth_path = ambient_codex_home / "auth.json"
+    _write_fake_codex_auth(auth_path)
+    auth_path.chmod(0o640)
+    monkeypatch.setenv("CODEX_HOME", str(ambient_codex_home))
+
+    with pytest.raises(JudgeTransportError, match="authentication material"):
+        _call_codex_cli(
+            _request(),
+            "gpt-test",
+            1024,
+            tool_scope=CodexToolScope(root=tmp_path.resolve()),
+            process_runner=lambda *_args, **_kwargs: pytest.fail("Codex must not launch"),
+        )
+
+
+@pytest.mark.parametrize("auth_shape", ["missing", "directory", "symlink", "oversized"])
+def test_codex_execution_rejects_unsafe_auth_material_before_launch(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    auth_shape: str,
+) -> None:
+    ambient_home = tmp_path / "operator-home"
+    ambient_codex_home = tmp_path / "operator-codex-home"
+    ambient_home.mkdir()
+    ambient_codex_home.mkdir()
+    auth_path = ambient_codex_home / "auth.json"
+    if auth_shape == "directory":
+        auth_path.mkdir()
+    elif auth_shape == "symlink":
+        target = tmp_path / "real-auth.json"
+        _write_fake_codex_auth(target)
+        auth_path.symlink_to(target)
+    elif auth_shape == "oversized":
+        _write_fake_codex_auth(auth_path, b"x" * (2 * 1024 * 1024))
+    monkeypatch.setenv("HOME", str(ambient_home))
+    monkeypatch.setenv("CODEX_HOME", str(ambient_codex_home))
+
+    with pytest.raises(JudgeTransportError, match="authentication material"):
+        _call_codex_cli(
+            _request(),
+            "gpt-test",
+            1024,
+            tool_scope=CodexToolScope(root=tmp_path.resolve()),
+            process_runner=lambda *_args, **_kwargs: pytest.fail("Codex must not launch"),
+        )
 
 
 def test_codex_invocation_is_deterministic_sealed_and_uses_empty_cwd(
@@ -443,7 +647,13 @@ def test_codex_invocation_is_deterministic_sealed_and_uses_empty_cwd(
     assert call["cwd_entries"] == []
     schema_path = Path(command[command.index("--output-schema") + 1])
     assert schema_path.parent != call["cwd"]
-    assert call["env"] == codex_child_env()
+    call_env = call["env"]
+    assert isinstance(call_env, dict)
+    expected_shared_env = codex_child_env()
+    for key in ("HOME", "CODEX_HOME"):
+        call_env = {item: value for item, value in call_env.items() if item != key}
+        expected_shared_env.pop(key, None)
+    assert call_env == expected_shared_env
     assert "ENV_SENTINEL" not in str(call["env"])
 
     configs = [command[index + 1] for index, item in enumerate(command) if item == "--config"]
