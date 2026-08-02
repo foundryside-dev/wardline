@@ -791,6 +791,334 @@ def test_codex_failing_temp_cleanup_never_masks_active_base_exception_after_auth
     assert manager.credential_bytes_present_at_exit is False
 
 
+@pytest.mark.parametrize("interrupt_type", [KeyboardInterrupt, SystemExit])
+@pytest.mark.parametrize("cleanup_failure", [False, True], ids=["retained-temp", "failing-temp"])
+def test_codex_auth_scrub_interrupt_retries_closes_and_runs_temp_cleanup_before_reraising(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    interrupt_type: type[BaseException],
+    cleanup_failure: bool,
+) -> None:
+    manager = _install_retained_codex_temp(tmp_path, monkeypatch, cleanup_failure=cleanup_failure)
+    original_scrub = judge_module._scrub_projected_codex_auth
+    original_retain = judge_module._retain_projected_codex_auth
+    retained: list[object] = []
+    scrub_calls = 0
+
+    def _record_retain(codex_home: Path) -> object:
+        projected = original_retain(codex_home)
+        retained.append(projected)
+        return projected
+
+    def _interrupt_once(projected: object) -> None:
+        nonlocal scrub_calls
+        scrub_calls += 1
+        if scrub_calls == 1:
+            raise interrupt_type("AUTH_SCRUB_INTERRUPT_SENTINEL")
+        original_scrub(projected)
+
+    monkeypatch.setattr(judge_module, "_retain_projected_codex_auth", _record_retain)
+    monkeypatch.setattr(judge_module, "_scrub_projected_codex_auth", _interrupt_once)
+
+    with pytest.raises(interrupt_type, match="AUTH_SCRUB_INTERRUPT_SENTINEL"):
+        _call_codex_cli(
+            _request(),
+            "gpt-test",
+            1024,
+            tool_scope=CodexToolScope(root=tmp_path.resolve()),
+            process_runner=_RecordingProcessRunner(_process_result()),
+        )
+
+    assert scrub_calls == 2
+    assert manager.exit_calls == 1
+    assert manager.auth_entry_present_at_exit is False
+    assert manager.credential_bytes_present_at_exit is False
+    assert len(retained) == 1
+    assert retained[0].auth_fd == -1
+    assert retained[0].directory_fd == -1
+
+
+@pytest.mark.parametrize("interrupt_type", [KeyboardInterrupt, SystemExit])
+def test_codex_secondary_auth_scrub_interrupt_preserves_active_contract_taxonomy(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    interrupt_type: type[BaseException],
+) -> None:
+    manager = _install_retained_codex_temp(tmp_path, monkeypatch, cleanup_failure=True)
+    original_scrub = judge_module._scrub_projected_codex_auth
+    scrub_calls = 0
+
+    def _interrupt_once(projected: object) -> None:
+        nonlocal scrub_calls
+        scrub_calls += 1
+        if scrub_calls == 1:
+            raise interrupt_type("SECONDARY_AUTH_INTERRUPT_SENTINEL")
+        original_scrub(projected)
+
+    monkeypatch.setattr(judge_module, "_scrub_projected_codex_auth", _interrupt_once)
+
+    with pytest.raises(JudgeContractError, match="malformed JSONL") as exc_info:
+        _call_codex_cli(
+            _request(),
+            "gpt-test",
+            1024,
+            tool_scope=CodexToolScope(root=tmp_path.resolve()),
+            process_runner=_RecordingProcessRunner(_process_result(stdout="not-json")),
+        )
+
+    assert "SECONDARY_AUTH_INTERRUPT_SENTINEL" not in str(exc_info.value)
+    assert "TEMP_CLEANUP_SECRET_SENTINEL" not in str(exc_info.value)
+    assert scrub_calls == 2
+    assert manager.exit_calls == 1
+    assert manager.auth_entry_present_at_exit is False
+    assert manager.credential_bytes_present_at_exit is False
+
+
+@pytest.mark.parametrize("interrupt_type", [KeyboardInterrupt, SystemExit])
+def test_codex_unretained_fallback_scrub_interrupt_retries_and_preserves_stage_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    interrupt_type: type[BaseException],
+) -> None:
+    manager = _install_retained_codex_temp(tmp_path, monkeypatch, cleanup_failure=True)
+    original_open = judge_module._open_projected_codex_auth
+    original_scrub = judge_module._scrub_projected_codex_auth
+    opened: list[object] = []
+    scrub_calls = 0
+
+    def _partially_stage(codex_home: Path, **_kwargs: object) -> str:
+        codex_home.mkdir(mode=0o700)
+        auth_path = codex_home / "auth.json"
+        auth_path.write_bytes(b"PARTIAL_AUTH_TOKEN_SENTINEL")
+        auth_path.chmod(0o600)
+        raise JudgeTransportError("Codex CLI authentication material could not be staged safely")
+
+    def _record_open(codex_home: Path, *, require_nonempty: bool) -> object:
+        projected = original_open(codex_home, require_nonempty=require_nonempty)
+        opened.append(projected)
+        return projected
+
+    def _interrupt_once(projected: object) -> None:
+        nonlocal scrub_calls
+        scrub_calls += 1
+        if scrub_calls == 1:
+            raise interrupt_type("FALLBACK_AUTH_INTERRUPT_SENTINEL")
+        original_scrub(projected)
+
+    monkeypatch.setattr(judge_module, "stage_codex_execution_auth", _partially_stage)
+    monkeypatch.setattr(judge_module, "_open_projected_codex_auth", _record_open)
+    monkeypatch.setattr(judge_module, "_scrub_projected_codex_auth", _interrupt_once)
+
+    with pytest.raises(JudgeTransportError, match="could not be staged safely") as exc_info:
+        _call_codex_cli(
+            _request(),
+            "gpt-test",
+            1024,
+            tool_scope=CodexToolScope(root=tmp_path.resolve()),
+            process_runner=lambda *_args, **_kwargs: pytest.fail("Codex must not launch"),
+        )
+
+    assert "FALLBACK_AUTH_INTERRUPT_SENTINEL" not in str(exc_info.value)
+    assert "TEMP_CLEANUP_SECRET_SENTINEL" not in str(exc_info.value)
+    assert scrub_calls == 2
+    assert manager.exit_calls == 1
+    assert manager.auth_entry_present_at_exit is False
+    assert manager.credential_bytes_present_at_exit is False
+    assert len(opened) == 2
+    assert all(projected.auth_fd == -1 for projected in opened)
+    assert all(projected.directory_fd == -1 for projected in opened)
+
+
+def test_codex_repeated_auth_scrub_interrupt_fails_loud_when_temp_removal_is_unproven(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager = _install_retained_codex_temp(tmp_path, monkeypatch, cleanup_failure=True)
+
+    def _always_interrupt(_projected: object) -> None:
+        raise KeyboardInterrupt("REPEATED_AUTH_INTERRUPT_SENTINEL")
+
+    monkeypatch.setattr(judge_module, "_scrub_projected_codex_auth", _always_interrupt)
+
+    with pytest.raises(JudgeTransportError, match="authentication cleanup") as exc_info:
+        _call_codex_cli(
+            _request(),
+            "gpt-test",
+            1024,
+            tool_scope=CodexToolScope(root=tmp_path.resolve()),
+            process_runner=_RecordingProcessRunner(_process_result()),
+        )
+
+    assert "REPEATED_AUTH_INTERRUPT_SENTINEL" not in str(exc_info.value)
+    assert "TEMP_CLEANUP_SECRET_SENTINEL" not in str(exc_info.value)
+    assert manager.exit_calls == 1
+
+
+def test_codex_repeated_auth_scrub_interrupt_reraises_after_positive_temp_removal(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original_temporary_directory = judge_module.tempfile.TemporaryDirectory
+    real_manager = original_temporary_directory(prefix="wardline-auth-interrupt-", dir=tmp_path)
+
+    class _RemovingTemp:
+        def __init__(self) -> None:
+            self.root: Path | None = None
+            self.exit_calls = 0
+
+        def __enter__(self) -> str:
+            path = real_manager.__enter__()
+            self.root = Path(path)
+            return path
+
+        def __exit__(self, exc_type: object, exc: object, traceback: object) -> object:
+            self.exit_calls += 1
+            return real_manager.__exit__(exc_type, exc, traceback)
+
+    manager = _RemovingTemp()
+
+    def _always_interrupt(_projected: object) -> None:
+        raise KeyboardInterrupt("REPEATED_AUTH_INTERRUPT_SENTINEL")
+
+    monkeypatch.setattr(judge_module.tempfile, "TemporaryDirectory", lambda *_args, **_kwargs: manager)
+    monkeypatch.setattr(judge_module, "_scrub_projected_codex_auth", _always_interrupt)
+
+    with pytest.raises(KeyboardInterrupt, match="REPEATED_AUTH_INTERRUPT_SENTINEL"):
+        _call_codex_cli(
+            _request(),
+            "gpt-test",
+            1024,
+            tool_scope=CodexToolScope(root=tmp_path.resolve()),
+            process_runner=_RecordingProcessRunner(_process_result()),
+        )
+
+    assert manager.exit_calls == 1
+    assert manager.root is not None and not manager.root.exists()
+
+
+def test_projected_auth_close_attempts_both_descriptors_before_reraising_base_exception(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    projected = judge_module._ProjectedCodexAuth(
+        directory_fd=101,
+        auth_fd=102,
+        device=1,
+        inode=2,
+        size=3,
+    )
+    close_calls: list[int] = []
+
+    def _interrupt_first_close(descriptor: int) -> None:
+        close_calls.append(descriptor)
+        if descriptor == 102:
+            raise KeyboardInterrupt("AUTH_CLOSE_INTERRUPT_SENTINEL")
+
+    monkeypatch.setattr(judge_module.os, "close", _interrupt_first_close)
+
+    with pytest.raises(KeyboardInterrupt, match="AUTH_CLOSE_INTERRUPT_SENTINEL"):
+        projected.close()
+
+    assert close_calls == [102, 101]
+    assert projected.auth_fd == -1
+    assert projected.directory_fd == -1
+
+
+def test_codex_retained_descriptor_close_interrupt_runs_temp_cleanup_and_fails_loud(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager = _install_retained_codex_temp(tmp_path, monkeypatch, cleanup_failure=True)
+    original_close = judge_module._ProjectedCodexAuth.close
+
+    def _close_then_interrupt(projected: object) -> None:
+        original_close(projected)
+        raise KeyboardInterrupt("AUTH_CLOSE_INTERRUPT_SENTINEL")
+
+    monkeypatch.setattr(judge_module._ProjectedCodexAuth, "close", _close_then_interrupt)
+
+    with pytest.raises(JudgeTransportError, match="authentication cleanup") as exc_info:
+        _call_codex_cli(
+            _request(),
+            "gpt-test",
+            1024,
+            tool_scope=CodexToolScope(root=tmp_path.resolve()),
+            process_runner=_RecordingProcessRunner(_process_result()),
+        )
+
+    assert "AUTH_CLOSE_INTERRUPT_SENTINEL" not in str(exc_info.value)
+    assert "TEMP_CLEANUP_SECRET_SENTINEL" not in str(exc_info.value)
+    assert manager.exit_calls == 1
+    assert manager.auth_entry_present_at_exit is False
+    assert manager.credential_bytes_present_at_exit is False
+
+
+def test_codex_unretained_descriptor_close_interrupt_runs_temp_cleanup_and_fails_loud(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager = _install_retained_codex_temp(tmp_path, monkeypatch, cleanup_failure=True)
+    original_close = judge_module._ProjectedCodexAuth.close
+
+    def _partially_stage(codex_home: Path, **_kwargs: object) -> str:
+        codex_home.mkdir(mode=0o700)
+        auth_path = codex_home / "auth.json"
+        auth_path.write_bytes(b"PARTIAL_AUTH_TOKEN_SENTINEL")
+        auth_path.chmod(0o600)
+        raise JudgeTransportError("Codex CLI authentication material could not be staged safely")
+
+    def _close_then_interrupt(projected: object) -> None:
+        original_close(projected)
+        raise SystemExit("FALLBACK_CLOSE_INTERRUPT_SENTINEL")
+
+    monkeypatch.setattr(judge_module, "stage_codex_execution_auth", _partially_stage)
+    monkeypatch.setattr(judge_module._ProjectedCodexAuth, "close", _close_then_interrupt)
+
+    with pytest.raises(JudgeTransportError, match="authentication cleanup") as exc_info:
+        _call_codex_cli(
+            _request(),
+            "gpt-test",
+            1024,
+            tool_scope=CodexToolScope(root=tmp_path.resolve()),
+            process_runner=lambda *_args, **_kwargs: pytest.fail("Codex must not launch"),
+        )
+
+    assert "FALLBACK_CLOSE_INTERRUPT_SENTINEL" not in str(exc_info.value)
+    assert "TEMP_CLEANUP_SECRET_SENTINEL" not in str(exc_info.value)
+    assert manager.exit_calls == 1
+
+
+def test_codex_temp_removal_probe_base_exception_cannot_bypass_fail_loud_cleanup(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager = _install_retained_codex_temp(tmp_path, monkeypatch, cleanup_failure=True)
+    original_lstat = judge_module.os.lstat
+
+    def _always_interrupt_scrub(_projected: object) -> None:
+        raise KeyboardInterrupt("REPEATED_AUTH_INTERRUPT_SENTINEL")
+
+    def _interrupt_temp_probe(path: str, *args: object, **kwargs: object) -> os.stat_result:
+        if path == str(manager.root):
+            raise SystemExit("TEMP_PROBE_INTERRUPT_SENTINEL")
+        return original_lstat(path, *args, **kwargs)
+
+    monkeypatch.setattr(judge_module, "_scrub_projected_codex_auth", _always_interrupt_scrub)
+    monkeypatch.setattr(judge_module.os, "lstat", _interrupt_temp_probe)
+
+    with pytest.raises(JudgeTransportError, match="authentication cleanup") as exc_info:
+        _call_codex_cli(
+            _request(),
+            "gpt-test",
+            1024,
+            tool_scope=CodexToolScope(root=tmp_path.resolve()),
+            process_runner=_RecordingProcessRunner(_process_result()),
+        )
+
+    assert "REPEATED_AUTH_INTERRUPT_SENTINEL" not in str(exc_info.value)
+    assert "TEMP_PROBE_INTERRUPT_SENTINEL" not in str(exc_info.value)
+    assert manager.exit_calls == 1
+
+
 def test_codex_execution_stages_only_auth_in_isolated_homes(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1441,7 +1769,7 @@ def test_codex_file_auth_projection_fails_closed_when_private_acl_is_unsupported
 ) -> None:
     monkeypatch.setattr(
         judge_transport_module,
-        "_private_auth_projection_supported",
+        "codex_auth_projection_supported",
         lambda: False,
         raising=False,
     )

@@ -399,6 +399,7 @@ class _ProjectedCodexAuth:
 
     def close(self) -> None:
         failed = False
+        pending_exception: BaseException | None = None
         for descriptor_name in ("auth_fd", "directory_fd"):
             descriptor = getattr(self, descriptor_name)
             if descriptor < 0:
@@ -408,6 +409,11 @@ class _ProjectedCodexAuth:
                 os.close(descriptor)
             except OSError:
                 failed = True
+            except BaseException as exc:
+                if pending_exception is None:
+                    pending_exception = exc
+        if pending_exception is not None:
+            raise pending_exception
         if failed:
             raise OSError("projected Codex authentication descriptor cleanup failed")
 
@@ -548,16 +554,58 @@ def _scrub_unretained_codex_auth(codex_home: Path) -> None:
         raise OSError("partial Codex authentication could not be retained for cleanup") from None
 
     failed = False
+    pending_exception: BaseException | None = None
     try:
         _scrub_projected_codex_auth(projected)
     except (OSError, ValueError):
         failed = True
+    except BaseException as exc:
+        pending_exception = exc
     try:
         projected.close()
     except OSError:
         failed = True
+    except BaseException:
+        failed = True
     if failed:
         raise OSError("partial Codex authentication cleanup failed")
+    if pending_exception is not None:
+        raise pending_exception
+
+
+def _retry_auth_cleanup_after_base_exception(
+    cleanup: Callable[[], None],
+) -> tuple[bool, BaseException | None, bool]:
+    """Run auth cleanup, retrying once when an interrupt aborts the first attempt.
+
+    Returns ``(succeeded, deferred_exception, hard_failure)``. Ordinary cleanup
+    failures remain hard failures. A repeated interrupt may still be recoverable
+    if the enclosing temporary directory is subsequently proven absent.
+    """
+    try:
+        cleanup()
+    except (OSError, ValueError):
+        return False, None, True
+    except BaseException as exc:
+        try:
+            cleanup()
+        except (OSError, ValueError):
+            return False, exc, True
+        except BaseException:
+            return False, exc, False
+        return True, exc, False
+    return True, None, False
+
+
+def _temporary_root_removed(path: str) -> bool:
+    """Return true only when the isolated root is positively absent."""
+    try:
+        os.lstat(path)
+    except FileNotFoundError:
+        return True
+    except BaseException:
+        return False
+    return False
 
 
 def _codex_prompt(
@@ -767,32 +815,58 @@ def _call_codex_cli(
             )
         finally:
             exception_type, exception, traceback = sys.exc_info()
-            auth_cleanup_failed = False
+            auth_cleanup_succeeded = True
+            auth_cleanup_hard_failure = False
+            auth_cleanup_exception: BaseException | None = None
             if projected_auth is not None:
-                try:
-                    _scrub_projected_codex_auth(projected_auth)
-                except (OSError, ValueError):
-                    auth_cleanup_failed = True
+                (
+                    auth_cleanup_succeeded,
+                    auth_cleanup_exception,
+                    auth_cleanup_hard_failure,
+                ) = _retry_auth_cleanup_after_base_exception(lambda: _scrub_projected_codex_auth(projected_auth))
                 try:
                     projected_auth.close()
                 except OSError:
-                    auth_cleanup_failed = True
+                    auth_cleanup_succeeded = False
+                    auth_cleanup_hard_failure = True
+                except BaseException as exc:
+                    auth_cleanup_succeeded = False
+                    auth_cleanup_hard_failure = True
+                    if auth_cleanup_exception is None:
+                        auth_cleanup_exception = exc
             elif auth_stage_attempted and execution_codex_home is not None:
-                try:
-                    _scrub_unretained_codex_auth(execution_codex_home)
-                except (OSError, ValueError):
-                    auth_cleanup_failed = True
+                (
+                    auth_cleanup_succeeded,
+                    auth_cleanup_exception,
+                    auth_cleanup_hard_failure,
+                ) = _retry_auth_cleanup_after_base_exception(lambda: _scrub_unretained_codex_auth(execution_codex_home))
+            effective_exception = exception if exception is not None else auth_cleanup_exception
+            temp_cleanup_exception: BaseException | None = None
             try:
-                temp_manager.__exit__(exception_type, exception, traceback)
-            except OSError:
-                if exception is None and not auth_cleanup_failed:
-                    raise
+                temp_manager.__exit__(
+                    type(effective_exception) if effective_exception is not None else exception_type,
+                    effective_exception,
+                    effective_exception.__traceback__ if effective_exception is not None else traceback,
+                )
+            except BaseException as exc:
+                temp_cleanup_exception = exc
+            temp_root_removed = (
+                _temporary_root_removed(temp_dir)
+                if not auth_cleanup_succeeded and not auth_cleanup_hard_failure
+                else False
+            )
+            auth_cleanup_failed = auth_cleanup_hard_failure or (not auth_cleanup_succeeded and not temp_root_removed)
             if auth_cleanup_failed:
                 if isinstance(exception, JudgeContractError):
                     raise JudgeContractError(
                         "Codex CLI output contract failed and authentication cleanup also failed"
                     ) from None
                 raise JudgeTransportError("Codex CLI authentication cleanup failed") from None
+            if exception is None:
+                if auth_cleanup_exception is not None:
+                    raise auth_cleanup_exception
+                if temp_cleanup_exception is not None:
+                    raise temp_cleanup_exception
     except (JudgeTransportError, JudgeContractError):
         raise
     except OSError:
