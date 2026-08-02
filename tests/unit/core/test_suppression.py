@@ -5,6 +5,7 @@ from datetime import UTC, date, datetime
 
 from wardline.core.baseline import Baseline
 from wardline.core.finding import ENGINE_PATH, Finding, Kind, Location, Severity, SuppressionState
+from wardline.core.judge_types import JudgeTransport
 from wardline.core.judged import JudgedFP, JudgedSet
 from wardline.core.suppression import apply_suppressions, gate_trips
 from wardline.core.waivers import WaiverSet, parse_waivers
@@ -142,6 +143,7 @@ def _judged(fp: str) -> JudgedFP:
         message="m",
         rationale="over-taint floor",
         model_id="m",
+        judge_transport=JudgeTransport.OPENROUTER,
         confidence=0.9,
         recorded_at=datetime(2026, 5, 30, tzinfo=UTC),
         policy_hash="sha256:x",

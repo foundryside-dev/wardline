@@ -24,6 +24,7 @@ from wardline.core.baseline import BASELINE_VERSION
 from wardline.core.errors import ConfigError, FiligreeEmitError, WardlineError
 from wardline.core.finding import FINGERPRINT_SCHEME, Finding, Kind
 from wardline.core.fingerprint_v0 import FINGERPRINT_SCHEME_V0, compute_finding_fingerprint_v0
+from wardline.core.judge_types import CONCRETE_JUDGE_TRANSPORTS, JudgeTransport
 from wardline.core.judged import JUDGED_VERSION
 from wardline.core.optional_deps import require_yaml
 from wardline.core.safe_paths import read_bytes_no_follow, safe_project_file, write_text_no_follow
@@ -413,8 +414,60 @@ def carry_baseline_forward(snapshot_path: Path, old_to_new: dict[str, str]) -> C
     return _carry_store(snapshot_path, "entries", BASELINE_VERSION, old_to_new)
 
 
+def _validate_judged_source_for_carry(loaded: dict[str, Any], *, store_name: str) -> None:
+    source_version = loaded.get("version")
+    if type(source_version) is not int or source_version not in {1, 2}:
+        raise ConfigError(f"{store_name}: judged source version must be exactly 1 or 2, got {source_version!r}")
+    if source_version == 1:
+        return
+    findings = loaded.get("findings") or []
+    if not isinstance(findings, list):
+        raise ConfigError(f"{store_name}: 'findings' must be a list")
+    for index, entry in enumerate(findings):
+        value = entry.get("judge_transport") if isinstance(entry, dict) else None
+        if not isinstance(value, str):
+            raise ConfigError(
+                f"{store_name} findings[{index}].judge_transport must be codex-cli or openrouter"
+            )
+        try:
+            transport = JudgeTransport(value)
+        except ValueError:
+            raise ConfigError(
+                f"{store_name} findings[{index}].judge_transport must be codex-cli or openrouter"
+            ) from None
+        if transport not in CONCRETE_JUDGE_TRANSPORTS:
+            raise ConfigError(
+                f"{store_name} findings[{index}].judge_transport must be codex-cli or openrouter"
+            )
+
+
+def _carry_judged_loaded_store(
+    loaded: dict[str, Any],
+    old_to_new: dict[str, str],
+    *,
+    store_name: str,
+) -> CarryResult:
+    source_version = loaded.get("version")
+    _validate_judged_source_for_carry(loaded, store_name=store_name)
+    result = _carry_loaded_store(
+        loaded,
+        "findings",
+        JUDGED_VERSION,
+        old_to_new,
+        store_name=store_name,
+    )
+    if source_version == 1:
+        for entry in result.document["findings"]:
+            entry["judge_transport"] = JudgeTransport.OPENROUTER.value
+    return result
+
+
 def carry_judged_forward(snapshot_path: Path, old_to_new: dict[str, str]) -> CarryResult:
-    return _carry_store(snapshot_path, "findings", JUDGED_VERSION, old_to_new)
+    return _carry_judged_loaded_store(
+        _read_old_store(snapshot_path),
+        old_to_new,
+        store_name=snapshot_path.name,
+    )
 
 
 def carry_waivers_forward(snapshot_path: Path, old_to_new: dict[str, str]) -> CarryResult:
@@ -668,6 +721,8 @@ def _preflight_pending_snapshot_payloads(root: Path, journal: Journal) -> dict[s
         data = _read_required_snapshot_bytes(root, snap)
         loaded = _load_old_store_bytes(data, snap_name)
         _require_rekey_store_scheme(loaded.get("fingerprint_scheme"), store_name=snap_name)
+        if leg.name == "judged":
+            _validate_judged_source_for_carry(loaded, store_name=snap_name)
         payloads[leg.name] = data
     return payloads
 
@@ -697,7 +752,14 @@ def apply_pending_legs(
             leg.done = True
             write_journal(jpath, journal, root=root)
             continue
-        result = _carry_store_bytes(snapshot_data, snap_name, list_key, version, journal.remap)
+        if leg.name == "judged":
+            result = _carry_judged_loaded_store(
+                _load_old_store_bytes(snapshot_data, snap_name),
+                journal.remap,
+                store_name=snap_name,
+            )
+        else:
+            result = _carry_store_bytes(snapshot_data, snap_name, list_key, version, journal.remap)
         _write_store_doc(root, live_path_fn(root), result.document)
         leg.carried = list(result.carried)
         leg.orphaned = list(result.orphaned)

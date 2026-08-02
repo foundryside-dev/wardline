@@ -48,6 +48,8 @@ class Verdict:
     label: str  # JudgeVerdict value: "TRUE_POSITIVE" | "FALSE_POSITIVE"
     confidence: float
     rationale: str
+    model_id: str
+    judge_transport: JudgeTransport
 
 
 @dataclass(frozen=True, slots=True)
@@ -136,6 +138,7 @@ def _persist(root: Path, existing: JudgedSet, result: TriageResult, *, floor: fl
                 message=f.message,
                 rationale=r.rationale,
                 model_id=r.model_id,
+                judge_transport=r.judge_transport,
                 confidence=r.confidence,
                 recorded_at=r.recorded_at,
                 policy_hash=r.policy_hash,
@@ -264,6 +267,8 @@ def run_judge(
             label=tv.response.verdict.value,
             confidence=tv.response.confidence,
             rationale=tv.response.rationale,
+            model_id=tv.response.model_id,
+            judge_transport=tv.response.judge_transport,
         )
         for tv in result.verdicts
     ]

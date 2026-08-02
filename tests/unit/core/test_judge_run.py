@@ -26,6 +26,7 @@ from wardline.core.judge_types import (
     CodexToolScope,
     JudgeTransport,
 )
+from wardline.core.judged import load_judged
 from wardline.core.paths import judged_path
 from wardline.core.run import run_scan
 from wardline.core.triage import TriageResult
@@ -80,7 +81,9 @@ def _tp_caller(_req: JudgeRequest) -> JudgeResponse:
     )
 
 
-def _fp_caller(conf: float):  # type: ignore[no-untyped-def]
+def _fp_caller(  # type: ignore[no-untyped-def]
+    conf: float, transport: JudgeTransport = JudgeTransport.OPENROUTER
+):
     def _caller(_req: JudgeRequest) -> JudgeResponse:
         return JudgeResponse(
             verdict=JudgeVerdict.FALSE_POSITIVE,
@@ -91,7 +94,7 @@ def _fp_caller(conf: float):  # type: ignore[no-untyped-def]
             prompt_tokens_total=64,
             prompt_tokens_cached=None,
             policy_hash="deadbeef",
-            judge_transport=JudgeTransport.OPENROUTER,
+            judge_transport=transport,
         )
 
     return _caller
@@ -120,6 +123,8 @@ def test_run_judge_dry_run_returns_verdicts(tmp_path: Path) -> None:
     assert v.fingerprint
     assert v.label in {"TRUE_POSITIVE", "FALSE_POSITIVE"}
     assert 0.0 <= v.confidence <= 1.0
+    assert v.model_id == "fake/model"
+    assert v.judge_transport is JudgeTransport.OPENROUTER
     assert outcome.wrote == 0  # dry run never writes
     assert outcome.write_confidence_floor == 0.5
     assert not judged_path(root).exists()
@@ -132,6 +137,26 @@ def test_run_judge_write_persists_high_confidence_fp(tmp_path: Path) -> None:
     assert outcome.held_back == 0
     judged = judged_path(root)
     assert judged.exists()
+    persisted = load_judged(judged).match(outcome.verdicts[0].fingerprint)
+    assert persisted is not None and persisted.judge_transport is JudgeTransport.OPENROUTER
+
+
+def test_run_judge_projects_and_persists_codex_provenance(tmp_path: Path) -> None:
+    root = _leaky_project(tmp_path)
+
+    outcome = run_judge(
+        root,
+        judge_caller=_fp_caller(0.9, JudgeTransport.CODEX_CLI),
+        write=True,
+    )
+
+    verdict = outcome.verdicts[0]
+    persisted = load_judged(judged_path(root)).match(verdict.fingerprint)
+    assert verdict.model_id == "fake/model"
+    assert verdict.judge_transport is JudgeTransport.CODEX_CLI
+    assert persisted is not None
+    assert persisted.model_id == "fake/model"
+    assert persisted.judge_transport is JudgeTransport.CODEX_CLI
 
 
 def test_run_judge_write_holds_back_low_confidence_fp(tmp_path: Path) -> None:

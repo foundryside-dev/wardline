@@ -8,6 +8,7 @@ import yaml
 
 from wardline.core.errors import ConfigError, SchemeMismatchError
 from wardline.core.finding import FINGERPRINT_SCHEME
+from wardline.core.judge_types import JudgeTransport
 from wardline.core.judged import JudgedFP, build_judged_document, load_judged, write_judged
 
 _SCHEME = f"fingerprint_scheme: {FINGERPRINT_SCHEME}\n"
@@ -21,6 +22,7 @@ def _fp(**kw: object) -> JudgedFP:
         message="m",
         rationale="constructor over-taint floor",
         model_id="anthropic/claude-opus-4-8",
+        judge_transport=JudgeTransport.OPENROUTER,
         confidence=0.9,
         recorded_at=datetime(2026, 5, 30, tzinfo=UTC),
         policy_hash="sha256:abc",
@@ -36,6 +38,128 @@ def test_roundtrip(tmp_path: Path) -> None:
     match = loaded.match("a" * 64)
     assert match is not None and match.rationale == "constructor over-taint floor"
     assert loaded.match("b" * 64) is None
+
+
+def test_v2_roundtrip_preserves_concrete_transport(tmp_path: Path) -> None:
+    path = tmp_path / "judged.yaml"
+    write_judged(path, [_fp(judge_transport=JudgeTransport.CODEX_CLI)])
+
+    document = yaml.safe_load(path.read_text(encoding="utf-8"))
+    loaded = load_judged(path).match("a" * 64)
+
+    assert document["version"] == 2
+    assert document["findings"][0]["judge_transport"] == "codex-cli"
+    assert loaded is not None and loaded.judge_transport is JudgeTransport.CODEX_CLI
+
+
+def test_legacy_v1_record_infers_openrouter_without_rewrite(tmp_path: Path) -> None:
+    path = tmp_path / "judged.yaml"
+    path.write_text(
+        _SCHEME
+        + "version: 1\nfindings:\n"
+        + f"  - fingerprint: {'a' * 64}\n"
+        + "    verdict: FALSE_POSITIVE\n    rationale: legacy\n    model_id: old/model\n"
+        + "    policy_hash: sha256:old\n    confidence: 0.9\n"
+        + "    recorded_at: 2026-05-30T00:00:00+00:00\n",
+        encoding="utf-8",
+    )
+    before = path.read_bytes()
+
+    loaded = load_judged(path).match("a" * 64)
+
+    assert loaded is not None and loaded.judge_transport is JudgeTransport.OPENROUTER
+    assert path.read_bytes() == before
+
+
+@pytest.mark.parametrize(
+    ("include_transport", "value"),
+    [
+        (False, None),
+        (True, None),
+        (True, ""),
+        (True, "auto"),
+        (True, "codex"),
+        (True, "OPENROUTER"),
+        (True, "unknown"),
+    ],
+)
+def test_v2_rejects_missing_or_nonconcrete_transport(
+    tmp_path: Path, include_transport: bool, value: object
+) -> None:
+    entry: dict[str, object] = {
+        "fingerprint": "a" * 64,
+        "rule_id": "PY-WL-101",
+        "path": "src/m.py",
+        "message": "m",
+        "verdict": "FALSE_POSITIVE",
+        "rationale": "x",
+        "model_id": "m",
+        "confidence": 0.9,
+        "recorded_at": "2026-05-30T00:00:00+00:00",
+        "policy_hash": "sha256:x",
+    }
+    if include_transport:
+        entry["judge_transport"] = value
+    path = tmp_path / "judged.yaml"
+    path.write_text(
+        yaml.safe_dump(
+            {
+                "fingerprint_scheme": FINGERPRINT_SCHEME,
+                "version": 2,
+                "findings": [entry],
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigError, match="judge_transport"):
+        load_judged(path)
+
+
+@pytest.mark.parametrize("version", [None, 0, True, False, 3, "2"])
+def test_nonempty_store_rejects_missing_unknown_or_noninteger_version(tmp_path: Path, version: object) -> None:
+    path = tmp_path / "judged.yaml"
+    document: dict[str, object] = {
+        "fingerprint_scheme": FINGERPRINT_SCHEME,
+        "findings": [],
+    }
+    if version is not None:
+        document["version"] = version
+    path.write_text(yaml.safe_dump(document, sort_keys=False), encoding="utf-8")
+
+    with pytest.raises(ConfigError, match="version"):
+        load_judged(path)
+
+
+def test_constructor_rejects_auto_transport() -> None:
+    with pytest.raises(ValueError, match="concrete"):
+        _fp(judge_transport=JudgeTransport.AUTO)
+
+
+def test_constructor_rejects_raw_string_transport() -> None:
+    with pytest.raises(TypeError, match="JudgeTransport"):
+        _fp(judge_transport="openrouter")
+
+
+@pytest.mark.parametrize(
+    ("transport", "error_type"),
+    [
+        (JudgeTransport.AUTO, ValueError),
+        ("openrouter", TypeError),
+    ],
+)
+def test_writer_rejects_runtime_corrupted_transport(
+    tmp_path: Path, transport: object, error_type: type[Exception]
+) -> None:
+    entry = _fp()
+    object.__setattr__(entry, "judge_transport", transport)
+    path = tmp_path / "judged.yaml"
+
+    with pytest.raises(error_type):
+        write_judged(path, [entry])
+
+    assert not path.exists()
 
 
 def test_missing_file_is_empty(tmp_path: Path) -> None:
