@@ -298,6 +298,14 @@ def test_context_refuses_missing_secure_open_capability(
     [
         ".env",
         ".ENV.local",
+        ".npmrc",
+        "nested/.NPMRC",
+        ".netrc",
+        "nested/.NETRC",
+        ".git-credentials",
+        "nested/.GIT-CREDENTIALS",
+        ".docker/config.json",
+        "nested/.DOCKER/Config.JSON",
         ".cursorrules",
         "AGENTS.md",
         "agents.OVERRIDE.md",
@@ -328,6 +336,10 @@ def test_instruction_and_credential_paths_are_denied_case_insensitively(tmp_path
 def test_denied_paths_are_absent_from_glob_and_grep(tmp_path: Path) -> None:
     (tmp_path / "safe.py").write_text("needle", encoding="utf-8")
     (tmp_path / ".env").write_text("needle=secret", encoding="utf-8")
+    for name in [".npmrc", ".netrc", ".git-credentials", ".docker/config.json"]:
+        denied = tmp_path / name
+        denied.parent.mkdir(parents=True, exist_ok=True)
+        denied.write_text("needle=secret", encoding="utf-8")
     nested = tmp_path / "nested"
     nested.mkdir()
     (nested / "AGENTS.md").write_text("needle", encoding="utf-8")
@@ -916,6 +928,212 @@ def test_secret_free_type_declaration_and_schema_remain_readable(tmp_path: Path,
     ],
 )
 def test_typed_declaration_and_schema_literal_is_denied_without_value_echo(
+    tmp_path: Path, filename: str, content: str
+) -> None:
+    (tmp_path / filename).write_text(content, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="credential_assignment") as exc_info:
+        _read_file(_ctx(tmp_path), {"file_path": filename})
+
+    assert content not in str(exc_info.value)
+
+
+@pytest.mark.parametrize(
+    "safe_prefix",
+    ["null", "placeholder-password", "${DATABASE_PASSWORD}"],
+)
+def test_truncated_credential_scalar_is_denied_without_value_echo(tmp_path: Path, safe_prefix: str) -> None:
+    literal = "correct horse battery staple"
+    content = f"password: {safe_prefix}{' ' * 600}{literal}"
+    (tmp_path / "config.yaml").write_text(content, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="credential_assignment") as exc_info:
+        _read_file(_ctx(tmp_path), {"file_path": "config.yaml"})
+
+    message = str(exc_info.value)
+    assert literal not in message
+    assert content not in message
+
+
+@pytest.mark.parametrize(
+    "label",
+    ["accessToken", "databasePassword", "secretAccessKey", "apiKey", "clientSecret"],
+)
+def test_camel_case_credential_label_literal_is_denied_without_value_echo(tmp_path: Path, label: str) -> None:
+    literal = "correct horse battery staple"
+    content = f'{label}: "{literal}"'
+    (tmp_path / "config.yaml").write_text(content, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="credential_assignment") as exc_info:
+        _read_file(_ctx(tmp_path), {"file_path": "config.yaml"})
+
+    assert literal not in str(exc_info.value)
+    assert content not in str(exc_info.value)
+
+
+@pytest.mark.parametrize(
+    ("filename", "content"),
+    [
+        ("configuration.ts", 'export const api_key: string = "correct horse battery staple";'),
+        ("configuration.rs", 'let mut password: String = "correct horse battery staple";'),
+        ("Configuration.kt", 'private val password: String = "correct horse battery staple"'),
+        ("configuration.php", 'private string $password = "correct horse battery staple";'),
+        ("Configuration.swift", 'private let password: String = "correct horse battery staple"'),
+        ("Configuration.scala", 'private val password: String = "correct horse battery staple"'),
+        ("configuration.go", 'var password string = "correct horse battery staple"'),
+        ("constants.go", 'const apiKey string = "correct horse battery staple"'),
+        ("Configuration.cs", 'private string? password = "correct horse battery staple";'),
+        ("Dockerfile", 'ENV PASSWORD "correct horse battery staple"'),
+        ("Dockerfile", 'ARG PASSWORD="correct horse battery staple"'),
+    ],
+)
+def test_format_specific_typed_declaration_literal_is_denied_without_echo(
+    tmp_path: Path, filename: str, content: str
+) -> None:
+    (tmp_path / filename).write_text(content, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="credential_assignment") as exc_info:
+        _read_file(_ctx(tmp_path), {"file_path": filename})
+
+    assert content not in str(exc_info.value)
+
+
+@pytest.mark.parametrize(
+    "content",
+    ["ENV PASSWORD=changeme", "ENV PASSWORD changeme", "ARG PASSWORD=changeme"],
+)
+def test_docker_placeholder_declaration_remains_readable(tmp_path: Path, content: str) -> None:
+    (tmp_path / "Dockerfile").write_text(content, encoding="utf-8")
+
+    assert content in _read_file(_ctx(tmp_path), {"file_path": "Dockerfile"})
+
+
+@pytest.mark.parametrize("filename", ["config.ini", "config.cfg", "config.conf", "application.properties"])
+def test_hash_is_value_data_in_non_comment_format(tmp_path: Path, filename: str) -> None:
+    content = "password = changeme #actual-production-secret"
+    (tmp_path / filename).write_text(content, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="credential_assignment") as exc_info:
+        _read_file(_ctx(tmp_path), {"file_path": filename})
+
+    assert content not in str(exc_info.value)
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        '{\n  "password": null,\n  "user": "alice"\n}',
+        '{\n  "apiKey": "placeholder-value",\n  "user": "alice"\n}',
+    ],
+)
+def test_pretty_json_safe_credential_scalar_remains_readable(tmp_path: Path, content: str) -> None:
+    (tmp_path / "config.json").write_text(content, encoding="utf-8")
+
+    result = _read_file(_ctx(tmp_path), {"file_path": "config.json"})
+
+    assert all(line in result for line in content.splitlines())
+
+
+@pytest.mark.parametrize(
+    ("filename", "content"),
+    [
+        ("configuration.py", 'api_key: str = os.environ["OPENAI_API_KEY"]'),
+        ("configuration.py", "password: SecretStr | None = None"),
+        ("configuration.ts", "token: string = settings.token;"),
+        ("configuration.ts", "token: string | null;"),
+        ("configuration.ts", "token?: string | null;"),
+    ],
+)
+def test_typed_safe_reference_or_annotation_remains_readable(tmp_path: Path, filename: str, content: str) -> None:
+    (tmp_path / filename).write_text(content, encoding="utf-8")
+
+    assert content in _read_file(_ctx(tmp_path), {"file_path": filename})
+
+
+@pytest.mark.parametrize(
+    ("filename", "content"),
+    [
+        ("configuration.py", 'api_key: str = "correct horse battery staple"'),
+        ("configuration.ts", 'token: string = "correct horse battery staple";'),
+    ],
+)
+def test_typed_literal_default_remains_denied_without_echo(tmp_path: Path, filename: str, content: str) -> None:
+    (tmp_path / filename).write_text(content, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="credential_assignment") as exc_info:
+        _read_file(_ctx(tmp_path), {"file_path": filename})
+
+    assert content not in str(exc_info.value)
+
+
+def test_json_schema_harmless_credential_constraints_remain_readable(tmp_path: Path) -> None:
+    content = json.dumps(
+        {
+            "properties": {
+                "password": {
+                    "type": "string",
+                    "title": "Password",
+                    "description": "Account credential",
+                    "format": "password",
+                    "minLength": 12,
+                    "maxLength": 128,
+                    "pattern": "[A-Z]",
+                }
+            }
+        },
+        indent=2,
+    )
+    (tmp_path / "schema.json").write_text(content, encoding="utf-8")
+
+    result = _read_file(_ctx(tmp_path), {"file_path": "schema.json"})
+
+    assert all(line in result for line in content.splitlines())
+
+
+@pytest.mark.parametrize("keyword", ["default", "const", "examples", "enum"])
+def test_json_schema_literal_credential_keywords_are_denied_without_echo(tmp_path: Path, keyword: str) -> None:
+    literal = "correct horse battery staple"
+    value: object = [literal] if keyword in {"examples", "enum"} else literal
+    content = json.dumps({"properties": {"password": {"type": "string", keyword: value}}})
+    (tmp_path / "schema.json").write_text(content, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="credential_assignment") as exc_info:
+        _read_file(_ctx(tmp_path), {"file_path": "schema.json"})
+
+    message = str(exc_info.value)
+    assert literal not in message
+    assert content not in message
+
+
+@pytest.mark.parametrize(
+    ("filename", "content"),
+    [
+        ("configuration.py", 'password = config.get("PASSWORD")'),
+        ("Configuration.java", "password = config.getPassword()"),
+        ("configuration.php", "password = $config->password"),
+        ("configuration.rb", 'password = ENV.fetch("PASSWORD")'),
+        ("configuration.rb", 'password = ENV["PASSWORD"]'),
+        ("configuration.ts", 'password = process.env["PASSWORD"]'),
+        ("configuration.js", "password = process.env.PASSWORD"),
+    ],
+)
+def test_suffix_specific_source_reference_remains_readable(tmp_path: Path, filename: str, content: str) -> None:
+    (tmp_path / filename).write_text(content, encoding="utf-8")
+
+    assert content in _read_file(_ctx(tmp_path), {"file_path": filename})
+
+
+@pytest.mark.parametrize(
+    ("filename", "content"),
+    [
+        ("configuration.py", 'password = config.get("PASSWORD") or "correct horse battery staple"'),
+        ("Configuration.java", 'password = config.getPassword() + "correct horse battery staple"'),
+        ("configuration.php", 'password = $config->password ?: "correct horse battery staple"'),
+        ("configuration.rb", 'password = ENV.fetch("PASSWORD") || "correct horse battery staple"'),
+        ("configuration.ts", 'password = process.env.PASSWORD || "correct horse battery staple"'),
+    ],
+)
+def test_suffix_specific_source_reference_with_fallback_is_denied_without_echo(
     tmp_path: Path, filename: str, content: str
 ) -> None:
     (tmp_path / filename).write_text(content, encoding="utf-8")
