@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import os
@@ -14,6 +15,7 @@ from pathlib import Path
 
 import pytest
 
+import wardline.core.judge as judge_module
 import wardline.core.judge_transport as judge_transport_module
 from wardline.core.errors import JudgeContractError, JudgeTransportError
 from wardline.core.judge import (
@@ -32,6 +34,7 @@ from wardline.core.judge_transport import (
     _run_bounded_process,
     _terminate_process_tree,
     codex_child_env,
+    stage_codex_execution_auth,
 )
 from wardline.core.judge_types import (
     CODEX_JUDGE_REASONING_EFFORT,
@@ -454,10 +457,73 @@ def _command_option_names(command: list[str]) -> frozenset[str]:
     return frozenset(names)
 
 
-def _write_fake_codex_auth(path: Path, content: bytes = b'{"fake":"auth"}') -> None:
+_FAKE_ACCOUNT_ID = "fake-account-id"
+_REAL_REFRESH_TOKEN = "REAL_REFRESH_TOKEN_SENTINEL"
+_INERT_REFRESH_TOKEN = "WARDLINE_INVALID_REFRESH_TOKEN_DO_NOT_USE"
+_AUTH_EXPIRY_MARGIN_SECONDS = 300
+
+
+def _fake_jwt(claims: dict[str, object]) -> str:
+    def _part(value: dict[str, object]) -> str:
+        encoded = json.dumps(value, separators=(",", ":")).encode("utf-8")
+        return base64.urlsafe_b64encode(encoded).decode("ascii").rstrip("=")
+
+    return f"{_part({'alg': 'none'})}.{_part(claims)}.fake-signature"
+
+
+def _jwt_with_raw_payload(payload: bytes) -> str:
+    header = base64.urlsafe_b64encode(b'{"alg":"none"}').decode("ascii").rstrip("=")
+    encoded_payload = base64.urlsafe_b64encode(payload).decode("ascii").rstrip("=")
+    return f"{header}.{encoded_payload}.fake-signature"
+
+
+def _fake_auth_bytes(
+    *,
+    exp: object = 4_000_000_000,
+    account_id: object = _FAKE_ACCOUNT_ID,
+    access_token: object | None = None,
+    id_token: object | None = None,
+    refresh_token: object = _REAL_REFRESH_TOKEN,
+    api_key: object = None,
+    auth_mode: object = "chatgpt",
+) -> bytes:
+    effective_access_token = (
+        _fake_jwt(
+            {
+                "exp": exp,
+                "https://api.openai.com/auth": {
+                    "chatgpt_account_id": _FAKE_ACCOUNT_ID,
+                },
+            }
+        )
+        if access_token is None
+        else access_token
+    )
+    effective_id_token = _fake_jwt({"sub": "fake-user"}) if id_token is None else id_token
+    return json.dumps(
+        {
+            "auth_mode": auth_mode,
+            "OPENAI_API_KEY": api_key,
+            "tokens": {
+                "id_token": effective_id_token,
+                "access_token": effective_access_token,
+                "refresh_token": refresh_token,
+                "account_id": account_id,
+                "ambient_extra": "MUST_NOT_BE_PROJECTED",
+            },
+            "last_refresh": "2000-01-01T00:00:00+00:00",
+            "ambient_top_level_extra": "MUST_NOT_BE_PROJECTED",
+        },
+        separators=(",", ":"),
+    ).encode("utf-8")
+
+
+def _write_fake_codex_auth(path: Path, content: bytes | None = None) -> bytes:
+    payload = _fake_auth_bytes() if content is None else content
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(content)
+    path.write_bytes(payload)
     path.chmod(0o600)
+    return payload
 
 
 @pytest.fixture(autouse=True)
@@ -483,8 +549,9 @@ def test_codex_execution_stages_only_auth_in_isolated_homes(
         "AMBIENT_SKILL_SENTINEL",
         encoding="utf-8",
     )
-    fake_auth = b'{"fake":"TEST_AUTH_SENTINEL"}'
-    _write_fake_codex_auth(ambient_codex_home / "auth.json", fake_auth)
+    auth_path = ambient_codex_home / "auth.json"
+    fake_auth = _write_fake_codex_auth(auth_path)
+    ambient_mtime = auth_path.stat().st_mtime_ns
     (ambient_codex_home / "config.toml").write_text(
         "AMBIENT_CONFIG_SENTINEL",
         encoding="utf-8",
@@ -522,7 +589,29 @@ def test_codex_execution_stages_only_auth_in_isolated_homes(
     assert runner.execution_codex_home != ambient_codex_home
     assert runner.home_entries == []
     assert runner.codex_home_entries == ["auth.json"]
-    assert runner.auth_bytes == fake_auth
+    assert runner.auth_bytes is not None
+    projected = json.loads(runner.auth_bytes)
+    source = json.loads(fake_auth)
+    assert set(projected) == {
+        "auth_mode",
+        "OPENAI_API_KEY",
+        "tokens",
+        "last_refresh",
+    }
+    assert projected["auth_mode"] == "chatgpt"
+    assert projected["OPENAI_API_KEY"] is None
+    assert set(projected["tokens"]) == {
+        "id_token",
+        "access_token",
+        "refresh_token",
+        "account_id",
+    }
+    assert projected["tokens"]["id_token"] == source["tokens"]["id_token"]
+    assert projected["tokens"]["access_token"] == source["tokens"]["access_token"]
+    assert projected["tokens"]["account_id"] == source["tokens"]["account_id"]
+    assert projected["tokens"]["refresh_token"] == _INERT_REFRESH_TOKEN
+    assert _REAL_REFRESH_TOKEN.encode() not in runner.auth_bytes
+    assert projected["last_refresh"] != source["last_refresh"]
     if os.name == "posix":
         assert runner.home_mode == 0o700
         assert runner.codex_home_mode == 0o700
@@ -531,6 +620,8 @@ def test_codex_execution_stages_only_auth_in_isolated_homes(
     assert isinstance(call_env, dict)
     assert all(str(ambient_home) not in value for value in call_env.values())
     assert all(str(ambient_codex_home) not in value for value in call_env.values())
+    assert auth_path.read_bytes() == fake_auth
+    assert auth_path.stat().st_mtime_ns == ambient_mtime
     assert not runner.execution_home.exists()
     assert not runner.execution_codex_home.exists()
 
@@ -540,8 +631,7 @@ def test_codex_execution_finds_default_auth_beneath_ambient_home(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     ambient_home = tmp_path / "operator-home"
-    fake_auth = b'{"fake":"HOME_FALLBACK_AUTH"}'
-    _write_fake_codex_auth(ambient_home / ".codex" / "auth.json", fake_auth)
+    fake_auth = _write_fake_codex_auth(ambient_home / ".codex" / "auth.json")
     monkeypatch.setenv("HOME", str(ambient_home))
     monkeypatch.delenv("CODEX_HOME")
     runner = _InspectingProcessRunner(_process_result())
@@ -554,7 +644,11 @@ def test_codex_execution_finds_default_auth_beneath_ambient_home(
         process_runner=runner,
     )
 
-    assert runner.auth_bytes == fake_auth
+    assert runner.auth_bytes is not None
+    projected = json.loads(runner.auth_bytes)
+    source = json.loads(fake_auth)
+    assert projected["tokens"]["access_token"] == source["tokens"]["access_token"]
+    assert projected["tokens"]["refresh_token"] == _INERT_REFRESH_TOKEN
 
 
 @pytest.mark.skipif(os.name != "posix", reason="POSIX permission contract")
@@ -594,11 +688,264 @@ def test_codex_execution_rejects_unsafe_auth_material_before_launch(
     elif auth_shape == "symlink":
         target = tmp_path / "real-auth.json"
         _write_fake_codex_auth(target)
-        auth_path.symlink_to(target)
+        try:
+            auth_path.symlink_to(target)
+        except OSError as exc:
+            pytest.skip(f"symlink creation unavailable: {type(exc).__name__}")
     elif auth_shape == "oversized":
         _write_fake_codex_auth(auth_path, b"x" * (2 * 1024 * 1024))
     monkeypatch.setenv("HOME", str(ambient_home))
     monkeypatch.setenv("CODEX_HOME", str(ambient_codex_home))
+
+    with pytest.raises(JudgeTransportError, match="authentication material"):
+        _call_codex_cli(
+            _request(),
+            "gpt-test",
+            1024,
+            tool_scope=CodexToolScope(root=tmp_path.resolve()),
+            process_runner=lambda *_args, **_kwargs: pytest.fail("Codex must not launch"),
+        )
+
+
+def _auth_with_missing_field(field: str) -> bytes:
+    parsed = json.loads(_fake_auth_bytes())
+    if field in {"auth_mode", "tokens"}:
+        del parsed[field]
+    else:
+        del parsed["tokens"][field]
+    return json.dumps(parsed, separators=(",", ":")).encode("utf-8")
+
+
+@pytest.mark.parametrize(
+    "invalid_auth",
+    [
+        b"{",
+        _fake_auth_bytes().replace(
+            b'"OPENAI_API_KEY":null,',
+            b'"OPENAI_API_KEY":null,"OPENAI_API_KEY":null,',
+            1,
+        ),
+        _fake_auth_bytes(api_key="sk-not-chatgpt"),
+        _fake_auth_bytes(auth_mode="api-key"),
+        _fake_auth_bytes(account_id="different-account"),
+        _fake_auth_bytes(access_token="not-a-jwt"),
+        _fake_auth_bytes(id_token="not-a-jwt"),
+        _fake_auth_bytes(access_token=_jwt_with_raw_payload(b"{")),
+        _fake_auth_bytes(
+            access_token=_jwt_with_raw_payload(
+                b'{"exp":4000000000,"exp":4000000000,'
+                b'"https://api.openai.com/auth":'
+                b'{"chatgpt_account_id":"fake-account-id"}}'
+            )
+        ),
+        _fake_auth_bytes(
+            access_token=_fake_jwt(
+                {
+                    "https://api.openai.com/auth": {
+                        "chatgpt_account_id": _FAKE_ACCOUNT_ID,
+                    }
+                }
+            )
+        ),
+        _fake_auth_bytes(access_token=_fake_jwt({"exp": 4_000_000_000})),
+        _fake_auth_bytes(
+            access_token=_fake_jwt(
+                {
+                    "exp": 4_000_000_000,
+                    "https://api.openai.com/auth": {},
+                }
+            )
+        ),
+        _fake_auth_bytes(id_token=_jwt_with_raw_payload(b"[]")),
+        *(
+            _auth_with_missing_field(field)
+            for field in (
+                "auth_mode",
+                "tokens",
+                "id_token",
+                "access_token",
+                "refresh_token",
+                "account_id",
+            )
+        ),
+    ],
+    ids=[
+        "malformed-json",
+        "duplicate-key",
+        "non-chatgpt",
+        "non-chatgpt-mode",
+        "account-mismatch",
+        "malformed-access-jwt",
+        "malformed-id-jwt",
+        "malformed-access-jwt-payload",
+        "duplicate-access-jwt-claim",
+        "missing-access-jwt-exp",
+        "missing-access-jwt-auth-namespace",
+        "missing-access-jwt-account-claim",
+        "non-object-id-jwt-payload",
+        "missing-auth-mode",
+        "missing-tokens",
+        "missing-id-token",
+        "missing-access-token",
+        "missing-refresh-token",
+        "missing-account-id",
+    ],
+)
+def test_codex_execution_rejects_unprojectable_chatgpt_auth_before_launch(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    invalid_auth: bytes,
+) -> None:
+    ambient_codex_home = tmp_path / "operator-codex-home"
+    _write_fake_codex_auth(ambient_codex_home / "auth.json", invalid_auth)
+    monkeypatch.setenv("CODEX_HOME", str(ambient_codex_home))
+
+    with pytest.raises(JudgeTransportError, match="authentication material"):
+        _call_codex_cli(
+            _request(),
+            "gpt-test",
+            1024,
+            tool_scope=CodexToolScope(root=tmp_path.resolve()),
+            process_runner=lambda *_args, **_kwargs: pytest.fail("Codex must not launch"),
+        )
+
+
+@pytest.mark.parametrize("exp", [True, "2000", 2000.0, 1_423])
+def test_codex_execution_rejects_invalid_or_insufficient_access_lifetime(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    exp: object,
+) -> None:
+    monkeypatch.setattr(judge_transport_module.time, "time", lambda: 1_000)
+    ambient_codex_home = tmp_path / "operator-codex-home"
+    _write_fake_codex_auth(ambient_codex_home / "auth.json", _fake_auth_bytes(exp=exp))
+    monkeypatch.setenv("CODEX_HOME", str(ambient_codex_home))
+
+    with pytest.raises(JudgeTransportError, match="authentication material"):
+        _call_codex_cli(
+            _request(),
+            "gpt-test",
+            1024,
+            tool_scope=CodexToolScope(root=tmp_path.resolve()),
+            timeout_seconds=123,
+            process_runner=lambda *_args, **_kwargs: pytest.fail("Codex must not launch"),
+        )
+
+
+def test_codex_execution_accepts_lifetime_beyond_actual_timeout_plus_margin(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(judge_transport_module.time, "time", lambda: 1_000)
+    ambient_codex_home = tmp_path / "operator-codex-home"
+    _write_fake_codex_auth(
+        ambient_codex_home / "auth.json",
+        _fake_auth_bytes(exp=1_000 + 123 + _AUTH_EXPIRY_MARGIN_SECONDS + 1),
+    )
+    monkeypatch.setenv("CODEX_HOME", str(ambient_codex_home))
+    runner = _RecordingProcessRunner(_process_result())
+
+    _call_codex_cli(
+        _request(),
+        "gpt-test",
+        1024,
+        tool_scope=CodexToolScope(root=tmp_path.resolve()),
+        timeout_seconds=123,
+        process_runner=runner,
+    )
+
+    assert len(runner.calls) == 1
+
+
+class _MutatingAuthRunner(_RecordingProcessRunner):
+    def __call__(
+        self,
+        command: list[str],
+        *,
+        input_text: str | None,
+        timeout: float,
+        env: Mapping[str, str],
+        cwd: Path | None,
+        stdout_limit: int,
+        stderr_limit: int,
+    ) -> _BoundedProcessResult:
+        staged_auth = Path(env["CODEX_HOME"]) / "auth.json"
+        staged_auth.write_bytes(b'{"mutated":"MUTATION_SENTINEL"}')
+        staged_auth.chmod(0o600)
+        return super().__call__(
+            command,
+            input_text=input_text,
+            timeout=timeout,
+            env=env,
+            cwd=cwd,
+            stdout_limit=stdout_limit,
+            stderr_limit=stderr_limit,
+        )
+
+
+def test_codex_execution_rejects_mutated_auth_projection_after_runner(
+    tmp_path: Path,
+) -> None:
+    runner = _MutatingAuthRunner(_process_result())
+
+    with pytest.raises(JudgeTransportError, match="authentication material") as exc_info:
+        _call_codex_cli(
+            _request(),
+            "gpt-test",
+            1024,
+            tool_scope=CodexToolScope(root=tmp_path.resolve()),
+            process_runner=runner,
+        )
+
+    assert "MUTATION_SENTINEL" not in str(exc_info.value)
+
+
+@pytest.mark.parametrize("changed_field", ["mode", "identity", "size", "mtime"])
+def test_codex_auth_source_descriptor_must_remain_stable_through_read(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    changed_field: str,
+) -> None:
+    ambient_codex_home = tmp_path / "operator-codex-home"
+    _write_fake_codex_auth(ambient_codex_home / "auth.json")
+    monkeypatch.setenv("CODEX_HOME", str(ambient_codex_home))
+    original_fstat = judge_transport_module.os.fstat
+    calls = 0
+
+    def _changing_fstat(descriptor: int) -> os.stat_result:
+        nonlocal calls
+        calls += 1
+        result = original_fstat(descriptor)
+        if calls == 1:
+            return result
+        values = list(result)
+        index, value = {
+            "mode": (0, result.st_mode | 0o040),
+            "identity": (1, result.st_ino + 1),
+            "size": (6, result.st_size + 1),
+            "mtime": (8, result.st_mtime + 1),
+        }[changed_field]
+        values[index] = value
+        return os.stat_result(values)
+
+    monkeypatch.setattr(judge_transport_module.os, "fstat", _changing_fstat)
+
+    with pytest.raises(JudgeTransportError, match="authentication material"):
+        stage_codex_execution_auth(tmp_path / "isolated-codex-home")
+
+    assert calls >= 2
+
+
+def test_codex_file_auth_projection_fails_closed_when_private_acl_is_unsupported(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        judge_transport_module,
+        "_private_auth_projection_supported",
+        lambda: False,
+        raising=False,
+    )
 
     with pytest.raises(JudgeTransportError, match="authentication material"):
         _call_codex_cli(
@@ -688,6 +1035,120 @@ def test_codex_call_requires_tool_scope() -> None:
             tool_scope=None,
             process_runner=_RecordingProcessRunner(_process_result()),
         )
+
+
+@pytest.mark.parametrize("failure_point", ["allocation", "home-setup", "cleanup"])
+def test_codex_temp_and_home_os_errors_are_sanitized_transport_failures(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure_point: str,
+) -> None:
+    sentinel = "TEMP_SETUP_SECRET_SENTINEL"
+    original_temporary_directory = judge_module.tempfile.TemporaryDirectory
+
+    if failure_point == "allocation":
+
+        def _temporary_directory(*_args: object, **_kwargs: object) -> object:
+            raise OSError(sentinel)
+
+        monkeypatch.setattr(judge_module.tempfile, "TemporaryDirectory", _temporary_directory)
+    else:
+        yielded_path = tmp_path / "yielded-temp"
+        if failure_point == "home-setup":
+            yielded_path.write_text("not a directory", encoding="utf-8")
+        else:
+            yielded_path.mkdir()
+
+        class _TemporaryDirectoryContext:
+            def __enter__(self) -> str:
+                return str(yielded_path)
+
+            def __exit__(
+                self,
+                _exc_type: object,
+                _exc: object,
+                _traceback: object,
+            ) -> None:
+                if failure_point == "cleanup":
+                    raise OSError(sentinel)
+
+        monkeypatch.setattr(
+            judge_module.tempfile,
+            "TemporaryDirectory",
+            lambda *_args, **_kwargs: _TemporaryDirectoryContext(),
+        )
+
+    try:
+        with pytest.raises(JudgeTransportError) as exc_info:
+            _call_codex_cli(
+                _request(),
+                "gpt-test",
+                1024,
+                tool_scope=CodexToolScope(root=tmp_path.resolve()),
+                process_runner=_RecordingProcessRunner(_process_result()),
+            )
+    finally:
+        monkeypatch.setattr(
+            judge_module.tempfile,
+            "TemporaryDirectory",
+            original_temporary_directory,
+        )
+
+    assert sentinel not in str(exc_info.value)
+    assert len(str(exc_info.value)) <= 1_000
+
+
+@pytest.mark.parametrize(
+    ("failure_kind", "expected_exception", "expected_message"),
+    [
+        ("transport", JudgeTransportError, "executable became unavailable"),
+        ("contract", JudgeContractError, "malformed JSONL"),
+    ],
+)
+def test_codex_cleanup_error_does_not_mask_typed_primary_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure_kind: str,
+    expected_exception: type[Exception],
+    expected_message: str,
+) -> None:
+    cleanup_sentinel = "CLEANUP_SECRET_SENTINEL"
+    yielded_path = tmp_path / "yielded-temp"
+    yielded_path.mkdir()
+
+    class _FailingCleanupContext:
+        def __enter__(self) -> str:
+            return str(yielded_path)
+
+        def __exit__(
+            self,
+            _exc_type: object,
+            _exc: object,
+            _traceback: object,
+        ) -> None:
+            raise OSError(cleanup_sentinel)
+
+    monkeypatch.setattr(
+        judge_module.tempfile,
+        "TemporaryDirectory",
+        lambda *_args, **_kwargs: _FailingCleanupContext(),
+    )
+    runner = _RecordingProcessRunner(
+        FileNotFoundError("LAUNCH_SECRET_SENTINEL")
+        if failure_kind == "transport"
+        else _process_result(stdout="not-json")
+    )
+
+    with pytest.raises(expected_exception, match=expected_message) as exc_info:
+        _call_codex_cli(
+            _request(),
+            "gpt-test",
+            1024,
+            tool_scope=CodexToolScope(root=tmp_path.resolve()),
+            process_runner=runner,
+        )
+
+    assert cleanup_sentinel not in str(exc_info.value)
 
 
 @pytest.mark.parametrize(

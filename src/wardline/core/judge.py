@@ -32,11 +32,14 @@ from wardline.core.errors import (
 )
 from wardline.core.http import WeftHttp
 from wardline.core.judge_transport import (
+    CODEX_AUTH_EXPIRY_MARGIN_SECONDS,
+    CODEX_CLI_TIMEOUT_SECONDS,
     CODEX_DISABLED_FEATURES,
     _BoundedProcessResult,
     _run_bounded_process,
     codex_execution_env,
     stage_codex_execution_auth,
+    verify_codex_execution_auth,
 )
 from wardline.core.judge_types import (
     CODEX_JUDGE_REASONING_EFFORT,
@@ -386,7 +389,6 @@ class _TransportResult:
 TransportImpl = Callable[[JudgeRequest, str, int], _TransportResult]
 CodexProcessRunner = Callable[..., _BoundedProcessResult]
 
-_CODEX_CLI_TIMEOUT_SECONDS = 600.0
 _CODEX_STDOUT_BYTE_LIMIT = 2 * 1024 * 1024
 _CODEX_STDERR_BYTE_LIMIT = 64 * 1024
 _CODEX_READONLY_MCP_TOOLS = ("read_file", "grep_files", "glob_files")
@@ -488,7 +490,7 @@ def _call_codex_cli(
     policy_block: str | None = None,
     project_policy: str | None = None,
     tool_scope: CodexToolScope | None = None,
-    timeout_seconds: float = _CODEX_CLI_TIMEOUT_SECONDS,
+    timeout_seconds: float = CODEX_CLI_TIMEOUT_SECONDS,
     process_runner: CodexProcessRunner = _run_bounded_process,
 ) -> _TransportResult:
     """Execute one verdict through a sealed, bounded Codex CLI process.
@@ -513,75 +515,106 @@ def _call_codex_cli(
         *(f"features.{feature}=false" for feature in sorted(CODEX_DISABLED_FEATURES)),
     ]
     operator_env = dict(os.environ)
-    with tempfile.TemporaryDirectory(prefix="wardline-judge-codex-") as temp_dir:
-        temp_root = Path(temp_dir)
-        execution_home = temp_root / "home"
-        execution_home.mkdir(mode=0o700)
-        os.chmod(execution_home, 0o700)
-        execution_codex_home = temp_root / "codex-home"
-        stage_codex_execution_auth(execution_codex_home, source=operator_env)
-        work_root = temp_root / "work"
-        work_root.mkdir()
-        schema_path = temp_root / "judge-response.schema.json"
-        schema_path.write_text(
-            json.dumps(_CODEX_RESPONSE_SCHEMA, ensure_ascii=True, sort_keys=True),
-            encoding="utf-8",
-        )
-        command = [
-            "codex",
-            "exec",
-            "--ephemeral",
-            "--ignore-user-config",
-            "--ignore-rules",
-            "--strict-config",
-            "--skip-git-repo-check",
-            "--sandbox",
-            "read-only",
-            "--model",
-            model_id,
-            "--json",
-            "--color",
-            "never",
-            "--output-schema",
-            str(schema_path),
-            "--cd",
-            str(work_root),
-            *[part for value in base_configs for part in ("--config", value)],
-            *_codex_mcp_config_args(tool_scope),
-            "-",
-        ]
+    transport_result: _TransportResult | None = None
+    try:
+        temp_manager = tempfile.TemporaryDirectory(prefix="wardline-judge-codex-")
+        temp_dir = temp_manager.__enter__()
         try:
-            completed = process_runner(
-                command,
-                input_text=prompt,
-                timeout=timeout_seconds,
-                env=codex_execution_env(
-                    home=execution_home,
-                    codex_home=execution_codex_home,
-                    source=operator_env,
-                ),
-                cwd=work_root,
-                stdout_limit=_CODEX_STDOUT_BYTE_LIMIT,
-                stderr_limit=_CODEX_STDERR_BYTE_LIMIT,
+            temp_root = Path(temp_dir)
+            execution_home = temp_root / "home"
+            execution_home.mkdir(mode=0o700)
+            os.chmod(execution_home, 0o700)
+            execution_codex_home = temp_root / "codex-home"
+            auth_digest = stage_codex_execution_auth(
+                execution_codex_home,
+                source=operator_env,
+                minimum_remaining_seconds=(timeout_seconds + CODEX_AUTH_EXPIRY_MARGIN_SECONDS),
             )
-        except FileNotFoundError:
-            raise JudgeTransportError(
-                "Codex CLI judge could not start because the executable became unavailable after preflight"
-            ) from None
-        except subprocess.TimeoutExpired:
-            raise JudgeTransportError("Codex CLI judge exceeded its bounded transport timeout") from None
-        except OSError:
-            raise JudgeTransportError("Codex CLI judge could not start due to an operating-system error") from None
-
-    if completed.returncode != 0:
+            work_root = temp_root / "work"
+            work_root.mkdir()
+            schema_path = temp_root / "judge-response.schema.json"
+            schema_path.write_text(
+                json.dumps(_CODEX_RESPONSE_SCHEMA, ensure_ascii=True, sort_keys=True),
+                encoding="utf-8",
+            )
+            command = [
+                "codex",
+                "exec",
+                "--ephemeral",
+                "--ignore-user-config",
+                "--ignore-rules",
+                "--strict-config",
+                "--skip-git-repo-check",
+                "--sandbox",
+                "read-only",
+                "--model",
+                model_id,
+                "--json",
+                "--color",
+                "never",
+                "--output-schema",
+                str(schema_path),
+                "--cd",
+                str(work_root),
+                *[part for value in base_configs for part in ("--config", value)],
+                *_codex_mcp_config_args(tool_scope),
+                "-",
+            ]
+            try:
+                completed = process_runner(
+                    command,
+                    input_text=prompt,
+                    timeout=timeout_seconds,
+                    env=codex_execution_env(
+                        home=execution_home,
+                        codex_home=execution_codex_home,
+                        source=operator_env,
+                    ),
+                    cwd=work_root,
+                    stdout_limit=_CODEX_STDOUT_BYTE_LIMIT,
+                    stderr_limit=_CODEX_STDERR_BYTE_LIMIT,
+                )
+            except FileNotFoundError:
+                raise JudgeTransportError(
+                    "Codex CLI judge could not start because the executable became unavailable after preflight"
+                ) from None
+            except subprocess.TimeoutExpired:
+                raise JudgeTransportError("Codex CLI judge exceeded its bounded transport timeout") from None
+            except OSError:
+                raise JudgeTransportError("Codex CLI judge could not start due to an operating-system error") from None
+            verify_codex_execution_auth(
+                execution_codex_home,
+                expected_digest=auth_digest,
+            )
+            if completed.returncode != 0:
+                raise JudgeTransportError("Codex CLI judge exited unsuccessfully; " + _codex_failure_detail(completed))
+            if completed.stdout_decode_error or completed.stderr_decode_error:
+                raise JudgeContractError("Codex CLI output must be valid UTF-8")
+            if completed.stdout_truncated or completed.stderr_truncated:
+                raise JudgeContractError("Codex CLI output exceeded Wardline's bounded output limit")
+            transport_result = _parse_codex_jsonl(
+                completed.stdout,
+                requested_model=model_id,
+            )
+        finally:
+            exception_type, exception, traceback = sys.exc_info()
+            try:
+                temp_manager.__exit__(exception_type, exception, traceback)
+            except OSError:
+                if not isinstance(
+                    exception,
+                    (JudgeTransportError, JudgeContractError),
+                ):
+                    raise
+    except (JudgeTransportError, JudgeContractError):
+        raise
+    except OSError:
         raise JudgeTransportError(
-            "Codex CLI judge exited unsuccessfully; " + _codex_failure_detail(completed)
-        )
-    if completed.stdout_decode_error or completed.stderr_decode_error:
-        raise JudgeContractError("Codex CLI output must be valid UTF-8")
-    if completed.stdout_truncated or completed.stderr_truncated:
-        raise JudgeContractError("Codex CLI output exceeded Wardline's bounded output limit")
-    return _parse_codex_jsonl(completed.stdout, requested_model=model_id)
+            "Codex CLI judge could not prepare or clean up its isolated execution environment"
+        ) from None
+    if transport_result is None:  # pragma: no cover - all non-success paths raise
+        raise RuntimeError("Codex CLI judge completed without a transport result")
+    return transport_result
 
 
 @dataclass(frozen=True, slots=True)

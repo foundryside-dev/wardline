@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import json
 import os
 import subprocess
 import sys
@@ -66,6 +68,56 @@ _EXPECTED_DISABLED_FEATURES = frozenset(
         "workspace_dependencies",
     }
 )
+
+_FAKE_ACCOUNT_ID = "fake-account-id"
+_AUTH_EXPIRY_MARGIN_SECONDS = 300
+
+
+def _fake_jwt(claims: dict[str, object]) -> str:
+    def _part(value: dict[str, object]) -> str:
+        encoded = json.dumps(value, separators=(",", ":")).encode("utf-8")
+        return base64.urlsafe_b64encode(encoded).decode("ascii").rstrip("=")
+
+    return f"{_part({'alg': 'none'})}.{_part(claims)}.fake-signature"
+
+
+def _fake_auth_bytes(
+    *,
+    exp: object = 4_000_000_000,
+    api_key: object = None,
+    auth_mode: object = "chatgpt",
+) -> bytes:
+    return json.dumps(
+        {
+            "auth_mode": auth_mode,
+            "OPENAI_API_KEY": api_key,
+            "tokens": {
+                "id_token": _fake_jwt({"sub": "fake-user"}),
+                "access_token": _fake_jwt(
+                    {
+                        "exp": exp,
+                        "https://api.openai.com/auth": {
+                            "chatgpt_account_id": _FAKE_ACCOUNT_ID,
+                        },
+                    }
+                ),
+                "refresh_token": "REAL_REFRESH_TOKEN_SENTINEL",
+                "account_id": _FAKE_ACCOUNT_ID,
+            },
+            "last_refresh": "2000-01-01T00:00:00+00:00",
+        },
+        separators=(",", ":"),
+    ).encode("utf-8")
+
+
+@pytest.fixture(autouse=True)
+def _use_fake_codex_auth(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    codex_home = tmp_path / "fixture-codex-home"
+    codex_home.mkdir()
+    auth_path = codex_home / "auth.json"
+    auth_path.write_bytes(_fake_auth_bytes())
+    auth_path.chmod(0o600)
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
 
 
 def _completed(
@@ -167,6 +219,7 @@ def test_codex_probe_vocabulary_is_exact() -> None:
         "binary_missing",
         "incompatible",
         "unauthenticated",
+        "auth_unprojectable",
     ]
 
     availability = CodexAvailability.available("codex-cli 0.146.0")
@@ -239,6 +292,20 @@ def test_explicit_codex_unavailable_fails_without_fallback(
     message = str(exc_info.value)
     assert reason.value in message
     assert detail in message
+
+
+def test_auth_unprojectable_is_fallback_eligible_but_explicit_codex_fails() -> None:
+    reason = getattr(CodexUnavailableReason, "AUTH_UNPROJECTABLE", None)
+    assert reason is not None
+    unavailable = CodexAvailability(
+        reason=reason,
+        detail="run codex login",
+        version="codex-cli 0.146.0",
+    )
+
+    assert resolve_judge_transport(JudgeTransport.AUTO, probe=lambda: unavailable) is JudgeTransport.OPENROUTER
+    with pytest.raises(JudgeConfigurationError, match="auth_unprojectable"):
+        resolve_judge_transport(JudgeTransport.CODEX_CLI, probe=lambda: unavailable)
 
 
 def test_explicit_openrouter_never_probes_codex() -> None:
@@ -537,6 +604,56 @@ def test_probe_accepts_login_marker_on_stdout_or_stderr_and_preserves_version(
     availability = probe_codex_cli(runner=runner)
 
     assert availability == CodexAvailability.available("codex-cli 0.146.0")
+
+
+@pytest.mark.parametrize(
+    "unsafe_auth",
+    ["missing-file", "near-expiry", "non-chatgpt", "private-acl-unsupported"],
+)
+def test_probe_requires_safely_projectable_chatgpt_file_auth(
+    monkeypatch: pytest.MonkeyPatch,
+    unsafe_auth: str,
+) -> None:
+    import wardline.core.judge_transport as transport_module
+
+    auth_path = Path(os.environ["CODEX_HOME"]) / "auth.json"
+    if unsafe_auth == "missing-file":
+        auth_path.unlink()
+        monkeypatch.setenv("CODEX_ACCESS_TOKEN", "EXTERNAL_TOKEN_SENTINEL")
+    elif unsafe_auth == "near-expiry":
+        monkeypatch.setattr(transport_module.time, "time", lambda: 1_000)
+        auth_path.write_bytes(
+            _fake_auth_bytes(
+                exp=1_000 + 600 + _AUTH_EXPIRY_MARGIN_SECONDS,
+            )
+        )
+        auth_path.chmod(0o600)
+    elif unsafe_auth == "non-chatgpt":
+        auth_path.write_bytes(
+            _fake_auth_bytes(
+                api_key="API_KEY_SENTINEL",
+                auth_mode="api-key",
+            )
+        )
+        auth_path.chmod(0o600)
+    else:
+        monkeypatch.setattr(
+            transport_module,
+            "_private_auth_projection_supported",
+            lambda: False,
+            raising=False,
+        )
+    runner = _successful_runner()
+
+    availability = probe_codex_cli(runner=runner)
+
+    assert availability.reason is CodexUnavailableReason.AUTH_UNPROJECTABLE
+    assert availability.version == "codex-cli 0.146.0"
+    assert len(runner.calls) == 4
+    assert "EXTERNAL_TOKEN_SENTINEL" not in availability.detail
+    assert "API_KEY_SENTINEL" not in availability.detail
+    assert _FAKE_ACCOUNT_ID not in availability.detail
+    assert len(availability.detail) <= 1_000
 
 
 @pytest.mark.parametrize(

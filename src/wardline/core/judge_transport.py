@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+import base64
+import hashlib
+import hmac
+import json
+import math
 import os
 import re
 import signal
@@ -11,9 +16,10 @@ import time
 from collections.abc import Callable, Mapping
 from contextlib import suppress
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
-from typing import IO
+from typing import IO, cast
 
 from wardline.core.errors import JudgeConfigurationError, JudgeTransportError
 from wardline.core.judge_types import JudgeTransport
@@ -23,8 +29,11 @@ _DIAGNOSTIC_CHAR_LIMIT = 1_000
 _PREFLIGHT_STDOUT_BYTE_LIMIT = 256 * 1024
 _PREFLIGHT_STDERR_BYTE_LIMIT = 64 * 1024
 _CODEX_AUTH_BYTE_LIMIT = 1024 * 1024
+CODEX_AUTH_EXPIRY_MARGIN_SECONDS = 300.0
+_CODEX_INERT_REFRESH_TOKEN = "WARDLINE_INVALID_REFRESH_TOKEN_DO_NOT_USE"
 _PROCESS_TERMINATION_GRACE_SECONDS = 2.0
 _PROCESS_DRAIN_GRACE_SECONDS = 0.05
+CODEX_CLI_TIMEOUT_SECONDS = 600.0
 
 CODEX_REQUIRED_EXEC_FLAGS = frozenset(
     {
@@ -106,6 +115,7 @@ class CodexUnavailableReason(StrEnum):
     BINARY_MISSING = "binary_missing"
     INCOMPATIBLE = "incompatible"
     UNAUTHENTICATED = "unauthenticated"
+    AUTH_UNPROJECTABLE = "auth_unprojectable"
 
 
 @dataclass(frozen=True, slots=True)
@@ -443,12 +453,153 @@ def _ambient_codex_auth_path(source: Mapping[str, str] | None = None) -> Path:
     return codex_home / "auth.json"
 
 
+def _private_auth_projection_supported() -> bool:
+    """Return whether Wardline can enforce private file-auth permissions."""
+    return os.name == "posix"
+
+
+def _strict_auth_json_object(payload: bytes) -> dict[str, object]:
+    def _object(pairs: list[tuple[str, object]]) -> dict[str, object]:
+        result: dict[str, object] = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError
+            result[key] = value
+        return result
+
+    def _constant(_value: str) -> object:
+        raise ValueError
+
+    def _finite_float(value: str) -> float:
+        parsed = float(value)
+        if not math.isfinite(parsed):
+            raise ValueError
+        return parsed
+
+    try:
+        decoded = payload.decode("utf-8", errors="strict")
+        parsed: object = json.loads(
+            decoded,
+            object_pairs_hook=_object,
+            parse_constant=_constant,
+            parse_float=_finite_float,
+        )
+    except (UnicodeDecodeError, ValueError, TypeError, json.JSONDecodeError):
+        raise JudgeTransportError("Codex CLI authentication material could not be staged safely") from None
+    if not isinstance(parsed, dict) or not all(isinstance(key, str) for key in parsed):
+        raise JudgeTransportError("Codex CLI authentication material could not be staged safely")
+    return cast(dict[str, object], parsed)
+
+
+def _decode_jwt_payload(token: object) -> dict[str, object]:
+    if not isinstance(token, str) or not token:
+        raise JudgeTransportError("Codex CLI authentication material could not be staged safely")
+    try:
+        segments = token.encode("ascii").split(b".")
+    except UnicodeEncodeError:
+        raise JudgeTransportError("Codex CLI authentication material could not be staged safely") from None
+    if len(segments) != 3 or any(not segment for segment in segments):
+        raise JudgeTransportError("Codex CLI authentication material could not be staged safely")
+
+    decoded_segments: list[bytes] = []
+    try:
+        for segment in segments:
+            padding = b"=" * (-len(segment) % 4)
+            decoded_segments.append(
+                base64.b64decode(
+                    segment + padding,
+                    altchars=b"-_",
+                    validate=True,
+                )
+            )
+    except (ValueError, TypeError):
+        raise JudgeTransportError("Codex CLI authentication material could not be staged safely") from None
+    if not decoded_segments[2]:
+        raise JudgeTransportError("Codex CLI authentication material could not be staged safely")
+    _strict_auth_json_object(decoded_segments[0])
+    return _strict_auth_json_object(decoded_segments[1])
+
+
+def _project_codex_auth(
+    payload: bytes,
+    *,
+    minimum_remaining_seconds: float,
+) -> bytes:
+    if not math.isfinite(minimum_remaining_seconds) or minimum_remaining_seconds < 0:
+        raise JudgeTransportError("Codex CLI authentication material could not be staged safely")
+    auth = _strict_auth_json_object(payload)
+    if auth.get("auth_mode") != "chatgpt" or auth.get("OPENAI_API_KEY") is not None:
+        raise JudgeTransportError("Codex CLI authentication material could not be staged safely")
+    tokens = auth.get("tokens")
+    if not isinstance(tokens, dict):
+        raise JudgeTransportError("Codex CLI authentication material could not be staged safely")
+    required: dict[str, str] = {}
+    for key in ("id_token", "access_token", "refresh_token", "account_id"):
+        value = tokens.get(key)
+        if not isinstance(value, str) or not value:
+            raise JudgeTransportError("Codex CLI authentication material could not be staged safely")
+        required[key] = value
+
+    _decode_jwt_payload(required["id_token"])
+    access_claims = _decode_jwt_payload(required["access_token"])
+    expires_at = access_claims.get("exp")
+    if type(expires_at) is not int:
+        raise JudgeTransportError("Codex CLI authentication material could not be staged safely")
+    auth_claims = access_claims.get("https://api.openai.com/auth")
+    if not isinstance(auth_claims, dict):
+        raise JudgeTransportError("Codex CLI authentication material could not be staged safely")
+    claimed_account = auth_claims.get("chatgpt_account_id")
+    if (
+        not isinstance(claimed_account, str)
+        or not claimed_account
+        or not hmac.compare_digest(claimed_account, required["account_id"])
+    ):
+        raise JudgeTransportError("Codex CLI authentication material could not be staged safely")
+
+    now = time.time()
+    if not math.isfinite(now) or expires_at <= now + minimum_remaining_seconds:
+        raise JudgeTransportError("Codex CLI authentication material could not be staged safely")
+    try:
+        refreshed_at = datetime.fromtimestamp(now, UTC).isoformat()
+    except (OverflowError, OSError, ValueError):
+        raise JudgeTransportError("Codex CLI authentication material could not be staged safely") from None
+    projection = {
+        "OPENAI_API_KEY": None,
+        "auth_mode": "chatgpt",
+        "last_refresh": refreshed_at,
+        "tokens": {
+            "access_token": required["access_token"],
+            "account_id": required["account_id"],
+            "id_token": required["id_token"],
+            "refresh_token": _CODEX_INERT_REFRESH_TOKEN,
+        },
+    }
+    return json.dumps(
+        projection,
+        ensure_ascii=True,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+
+
+def _auth_file_snapshot(metadata: os.stat_result) -> tuple[int, int, int, int, int]:
+    return (
+        metadata.st_dev,
+        metadata.st_ino,
+        metadata.st_mode,
+        metadata.st_size,
+        metadata.st_mtime_ns,
+    )
+
+
 def _read_bounded_codex_auth(source_path: Path) -> bytes:
     try:
         before = source_path.lstat()
         if not stat.S_ISREG(before.st_mode):
             raise OSError
-        if os.name == "posix" and stat.S_IMODE(before.st_mode) & 0o077:
+        if stat.S_IMODE(before.st_mode) & 0o077:
+            raise OSError
+        if before.st_size <= 0 or before.st_size > _CODEX_AUTH_BYTE_LIMIT:
             raise OSError
         flags = os.O_RDONLY
         flags |= getattr(os, "O_BINARY", 0)
@@ -456,10 +607,10 @@ def _read_bounded_codex_auth(source_path: Path) -> bytes:
         flags |= getattr(os, "O_NOFOLLOW", 0)
         descriptor = os.open(source_path, flags)
         try:
-            after = os.fstat(descriptor)
-            if not stat.S_ISREG(after.st_mode):
+            opened = os.fstat(descriptor)
+            if not stat.S_ISREG(opened.st_mode):
                 raise OSError
-            if (before.st_dev, before.st_ino) != (after.st_dev, after.st_ino):
+            if _auth_file_snapshot(before) != _auth_file_snapshot(opened):
                 raise OSError
             chunks: list[bytes] = []
             remaining = _CODEX_AUTH_BYTE_LIMIT + 1
@@ -470,7 +621,10 @@ def _read_bounded_codex_auth(source_path: Path) -> bytes:
                 chunks.append(chunk)
                 remaining -= len(chunk)
             payload = b"".join(chunks)
-            if not payload or len(payload) > _CODEX_AUTH_BYTE_LIMIT:
+            after = os.fstat(descriptor)
+            if _auth_file_snapshot(opened) != _auth_file_snapshot(after):
+                raise OSError
+            if not payload or len(payload) > _CODEX_AUTH_BYTE_LIMIT or len(payload) != opened.st_size:
                 raise OSError
             return payload
         finally:
@@ -483,9 +637,16 @@ def stage_codex_execution_auth(
     destination_codex_home: Path,
     *,
     source: Mapping[str, str] | None = None,
-) -> None:
-    """Copy only bounded auth state into one private ephemeral Codex home."""
-    payload = _read_bounded_codex_auth(_ambient_codex_auth_path(source))
+    minimum_remaining_seconds: float = (CODEX_CLI_TIMEOUT_SECONDS + CODEX_AUTH_EXPIRY_MARGIN_SECONDS),
+) -> str:
+    """Project stateless ChatGPT auth into one private ephemeral Codex home."""
+    if not _private_auth_projection_supported():
+        raise JudgeTransportError("Codex CLI authentication material could not be staged safely")
+    payload = _project_codex_auth(
+        _read_bounded_codex_auth(_ambient_codex_auth_path(source)),
+        minimum_remaining_seconds=minimum_remaining_seconds,
+    )
+    expected_digest = hashlib.sha256(payload).hexdigest()
     try:
         destination_codex_home.mkdir(mode=0o700)
         os.chmod(destination_codex_home, 0o700)
@@ -501,11 +662,39 @@ def stage_codex_execution_auth(
                 if written <= 0:
                     raise OSError
                 view = view[written:]
+            os.fsync(descriptor)
         finally:
             os.close(descriptor)
         os.chmod(destination, 0o600)
     except (OSError, ValueError):
         raise JudgeTransportError("Codex CLI authentication material could not be staged safely") from None
+    return expected_digest
+
+
+def verify_codex_execution_auth(
+    destination_codex_home: Path,
+    *,
+    expected_digest: str,
+) -> None:
+    """Fail if the ephemeral runner altered its stateless auth projection."""
+    payload = _read_bounded_codex_auth(destination_codex_home / "auth.json")
+    actual_digest = hashlib.sha256(payload).hexdigest()
+    if not hmac.compare_digest(actual_digest, expected_digest):
+        raise JudgeTransportError("Codex CLI authentication material changed during execution")
+
+
+def validate_codex_auth_projection(
+    *,
+    source: Mapping[str, str] | None = None,
+    minimum_remaining_seconds: float = (CODEX_CLI_TIMEOUT_SECONDS + CODEX_AUTH_EXPIRY_MARGIN_SECONDS),
+) -> None:
+    """Validate that ambient ChatGPT file auth is safe for stateless projection."""
+    if not _private_auth_projection_supported():
+        raise JudgeTransportError("Codex CLI authentication material could not be staged safely")
+    _project_codex_auth(
+        _read_bounded_codex_auth(_ambient_codex_auth_path(source)),
+        minimum_remaining_seconds=minimum_remaining_seconds,
+    )
 
 
 def codex_execution_env(
@@ -542,7 +731,8 @@ def _incompatible(detail: str, version: str | None) -> CodexAvailability:
 
 def probe_codex_cli(*, runner: Runner | None = None) -> CodexAvailability:
     """Probe sealed-exec capabilities and authentication without invoking a model."""
-    child_env = codex_child_env()
+    operator_env = dict(os.environ)
+    child_env = codex_child_env(operator_env)
     current_command: list[str] = ["codex", "--version"]
     version: str | None = None
 
@@ -656,6 +846,14 @@ def probe_codex_cli(*, runner: Runner | None = None) -> CodexAvailability:
         return CodexAvailability(
             reason=CodexUnavailableReason.UNAUTHENTICATED,
             detail="Codex CLI is not authenticated; run `codex login` and retry",
+            version=version,
+        )
+    try:
+        validate_codex_auth_projection(source=operator_env)
+    except JudgeTransportError:
+        return CodexAvailability(
+            reason=CodexUnavailableReason.AUTH_UNPROJECTABLE,
+            detail=("Codex CLI ChatGPT authentication cannot be projected safely; run `codex login` and retry"),
             version=version,
         )
     return CodexAvailability.available(version)
