@@ -68,7 +68,13 @@ def test_codex_live_oracle_proves_tool_use_without_logging_model_output() -> Non
     assert "read_file" in source
     assert "judge_helper.py" in source
     for node in ast.walk(tree):
-        if isinstance(node, ast.Assert) and node.msg is not None:
+        if not isinstance(node, ast.Assert):
+            continue
+        assert not any(
+            isinstance(test_node, ast.Name) and test_node.id == "captured_stdout"
+            for test_node in ast.walk(node.test)
+        )
+        if node.msg is not None:
             assert not any(
                 isinstance(message_node, ast.Attribute)
                 and message_node.attr == "rationale"

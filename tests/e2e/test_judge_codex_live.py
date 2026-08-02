@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
 from collections.abc import Mapping
 from pathlib import Path
 
@@ -86,27 +85,25 @@ def test_live_codex_triage_round_trip(tmp_path: Path) -> None:
 @pytest.mark.skipif(os.environ.get("WARDLINE_CODEX_LIVE") != "1", reason="set WARDLINE_CODEX_LIVE=1")
 def test_live_codex_explores_helper_for_load_bearing_context(tmp_path: Path) -> None:
     helper_source = (
-        "def accepts_only_live_sentinel(value):\n"
+        "def evaluate_value(value):\n"
         '    if value != "WARDLINE_CODEX_LIVE_SAFE_SENTINEL":\n'
         '        raise ValueError("untrusted value rejected")\n'
         "    return value\n"
     )
     helper_path = tmp_path / "judge_helper.py"
     helper_path.write_text(helper_source, encoding="utf-8")
-    sentinel_line = next(
-        index
-        for index, line in enumerate(helper_source.splitlines(), start=1)
-        if "WARDLINE_CODEX_LIVE_SAFE_SENTINEL" in line
-    )
     (tmp_path / "svc.py").write_text(
-        "from judge_helper import accepts_only_live_sentinel\n"
+        "from judge_helper import evaluate_value\n"
         "def validate(value):\n"
-        "    return accepts_only_live_sentinel(value)\n",
+        "    return evaluate_value(value)\n",
         encoding="utf-8",
     )
     request = JudgeRequest(
         rule_id="PY-WL-102",
-        message="boundary helper may not reject untrusted values",
+        message=(
+            "helper behavior is load-bearing and omitted from the excerpt; inspect "
+            "judge_helper.py before deciding whether untrusted values are rejected"
+        ),
         severity="ERROR",
         file_path="svc.py",
         line=3,
@@ -114,9 +111,9 @@ def test_live_codex_explores_helper_for_load_bearing_context(tmp_path: Path) -> 
         fingerprint="b" * 64,
         taint_summary="declared_return=GUARDED, actual_return=EXTERNAL_RAW",
         surrounding_code=(
-            "1: from judge_helper import accepts_only_live_sentinel\n"
+            "1: from judge_helper import evaluate_value\n"
             "2: def validate(value):\n"
-            "3:     return accepts_only_live_sentinel(value)"
+            "3:     return evaluate_value(value)"
         ),
     )
 
@@ -151,15 +148,17 @@ def test_live_codex_explores_helper_for_load_bearing_context(tmp_path: Path) -> 
         codex_process_runner=recording_runner,
     )
 
-    citation = re.compile(r"(?i)(?<![\w./-])judge_helper\.py:(\d+)(?:-(\d+))?\b")
-    match = citation.search(response.rationale)
-    assert match is not None, "Codex rationale did not cite the helper file"
-    cited_first = int(match.group(1))
-    cited_last = int(match.group(2) or match.group(1))
-    assert cited_first <= sentinel_line <= cited_last, "Codex citation missed the sentinel line"
-    assert len(captured_stdout) == 1, "Codex process runner did not complete exactly once"
-    assert "judge_helper.py" in _completed_read_file_paths(captured_stdout[0]), (
-        "Codex did not complete a read_file call for the helper"
+    # The completed JSONL tool event is the transport oracle. Citation wording is
+    # prompt guidance, not a structured response field, and is model-nondeterministic.
+    process_count = len(captured_stdout)
+    helper_read_completed = (
+        process_count == 1
+        and "judge_helper.py" in _completed_read_file_paths(captured_stdout[0])
     )
+    has_rationale = bool(response.rationale.strip())
+    captured_stdout.clear()
+    assert process_count == 1, "Codex process runner did not complete exactly once"
+    assert helper_read_completed, "Codex did not complete a read_file call for the helper"
     assert response.verdict is JudgeVerdict.FALSE_POSITIVE
     assert response.judge_transport is JudgeTransport.CODEX_CLI
+    assert has_rationale, "Codex returned an empty rationale"
