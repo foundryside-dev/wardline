@@ -319,6 +319,12 @@ class _ScalarScan:
     complete: bool
 
 
+@dataclass(frozen=True, slots=True)
+class _YamlBlockHeader:
+    indent: int
+    inclusive: bool
+
+
 @dataclass(slots=True)
 class _Context:
     scope: CodexToolScope
@@ -570,18 +576,79 @@ def _starts_hash_comment(text: str, index: int, mode: str) -> bool:
     return mode == "adjacent" or (mode == "separated" and (index == 0 or text[index - 1] in " \t\r\n"))
 
 
-def _yaml_block_header_indent(text: str, start: int, end: int) -> int | None:
+def _yaml_block_indicator_suffix(text: str, index: int, end: int) -> bool:
+    while index < end and text[index] in " \t":
+        index += 1
+    properties = 0
+    while index < end and text[index] in "!&":
+        marker = text[index]
+        token_start = index
+        index += 1
+        if marker == "!" and index < end and text[index] == "<":
+            index += 1
+            value_start = index
+            while index < end and text[index] != ">" and index - token_start <= _MAX_PATTERN_CHARS:
+                if text[index] in " \t\r\n":
+                    return False
+                index += 1
+            if index >= end or text[index] != ">" or index == value_start:
+                return False
+            index += 1
+        else:
+            value_start = index
+            while index < end and text[index] not in " \t" and index - token_start <= _MAX_PATTERN_CHARS:
+                character = text[index]
+                if marker == "!":
+                    if not (character.isalnum() or character in "!_:/.,%-"):
+                        return False
+                elif not (character.isalnum() or character in "_.-"):
+                    return False
+                index += 1
+            if index == value_start:
+                return False
+        if index - token_start > _MAX_PATTERN_CHARS or index >= end or text[index] not in " \t":
+            return False
+        while index < end and text[index] in " \t":
+            index += 1
+        properties += 1
+        if properties > 2:
+            return False
+    if index >= end or text[index] not in "|>":
+        return False
+    index += 1
+    if index < end and text[index] in "+-":
+        index += 1
+        if index < end and text[index] in "123456789":
+            index += 1
+    elif index < end and text[index] in "123456789":
+        index += 1
+        if index < end and text[index] in "+-":
+            index += 1
+    if index == end:
+        return True
+    if text[index] not in " \t":
+        return False
+    while index < end and text[index] in " \t":
+        index += 1
+    return index == end or text[index] == "#"
+
+
+def _yaml_block_header_indent(text: str, start: int, end: int) -> _YamlBlockHeader | None:
     if end > start and text[end - 1] == "\r":
         end -= 1
     index = start
     while index < end and text[index] in " \t":
         index += 1
     effective_indent = index - start
+    sequence_header = False
     if index + 1 < end and text[index] == "-" and text[index + 1] in " \t":
+        sequence_header = True
         index += 1
         while index < end and text[index] in " \t":
             index += 1
         effective_indent = index - start
+    if _yaml_block_indicator_suffix(text, index, end):
+        return _YamlBlockHeader(indent=effective_indent, inclusive=sequence_header)
     key_start = index
     quote: str | None = None
     escaped = False
@@ -600,69 +667,24 @@ def _yaml_block_header_indent(text: str, start: int, end: int) -> int | None:
                     quote = None
         elif character in ('"', "'"):
             quote = character
-        elif character == "#":
+        elif character == "#" and (index == key_start or text[index - 1] in " \t"):
             return None
         elif character == ":" and index + 1 < end and text[index + 1] in " \t":
             colon = index
             break
         index += 1
-    if colon <= key_start or quote is not None:
+    if colon <= key_start or quote is not None or not _yaml_block_indicator_suffix(text, colon + 1, end):
         return None
-    index = colon + 1
-    while index < end and text[index] in " \t":
-        index += 1
-    properties = 0
-    while index < end and text[index] in "!&":
-        marker = text[index]
-        token_start = index
-        index += 1
-        if marker == "!" and index < end and text[index] == "<":
-            index += 1
-            value_start = index
-            while index < end and text[index] != ">" and index - token_start <= _MAX_PATTERN_CHARS:
-                if text[index] in " \t\r\n":
-                    return None
-                index += 1
-            if index >= end or text[index] != ">" or index == value_start:
-                return None
-            index += 1
-        else:
-            value_start = index
-            while index < end and text[index] not in " \t" and index - token_start <= _MAX_PATTERN_CHARS:
-                character = text[index]
-                if marker == "!":
-                    if not (character.isalnum() or character in "!_:/.,%-"):
-                        return None
-                elif not (character.isalnum() or character in "_.-"):
-                    return None
-                index += 1
-            if index == value_start:
-                return None
-        if index - token_start > _MAX_PATTERN_CHARS or index >= end or text[index] not in " \t":
-            return None
-        while index < end and text[index] in " \t":
-            index += 1
-        properties += 1
-        if properties > 2:
-            return None
-    if index >= end or text[index] not in "|>":
-        return None
-    index += 1
-    if index < end and text[index] in "+-":
-        index += 1
-        if index < end and text[index] in "123456789":
-            index += 1
-    elif index < end and text[index] in "123456789":
-        index += 1
-        if index < end and text[index] in "+-":
-            index += 1
-    if index == end:
-        return effective_indent
-    if text[index] not in " \t":
-        return None
-    while index < end and text[index] in " \t":
-        index += 1
-    return effective_indent if index == end or text[index] == "#" else None
+    return _YamlBlockHeader(indent=effective_indent, inclusive=False)
+
+
+def _starts_yaml_flow_mapping(text: str, index: int, *, line_token_start: bool, flow_depth: int) -> bool:
+    if line_token_start or index == 0:
+        return True
+    previous = text[index - 1]
+    if previous in " \t\r\n[,":
+        return True
+    return flow_depth > 0 and previous in ":?"
 
 
 def _credential_scalar_starts(text: str, *, source_suffix: str, source_name: str) -> Iterator[tuple[int, bool, str]]:
@@ -676,6 +698,7 @@ def _credential_scalar_starts(text: str, *, source_suffix: str, source_name: str
     line_indent = 0
     line_content_started = False
     yaml_block_indent: int | None = None
+    yaml_block_inclusive = False
     yaml_block_line = False
     yaml_source = source_suffix in {".yaml", ".yml"}
     hash_comment_mode = _hash_comment_mode(source_suffix, text)
@@ -685,9 +708,10 @@ def _credential_scalar_starts(text: str, *, source_suffix: str, source_name: str
             character = text[index]
             if character == "\n":
                 if yaml_source and yaml_block_indent is None and not yaml_block_line:
-                    header_indent = _yaml_block_header_indent(text, line_start, index)
-                    if header_indent is not None:
-                        yaml_block_indent = header_indent
+                    header = _yaml_block_header_indent(text, line_start, index)
+                    if header is not None:
+                        yaml_block_indent = header.indent
+                        yaml_block_inclusive = header.inclusive
                 line_start = index + 1
                 line_indent = 0
                 line_content_started = False
@@ -695,17 +719,20 @@ def _credential_scalar_starts(text: str, *, source_suffix: str, source_name: str
                 in_comment = False
                 index += 1
                 continue
+            line_token_start = False
             if not line_content_started:
                 if character in " \t":
                     line_indent += 1
                     index += 1
                     continue
+                line_token_start = True
                 line_content_started = True
                 if yaml_block_indent is not None:
-                    if line_indent > yaml_block_indent:
+                    if line_indent > yaml_block_indent or (yaml_block_inclusive and line_indent == yaml_block_indent):
                         yaml_block_line = True
                     else:
                         yaml_block_indent = None
+                        yaml_block_inclusive = False
             if yaml_block_line:
                 index += 1
                 continue
@@ -738,7 +765,15 @@ def _credential_scalar_starts(text: str, *, source_suffix: str, source_name: str
                 quote = character
             elif character == "#" and _starts_hash_comment(text, index, hash_comment_mode):
                 in_comment = True
-            elif character == "{":
+            elif character == "{" and (
+                not yaml_source
+                or _starts_yaml_flow_mapping(
+                    text,
+                    index,
+                    line_token_start=line_token_start,
+                    flow_depth=flow_brace_depth,
+                )
+            ):
                 flow_brace_depth += 1
             elif character == "}" and flow_brace_depth:
                 flow_brace_depth -= 1
@@ -749,10 +784,13 @@ def _credential_scalar_starts(text: str, *, source_suffix: str, source_name: str
             line_indent = credential_indent
             line_content_started = True
             if yaml_block_indent is not None:
-                if credential_indent > yaml_block_indent:
+                if credential_indent > yaml_block_indent or (
+                    yaml_block_inclusive and credential_indent == yaml_block_indent
+                ):
                     yaml_block_line = True
                 else:
                     yaml_block_indent = None
+                    yaml_block_inclusive = False
         if quote is not None or substitution_depth or in_comment or yaml_block_line:
             cursor = credential.start()
             continue

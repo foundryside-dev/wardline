@@ -1506,6 +1506,104 @@ def test_yaml_decorated_block_header_brace_does_not_create_flow_context(tmp_path
     assert content not in message
 
 
+def test_yaml_plain_key_embedded_hash_block_header_does_not_create_flow_context(tmp_path: Path) -> None:
+    literal = "real-secret"
+    content = f"note#body: |\n  {{\npassword: null,{literal}"
+    assert yaml.safe_load(content) == {"note#body": "{\n", "password": f"null,{literal}"}
+    (tmp_path / "config.yaml").write_text(content, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="credential_assignment") as exc_info:
+        _read_file(_ctx(tmp_path), {"file_path": "config.yaml"})
+
+    message = str(exc_info.value)
+    assert literal not in message
+    assert content not in message
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        "- |\n  {\n- password: null,real-secret",
+        "- >2-\n  {\n- password: null,real-secret",
+        "|\n  {\n---\npassword: null,real-secret",
+        ">\n  {\n---\npassword: null,real-secret",
+        "!!str |\n  {\n---\npassword: null,real-secret",
+        "- &body |\n  {\n- password: null,real-secret",
+        "---\n- !!str >\n  {\n- password: null,real-secret\n...\n---\nstatus: ok",
+    ],
+)
+def test_yaml_direct_block_scalar_header_brace_does_not_create_flow_context(tmp_path: Path, content: str) -> None:
+    literal = "real-secret"
+    parsed = list(yaml.safe_load_all(content))
+    assert literal in json.dumps(parsed)
+    (tmp_path / "config.yaml").write_text(content, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="credential_assignment") as exc_info:
+        _read_file(_ctx(tmp_path), {"file_path": "config.yaml"})
+
+    message = str(exc_info.value)
+    assert literal not in message
+    assert content not in message
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        "note: foo{bar\npassword: null,real-secret",
+        "note: literal-{\npassword: null,real-secret",
+    ],
+)
+def test_yaml_plain_scalar_adjacent_brace_does_not_create_flow_context(tmp_path: Path, content: str) -> None:
+    literal = "real-secret"
+    parsed = yaml.safe_load(content)
+    assert isinstance(parsed, dict)
+    assert parsed["password"] == f"null,{literal}"
+    (tmp_path / "config.yaml").write_text(content, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="credential_assignment") as exc_info:
+        _read_file(_ctx(tmp_path), {"file_path": "config.yaml"})
+
+    message = str(exc_info.value)
+    assert literal not in message
+    assert content not in message
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        "items: [{\n  password: null,\n  token: false\n}]",
+        "items: [{name: first},{\n  password: null,\n  token: false\n}]",
+    ],
+)
+def test_yaml_structural_adjacent_brace_flow_safe_scalars_remain_readable(tmp_path: Path, content: str) -> None:
+    assert yaml.safe_load(content) is not None
+    (tmp_path / "config.yaml").write_text(content, encoding="utf-8")
+
+    result = _read_file(_ctx(tmp_path), {"file_path": "config.yaml"})
+
+    assert all(line in result for line in content.splitlines())
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        "items: [{\n  password: null,\n  token: real-secret\n}]",
+        "items: [{name: first},{\n  password: null,\n  token: real-secret\n}]",
+    ],
+)
+def test_yaml_structural_adjacent_brace_flow_literal_is_denied_without_echo(tmp_path: Path, content: str) -> None:
+    literal = "real-secret"
+    assert literal in json.dumps(yaml.safe_load(content))
+    (tmp_path / "config.yaml").write_text(content, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="credential_assignment") as exc_info:
+        _read_file(_ctx(tmp_path), {"file_path": "config.yaml"})
+
+    message = str(exc_info.value)
+    assert literal not in message
+    assert content not in message
+
+
 @pytest.mark.parametrize(
     ("field", "prose"),
     [
