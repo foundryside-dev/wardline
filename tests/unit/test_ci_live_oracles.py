@@ -41,6 +41,13 @@ def test_live_judge_oracle_only_claims_schema_contract() -> None:
     assert "prompt_tokens_cached" not in live_judge
 
 
+def test_codex_live_oracle_is_registered_and_default_excluded() -> None:
+    pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+
+    assert '"codex_live: live authenticated Codex CLI judge round-trip (manual/local opt-in)"' in pyproject
+    assert "not codex_live" in pyproject
+
+
 def test_live_oracle_required_mode_forbids_live_oracle_skips(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv(LIVE_ORACLE_REQUIRED_ENV, raising=False)
     assert should_fail_live_oracle_skip(["network"], "skipped") is False
