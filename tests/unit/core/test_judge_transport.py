@@ -649,9 +649,8 @@ def test_probe_requires_safely_projectable_chatgpt_file_auth(
     else:
         monkeypatch.setattr(
             transport_module,
-            "_private_auth_projection_supported",
+            "codex_auth_projection_supported",
             lambda: False,
-            raising=False,
         )
     runner = _successful_runner()
 

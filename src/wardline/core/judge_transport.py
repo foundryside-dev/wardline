@@ -535,9 +535,30 @@ def _ambient_codex_auth_path(source: Mapping[str, str] | None = None) -> Path:
     return codex_home / "auth.json"
 
 
-def _private_auth_projection_supported() -> bool:
-    """Return whether Wardline can enforce private file-auth permissions."""
-    return os.name == "posix"
+def codex_auth_projection_supported() -> bool:
+    """Return whether Wardline can privately stage and scrub Codex file auth."""
+    required_flags = ("O_CLOEXEC", "O_DIRECTORY", "O_NOFOLLOW", "O_NONBLOCK")
+    required_functions = (
+        "close",
+        "fchmod",
+        "fstat",
+        "fsync",
+        "ftruncate",
+        "lseek",
+        "open",
+        "rmdir",
+        "stat",
+        "unlink",
+        "write",
+    )
+    if os.name != "posix" or not all(
+        hasattr(os, name) for name in (*required_flags, *required_functions)
+    ):
+        return False
+    dir_fd_functions = (os.open, os.rmdir, os.stat, os.unlink)
+    return all(function in os.supports_dir_fd for function in dir_fd_functions) and (
+        os.stat in os.supports_follow_symlinks
+    )
 
 
 def _strict_auth_json_object(payload: bytes) -> dict[str, object]:
@@ -725,7 +746,7 @@ def stage_codex_execution_auth(
     minimum_remaining_seconds: float = (CODEX_CLI_TIMEOUT_SECONDS + CODEX_AUTH_EXPIRY_MARGIN_SECONDS),
 ) -> str:
     """Project stateless ChatGPT auth into one private ephemeral Codex home."""
-    if not _private_auth_projection_supported():
+    if not codex_auth_projection_supported():
         raise JudgeTransportError("Codex CLI authentication material could not be staged safely")
     payload = _project_codex_auth(
         _read_bounded_codex_auth(_ambient_codex_auth_path(source)),
@@ -774,7 +795,7 @@ def validate_codex_auth_projection(
     minimum_remaining_seconds: float = (CODEX_CLI_TIMEOUT_SECONDS + CODEX_AUTH_EXPIRY_MARGIN_SECONDS),
 ) -> None:
     """Validate that ambient ChatGPT file auth is safe for stateless projection."""
-    if not _private_auth_projection_supported():
+    if not codex_auth_projection_supported():
         raise JudgeTransportError("Codex CLI authentication material could not be staged safely")
     _project_codex_auth(
         _read_bounded_codex_auth(_ambient_codex_auth_path(source)),
@@ -936,7 +957,7 @@ def probe_codex_cli(*, runner: Runner | None = None) -> CodexAvailability:
     try:
         validate_codex_auth_projection(source=operator_env)
     except JudgeTransportError:
-        if not _private_auth_projection_supported():
+        if not codex_auth_projection_supported():
             detail = "Codex CLI file-auth projection is unsupported on this platform; select OpenRouter instead"
         else:
             detail = "Codex CLI ChatGPT authentication cannot be projected safely; run `codex login` and retry"
