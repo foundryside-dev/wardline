@@ -33,6 +33,7 @@ _MAX_WALK_ENTRIES = 50_000
 _MAX_WALK_DEPTH = 32
 _MAX_PATH_CHARS = 4096
 _MAX_PATTERN_CHARS = 512
+_MAX_SHEBANG_CHARS = 256
 _ROOT_RELATIVE = PurePosixPath(".")
 _SOURCE_REFERENCE_SUFFIXES = frozenset(
     {
@@ -79,7 +80,18 @@ _DENIED_FILE_NAMES = frozenset(
     }
 )
 _DENIED_DIRECTORY_NAMES = frozenset({".agents", ".claude", ".codex", ".cursor", ".git"})
-_DENIED_CREDENTIAL_FILE_NAMES = frozenset({".git-credentials", ".netrc", ".npmrc"})
+_DENIED_CREDENTIAL_FILE_NAMES = frozenset(
+    {
+        ".git-credentials",
+        ".netrc",
+        ".npmrc",
+        ".yarnrc.yml",
+        "gradle.properties",
+        "nuget.config",
+        "pip.conf",
+        "settings.xml",
+    }
+)
 _SENSITIVE_ENVIRONMENT_NAMES = frozenset(
     {
         "ANTHROPIC_API_KEY",
@@ -107,7 +119,7 @@ _CREDENTIAL_LABEL_PATTERN = (
     r"(?<![A-Za-z0-9_])[\"']?"
     r"(?:[A-Za-z0-9]+[._-])*"
     r"(?:secret[._-]access[._-]key|api[._-]?key|client[._-]?secret|password|passwd|secret|token"
-    r"|accessToken|databasePassword|secretAccessKey|apiKey|clientSecret)"
+    r"|accessToken|authToken|databasePassword|refreshToken|secretAccessKey|apiKey|clientSecret)"
     r"[\"']?(?![A-Za-z0-9_])"
 )
 _CREDENTIAL_KEY_RE = re.compile(
@@ -118,11 +130,11 @@ _DECLARATION_PATTERNS = {
     ".bash": (r"export[ \t]+", r""),
     ".c": (r"(?:(?:static|extern|const)[ \t]+)*(?:char[ \t]*\*|char[ \t]+)[ \t]*", r""),
     ".cc": (
-        r"(?:(?:static|extern|const|constexpr)[ \t]+)*(?:(?:std::)?string|char[ \t]*\*)[ \t]+",
+        r"(?:(?:static|extern|const|constexpr)[ \t]+)*(?:(?:std::)?string[ \t]+|char[ \t]*\*[ \t]*)",
         r"",
     ),
     ".cpp": (
-        r"(?:(?:static|extern|const|constexpr)[ \t]+)*(?:(?:std::)?string|char[ \t]*\*)[ \t]+",
+        r"(?:(?:static|extern|const|constexpr)[ \t]+)*(?:(?:std::)?string[ \t]+|char[ \t]*\*[ \t]*)",
         r"",
     ),
     ".cs": (
@@ -132,16 +144,16 @@ _DECLARATION_PATTERNS = {
     ),
     ".go": (r"(?:const|var)[ \t]+", r"(?:[ \t]+[A-Za-z_][A-Za-z0-9_.\[\]*]*)?"),
     ".h": (
-        r"(?:(?:static|extern|const|constexpr)[ \t]+)*(?:(?:std::)?string|char[ \t]*\*)[ \t]+",
+        r"(?:(?:static|extern|const|constexpr)[ \t]+)*(?:(?:std::)?string[ \t]+|char[ \t]*\*[ \t]*)",
         r"",
     ),
     ".hpp": (
-        r"(?:(?:static|extern|const|constexpr)[ \t]+)*(?:(?:std::)?string|char[ \t]*\*)[ \t]+",
+        r"(?:(?:static|extern|const|constexpr)[ \t]+)*(?:(?:std::)?string[ \t]+|char[ \t]*\*[ \t]*)",
         r"",
     ),
     ".java": (
         r"(?:(?:public|protected|private|static|final|volatile|transient)[ \t]+)*"
-        r"(?:String|char\[\]|byte\[\])[ \t]+",
+        r"(?:String|var|char\[\]|byte\[\])[ \t]+",
         r"",
     ),
     ".js": (r"(?:export[ \t]+)?(?:const|let|var)[ \t]+", r"(?:[ \t]*:[ \t]*string)?"),
@@ -156,7 +168,8 @@ _DECLARATION_PATTERNS = {
     ),
     ".mjs": (r"(?:export[ \t]+)?(?:const|let|var)[ \t]+", r"(?:[ \t]*:[ \t]*string)?"),
     ".php": (
-        r"(?:(?:public|protected|private|static|readonly)[ \t]+)*(?:(?:string|array|mixed)\??[ \t]+)?"
+        r"(?:(?:public|protected|private|static|readonly)[ \t]+)*(?:\?(?:string|array|mixed)[ \t]+"
+        r"|(?:string|array|mixed)\??[ \t]+)?"
         r"(?:\$this->|\$)",
         r"",
     ),
@@ -175,12 +188,14 @@ _DECLARATION_PATTERNS = {
         r"(?:[ \t]*:[ \t]*[A-Za-z_][A-Za-z0-9_.<>?!, \t]{0,128})?",
     ),
     ".ts": (
-        r"(?:export[ \t]+)?(?:const|let|var)[ \t]+",
-        r"(?:[ \t]*:[ \t]*string(?:[ \t]*\|[ \t]*null)?)?",
+        r"(?:(?:export[ \t]+)?(?:const|let|var)[ \t]+"
+        r"|(?:(?:public|private|protected|static|readonly|declare|abstract)[ \t]+)+)",
+        r"(?:[ \t]*:[ \t]*[A-Za-z_$][A-Za-z0-9_$.[\]<>| &, \t]{0,127})?",
     ),
     ".tsx": (
-        r"(?:export[ \t]+)?(?:const|let|var)[ \t]+",
-        r"(?:[ \t]*:[ \t]*string(?:[ \t]*\|[ \t]*null)?)?",
+        r"(?:(?:export[ \t]+)?(?:const|let|var)[ \t]+"
+        r"|(?:(?:public|private|protected|static|readonly|declare|abstract)[ \t]+)+)",
+        r"(?:[ \t]*:[ \t]*[A-Za-z_$][A-Za-z0-9_$.[\]<>| &, \t]{0,127})?",
     ),
     ".zsh": (r"export[ \t]+", r""),
 }
@@ -226,7 +241,11 @@ _PYTHON_SOURCE_REFERENCE_RE = re.compile(
     rf")"
     rf")$"
 )
-_JAVA_SOURCE_REFERENCE_RE = re.compile(r"(?i)^config\.get(?:Password|Passwd|ApiKey|ClientSecret|Secret|Token)\(\)$")
+_JAVA_SOURCE_REFERENCE_RE = re.compile(
+    r"(?i)^(?:config|settings)\.get(?:Password|Passwd|ApiKey|ClientSecret|Secret|Token)\(\)$"
+)
+_C_SOURCE_REFERENCE_RE = re.compile(rf"^std::getenv[ \t]*\([ \t]*{_REFERENCE_STRING_PATTERN}[ \t]*\)$")
+_GO_SOURCE_REFERENCE_RE = re.compile(rf"^os\.Getenv[ \t]*\([ \t]*{_REFERENCE_STRING_PATTERN}[ \t]*\)$")
 _PHP_SOURCE_REFERENCE_RE = re.compile(r"(?i)^\$config->(?:password|passwd|apiKey|clientSecret|secret|token)$")
 _RUBY_SOURCE_REFERENCE_RE = re.compile(
     rf"^ENV(?:\.fetch[ \t]*\([ \t]*{_REFERENCE_STRING_PATTERN}[ \t]*\)"
@@ -234,6 +253,9 @@ _RUBY_SOURCE_REFERENCE_RE = re.compile(
 )
 _JAVASCRIPT_SOURCE_REFERENCE_RE = re.compile(
     rf"^process\.env(?:\.[A-Z_][A-Z0-9_]*|[ \t]*\[[ \t]*{_REFERENCE_STRING_PATTERN}[ \t]*\])$"
+)
+_SWIFT_SOURCE_REFERENCE_RE = re.compile(
+    rf"^ProcessInfo\.processInfo\.environment[ \t]*\[[ \t]*{_REFERENCE_STRING_PATTERN}[ \t]*\]$"
 )
 _DOTTED_REFERENCE_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+$")
 _CONSTANT_REFERENCE_RE = re.compile(r"^[A-Z][A-Z0-9_]*$")
@@ -245,7 +267,24 @@ _TYPESCRIPT_CREDENTIAL_ANNOTATION_RE = re.compile(
     r"^string(?:[ \t]*\|[ \t]*null)?(?:[ \t]*=[ \t]*(?P<rhs>.+))?$", re.IGNORECASE
 )
 _TYPESCRIPT_OPTIONAL_CREDENTIAL_RE = re.compile(rf"(?imx)^[ \t]*{_CREDENTIAL_LABEL_PATTERN}\?[ \t]*(?P<delimiter>:)")
-_INLINE_HASH_COMMENT_SUFFIXES = frozenset({".bash", ".py", ".pyi", ".rb", ".sh", ".toml", ".yaml", ".yml", ".zsh"})
+_HASH_COMMENT_MODES = {
+    ".bash": "separated",
+    ".py": "adjacent",
+    ".pyi": "adjacent",
+    ".rb": "adjacent",
+    ".sh": "separated",
+    ".toml": "adjacent",
+    ".yaml": "separated",
+    ".yml": "separated",
+    ".zsh": "separated",
+}
+_SHELL_SHEBANG_RE = re.compile(
+    r"^#![ \t]*(?:/(?:usr/)?bin/(?:sh|bash|zsh)"
+    r"|/usr/bin/env(?:[ \t]+-S)?[ \t]+(?:sh|bash|zsh))(?:[ \t]+[^\r\n]{0,128})?$"
+)
+_SCHEMA_DESCRIPTION_CREDENTIAL_RE = re.compile(
+    rf"(?imx){_CREDENTIAL_LABEL_PATTERN}[ \t]*[:=][ \t]*(?P<value>[^\r\n]{{1,{_MAX_PATTERN_CHARS}}})"
+)
 
 
 class _BudgetStop(Exception):
@@ -458,9 +497,17 @@ def _source_reference(value: str, source_suffix: str) -> bool:
         return True
     if source_suffix == ".java" and _JAVA_SOURCE_REFERENCE_RE.fullmatch(candidate) is not None:
         return True
+    if source_suffix in {".c", ".cc", ".cpp", ".h", ".hpp"} and (
+        _C_SOURCE_REFERENCE_RE.fullmatch(candidate) is not None
+    ):
+        return True
+    if source_suffix == ".go" and _GO_SOURCE_REFERENCE_RE.fullmatch(candidate) is not None:
+        return True
     if source_suffix == ".php" and _PHP_SOURCE_REFERENCE_RE.fullmatch(candidate) is not None:
         return True
     if source_suffix == ".rb" and _RUBY_SOURCE_REFERENCE_RE.fullmatch(candidate) is not None:
+        return True
+    if source_suffix == ".swift" and _SWIFT_SOURCE_REFERENCE_RE.fullmatch(candidate) is not None:
         return True
     return (
         _DOTTED_REFERENCE_RE.fullmatch(candidate) is not None or _CONSTANT_REFERENCE_RE.fullmatch(candidate) is not None
@@ -496,14 +543,84 @@ def _normalized_credential_scalar(value: str) -> tuple[str, bool]:
     return (quoted, True) if quoted is not None else (argument, False)
 
 
+def _shell_shebang(text: str) -> bool:
+    newline = text.find("\n", 0, _MAX_SHEBANG_CHARS + 1)
+    if newline < 0:
+        if len(text) > _MAX_SHEBANG_CHARS:
+            return False
+        first_line = text.rstrip("\r")
+    else:
+        first_line = text[:newline].rstrip("\r")
+    return _SHELL_SHEBANG_RE.fullmatch(first_line) is not None
+
+
+def _hash_comment_mode(source_suffix: str, text: str) -> str:
+    if not source_suffix and _shell_shebang(text):
+        return "separated"
+    return _HASH_COMMENT_MODES.get(source_suffix, "none")
+
+
+def _starts_hash_comment(text: str, index: int, mode: str) -> bool:
+    return mode == "adjacent" or (mode == "separated" and index > 0 and text[index - 1] in " \t")
+
+
 def _credential_scalar_starts(text: str, *, source_suffix: str, source_name: str) -> Iterator[tuple[int, bool, str]]:
+    cursor = 0
+    quote: str | None = None
+    escaped = False
+    flow_brace_depth = 0
+    substitution_depth = 0
+    in_comment = False
+    hash_comment_mode = _hash_comment_mode(source_suffix, text)
     for credential in _CREDENTIAL_KEY_RE.finditer(text):
-        flow_context = source_suffix == ".json" or credential.group("flow") is not None
+        index = cursor
+        while index < credential.start():
+            character = text[index]
+            if in_comment:
+                if character in "\r\n":
+                    in_comment = False
+                index += 1
+                continue
+            if substitution_depth:
+                if character == "{":
+                    substitution_depth += 1
+                elif character == "}":
+                    substitution_depth -= 1
+                index += 1
+                continue
+            if quote is not None:
+                if escaped:
+                    escaped = False
+                elif character == "\\":
+                    escaped = True
+                elif character == quote:
+                    quote = None
+                index += 1
+                continue
+            if character == "$" and index + 1 < credential.start() and text[index + 1] == "{":
+                substitution_depth = 1
+                index += 2
+                continue
+            if character in ('"', "'"):
+                quote = character
+            elif character == "#" and _starts_hash_comment(text, index, hash_comment_mode):
+                in_comment = True
+            elif character == "{":
+                flow_brace_depth += 1
+            elif character == "}" and flow_brace_depth:
+                flow_brace_depth -= 1
+            index += 1
+        if quote is not None or substitution_depth or in_comment:
+            cursor = credential.start()
+            continue
+        flow_context = source_suffix == ".json" or flow_brace_depth > 0
         yield credential.end(), flow_context, credential.group("delimiter")
+        cursor = credential.end()
     if source_suffix in {".ts", ".tsx"}:
         for credential in _TYPESCRIPT_OPTIONAL_CREDENTIAL_RE.finditer(text):
             yield credential.end(), False, credential.group("delimiter")
-    declaration_re = _CREDENTIAL_DECLARATION_RES.get(source_suffix)
+    declaration_suffix = ".sh" if not source_suffix and _shell_shebang(text) else source_suffix
+    declaration_re = _CREDENTIAL_DECLARATION_RES.get(declaration_suffix)
     if declaration_re is not None:
         for credential in declaration_re.finditer(text):
             yield credential.end(), False, credential.group("delimiter")
@@ -514,7 +631,7 @@ def _credential_scalar_starts(text: str, *, source_suffix: str, source_name: str
             yield credential.end(), False, "="
 
 
-def _scan_credential_scalar(text: str, start: int, *, flow_context: bool, inline_hash_comments: bool) -> _ScalarScan:
+def _scan_credential_scalar(text: str, start: int, *, flow_context: bool, hash_comment_mode: str) -> _ScalarScan:
     limit = min(len(text), start + _MAX_PATTERN_CHARS)
     while start < limit and text[start] in " \t":
         start += 1
@@ -569,7 +686,7 @@ def _scan_credential_scalar(text: str, start: int, *, flow_context: bool, inline
             if character == "," and flow_context:
                 terminated = True
                 break
-            if inline_hash_comments and character == "#" and index > 0 and text[index - 1] in " \t":
+            if character == "#" and _starts_hash_comment(text, index, hash_comment_mode):
                 terminated = True
                 break
         index += 1
@@ -618,6 +735,14 @@ def _safe_json_schema_shape(scalar: str, *, source_suffix: str, flow_context: bo
     for schema_field in ("description", "format", "pattern", "title"):
         if schema_field in schema and not isinstance(schema[schema_field], str):
             return False
+    for schema_field in ("description", "title"):
+        description = schema.get(schema_field)
+        if not isinstance(description, str):
+            continue
+        for credential in _SCHEMA_DESCRIPTION_CREDENTIAL_RE.finditer(description):
+            value, _is_literal = _normalized_credential_scalar(credential.group("value"))
+            if not _safe_credential_scalar(value):
+                return False
     for schema_field in ("maxLength", "minLength"):
         if schema_field in schema and (
             not isinstance(schema[schema_field], int)
@@ -657,7 +782,7 @@ def _secret_pattern(text: str, *, source_suffix: str, source_name: str) -> str |
             text,
             scalar_start,
             flow_context=flow_context,
-            inline_hash_comments=source_suffix in _INLINE_HASH_COMMENT_SUFFIXES,
+            hash_comment_mode=_hash_comment_mode(source_suffix, text),
         )
         if not scan.complete:
             return "credential_assignment"
