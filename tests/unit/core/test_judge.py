@@ -453,6 +453,30 @@ def test_verdict_contract_diagnostic_does_not_echo_attacker_key_or_value(
     assert "ATTACKER_VALUE" not in message
 
 
+def test_shared_verdict_parser_rejects_huge_integer_confidence_without_overflow() -> None:
+    from wardline.core.judge import _TransportResult
+
+    huge = "9" * 400
+
+    def _fake(_request: JudgeRequest, _model: str, _max_tokens: int) -> _TransportResult:
+        return _TransportResult(
+            raw_text=(
+                '{"verdict":"TRUE_POSITIVE","rationale":"safe rationale",'
+                f'"confidence":{huge}}}'
+            ),
+            served_model_id="served-model",
+            prompt_tokens_total=1,
+            prompt_tokens_cached=None,
+        )
+
+    with pytest.raises(JudgeContractError) as exc_info:
+        call_judge(_req(), transport_impl=_fake)
+
+    message = str(exc_info.value)
+    assert "confidence" in message
+    assert huge not in message
+
+
 def test_call_judge_truncated_output_crashes(monkeypatch) -> None:
     monkeypatch.setenv("WARDLINE_OPENROUTER_API_KEY", "k")
     t = _FakeTransport(Response(200, _completion(_good_verdict(), finish="length")))

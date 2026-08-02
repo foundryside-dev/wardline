@@ -6,6 +6,7 @@ import signal
 import subprocess
 import tempfile
 import threading
+import time
 from collections.abc import Callable, Mapping
 from contextlib import suppress
 from dataclasses import dataclass
@@ -21,6 +22,7 @@ _DIAGNOSTIC_CHAR_LIMIT = 1_000
 _PREFLIGHT_STDOUT_BYTE_LIMIT = 256 * 1024
 _PREFLIGHT_STDERR_BYTE_LIMIT = 64 * 1024
 _PROCESS_TERMINATION_GRACE_SECONDS = 2.0
+_PROCESS_DRAIN_GRACE_SECONDS = 0.05
 
 CODEX_REQUIRED_EXEC_FLAGS = frozenset(
     {
@@ -73,6 +75,23 @@ _CHILD_ENV_KEYS = frozenset(
         "CODEX_HOME",
         "SSL_CERT_FILE",
         "SSL_CERT_DIR",
+    }
+)
+_LOCALE_ENV_KEYS = frozenset(
+    {
+        "LC_ADDRESS",
+        "LC_ALL",
+        "LC_COLLATE",
+        "LC_CTYPE",
+        "LC_IDENTIFICATION",
+        "LC_MEASUREMENT",
+        "LC_MESSAGES",
+        "LC_MONETARY",
+        "LC_NAME",
+        "LC_NUMERIC",
+        "LC_PAPER",
+        "LC_TELEPHONE",
+        "LC_TIME",
     }
 )
 _EXEC_FLAG_RE = re.compile(r"(?<!\S)(--[a-z0-9][a-z0-9-]*)(?=[=,\s]|$)")
@@ -164,37 +183,71 @@ def _terminate_process_tree(
     posix: bool,
     grace_seconds: float = _PROCESS_TERMINATION_GRACE_SECONDS,
 ) -> None:
-    """Terminate, escalate, and reap the isolated Codex process tree."""
+    """Terminate the isolated tree and reap its leader within one deadline."""
+    if grace_seconds <= 0:
+        raise ValueError("process-tree grace period must be positive")
+    deadline = time.monotonic() + grace_seconds
+
+    def _remaining() -> float:
+        return max(0.0, deadline - time.monotonic())
+
+    def _wait_leader(limit: float) -> bool:
+        try:
+            process.wait(timeout=max(0.0, min(limit, _remaining())))
+            return True
+        except subprocess.TimeoutExpired:
+            return False
+
     if posix:
         with suppress(ProcessLookupError):
             os.killpg(process.pid, signal.SIGTERM)
     else:
         with suppress(ProcessLookupError):
             process.send_signal(getattr(signal, "CTRL_BREAK_EVENT", signal.SIGTERM))
-    leader_reaped = False
-    try:
-        process.wait(timeout=grace_seconds)
-        leader_reaped = True
-    except subprocess.TimeoutExpired:
-        pass
+    leader_reaped = _wait_leader(grace_seconds / 2)
+
     if posix:
         with suppress(ProcessLookupError):
             os.killpg(process.pid, signal.SIGKILL)
-    else:
-        try:
-            subprocess.run(  # noqa: S603,S607 - Windows process-tree teardown
-                ["taskkill", "/PID", str(process.pid), "/T", "/F"],
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                timeout=grace_seconds,
-                check=False,
-            )
-        except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
+        if not leader_reaped:
+            leader_reaped = _wait_leader(_remaining())
+        if not leader_reaped:
             with suppress(ProcessLookupError):
                 process.kill()
+            leader_reaped = _wait_leader(_remaining())
+        if not leader_reaped:
+            raise OSError("bounded POSIX process-tree cleanup failed")
+        return
+
+    taskkill_succeeded = False
+    try:
+        taskkill = subprocess.run(  # noqa: S603,S607 - Windows process-tree teardown
+            ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=max(_remaining(), 0.001),
+            check=False,
+        )
+        taskkill_succeeded = taskkill.returncode == 0
+    except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
+        taskkill_succeeded = False
+
+    if not taskkill_succeeded:
+        with suppress(ProcessLookupError):
+            process.kill()
+        if not leader_reaped:
+            _wait_leader(_remaining())
+        raise OSError("bounded Windows process-tree cleanup failed")
+
     if not leader_reaped:
-        process.wait()
+        leader_reaped = _wait_leader(_remaining())
+    if not leader_reaped:
+        with suppress(ProcessLookupError):
+            process.kill()
+        leader_reaped = _wait_leader(_remaining())
+    if not leader_reaped:
+        raise OSError("bounded Windows process-tree cleanup failed")
 
 
 def _run_bounded_process(
@@ -208,6 +261,8 @@ def _run_bounded_process(
     stderr_limit: int,
 ) -> _BoundedProcessResult:
     """Run one isolated child while draining both output pipes into byte caps."""
+    if timeout <= 0:
+        raise ValueError("process timeout must be positive")
     stdout_capture = _BoundedCapture.create(stdout_limit)
     stderr_capture = _BoundedCapture.create(stderr_limit)
     prompt_file: IO[bytes] | int
@@ -247,23 +302,44 @@ def _run_bounded_process(
         )
         stdout_thread.start()
         stderr_thread.start()
+        timed_out = False
+        cleanup_error: OSError | None = None
         try:
             returncode = process.wait(timeout=timeout)
         except subprocess.TimeoutExpired:
-            _terminate_process_tree(process, posix=is_posix)
+            timed_out = True
+            returncode = -1
+
+        if not timed_out and not is_posix:
+            drain_deadline = time.monotonic() + _PROCESS_DRAIN_GRACE_SECONDS
+            for thread in (stdout_thread, stderr_thread):
+                thread.join(timeout=max(0.0, drain_deadline - time.monotonic()))
+
+        if timed_out or is_posix or stdout_thread.is_alive() or stderr_thread.is_alive():
+            try:
+                _terminate_process_tree(process, posix=is_posix)
+            except OSError as exc:
+                cleanup_error = exc
+
+        reader_deadline = time.monotonic() + _PROCESS_TERMINATION_GRACE_SECONDS
+        for thread in (stdout_thread, stderr_thread):
+            thread.join(timeout=max(0.0, reader_deadline - time.monotonic()))
+
+        readers_alive = stdout_thread.is_alive() or stderr_thread.is_alive()
+        if not stdout_thread.is_alive():
+            process.stdout.close()
+        if not stderr_thread.is_alive():
+            process.stderr.close()
+        if cleanup_error is not None:
+            raise OSError("bounded subprocess process-tree cleanup failed") from None
+        if readers_alive:
+            raise OSError("bounded subprocess output drain did not terminate")
+        if timed_out:
             raise subprocess.TimeoutExpired(args, timeout) from None
-        finally:
-            stdout_thread.join(timeout=_PROCESS_TERMINATION_GRACE_SECONDS)
-            stderr_thread.join(timeout=_PROCESS_TERMINATION_GRACE_SECONDS)
-            if stdout_thread.is_alive():
-                process.stdout.close()
-                stdout_thread.join(timeout=_PROCESS_TERMINATION_GRACE_SECONDS)
-            if stderr_thread.is_alive():
-                process.stderr.close()
-                stderr_thread.join(timeout=_PROCESS_TERMINATION_GRACE_SECONDS)
 
     if stdout_capture.read_failed or stderr_capture.read_failed:
         raise OSError("bounded subprocess output drain failed")
+
     def _decode(data: bytearray) -> tuple[str, bool]:
         try:
             return bytes(data).decode("utf-8", errors="strict"), False
@@ -305,7 +381,9 @@ def codex_child_env(source: Mapping[str, str] | None = None) -> dict[str, str]:
     """Build the minimal environment shared by Codex preflight and execution."""
     environ = os.environ if source is None else source
     child = {
-        key: value for key, value in environ.items() if value and (key in _CHILD_ENV_KEYS or key.startswith("LC_"))
+        key: value
+        for key, value in environ.items()
+        if value and (key in _CHILD_ENV_KEYS or key in _LOCALE_ENV_KEYS)
     }
     child["NO_COLOR"] = "1"
     return child

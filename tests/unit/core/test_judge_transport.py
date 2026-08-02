@@ -281,6 +281,7 @@ def test_codex_child_env_is_an_exact_nonempty_allowlist() -> None:
     source = {
         **allowed,
         "LC_EMPTY": "",
+        "LC_SECRET": "ENV_SENTINEL",
         "PATH_EMPTY_DECOY": "/secret",
         "WARDLINE_OPENROUTER_API_KEY": "sk-or-secret",
         "OPENROUTER_API_KEY": "sk-or-secret",
