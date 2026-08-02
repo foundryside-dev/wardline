@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -13,6 +14,8 @@ from wardline.core.judge_transport import (
     CODEX_REQUIRED_EXEC_FLAGS,
     CodexAvailability,
     CodexUnavailableReason,
+    _BoundedProcessResult,
+    _run_bounded_process,
     codex_child_env,
     probe_codex_cli,
     resolve_judge_transport,
@@ -321,6 +324,65 @@ def test_probe_runs_exact_non_model_commands_with_one_bounded_environment() -> N
         }
 
 
+def test_injected_probe_runner_output_is_bounded_before_capability_parsing() -> None:
+    runner = _RecordingRunner([_completed(stdout="codex-cli 0.146.0\n" + "x" * 300_000)])
+
+    availability = probe_codex_cli(runner=runner)
+
+    assert availability.reason is CodexUnavailableReason.INCOMPATIBLE
+    assert "output limit" in availability.detail
+    assert len(runner.calls) == 1
+
+
+def test_default_preflight_process_runner_bounds_both_output_streams() -> None:
+    result = _run_bounded_process(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import sys; "
+                "sys.stdout.buffer.write(b'o' * 20000); sys.stdout.flush(); "
+                "sys.stderr.buffer.write(b'e' * 20000); sys.stderr.flush()"
+            ),
+        ],
+        input_text=None,
+        timeout=10,
+        env=codex_child_env(),
+        cwd=None,
+        stdout_limit=4096,
+        stderr_limit=4096,
+    )
+
+    assert result.returncode == 0
+    assert len(result.stdout.encode("utf-8")) <= 4096
+    assert len(result.stderr.encode("utf-8")) <= 4096
+    assert result.stdout_truncated is True
+    assert result.stderr_truncated is True
+
+
+def test_probe_treats_invalid_utf8_as_incompatible_without_repair(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import wardline.core.judge_transport as transport_module
+
+    def _invalid(*_args: object, **_kwargs: object) -> _BoundedProcessResult:
+        return _BoundedProcessResult(
+            returncode=0,
+            stdout="",
+            stderr="",
+            stdout_truncated=False,
+            stderr_truncated=False,
+            stdout_decode_error=True,
+        )
+
+    monkeypatch.setattr(transport_module, "_run_bounded_process", _invalid)
+
+    availability = probe_codex_cli()
+
+    assert availability.reason is CodexUnavailableReason.INCOMPATIBLE
+    assert "UTF-8" in availability.detail
+
+
 def test_probe_binary_missing_is_typed_and_does_not_echo_os_detail() -> None:
     secret = "sensitive executable lookup path"
     runner = _RecordingRunner([FileNotFoundError(secret)])
@@ -502,12 +564,28 @@ def test_probe_timeout_or_unexpected_os_error_is_not_fallback_eligible(
 
 
 def test_probe_resolves_default_runner_inside_function(monkeypatch: pytest.MonkeyPatch) -> None:
+    import wardline.core.judge_transport as transport_module
+
     runner = _successful_runner()
 
-    def _patched_run(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
-        return runner(args, **kwargs)
+    def _patched_run(args: list[str], **kwargs: object):  # type: ignore[no-untyped-def]
+        completed = runner(
+            args,
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=kwargs["timeout"],
+            env=kwargs["env"],
+        )
+        return _BoundedProcessResult(
+            returncode=completed.returncode,
+            stdout=completed.stdout,
+            stderr=completed.stderr,
+            stdout_truncated=False,
+            stderr_truncated=False,
+        )
 
-    monkeypatch.setattr(subprocess, "run", _patched_run)
+    monkeypatch.setattr(transport_module, "_run_bounded_process", _patched_run)
 
     availability = probe_codex_cli(runner=None)
 

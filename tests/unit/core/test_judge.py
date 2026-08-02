@@ -115,6 +115,11 @@ def test_policy_hash_is_sha256_of_block() -> None:
     assert expect == JUDGE_POLICY_HASH
 
 
+def test_openrouter_policy_hash_remains_byte_for_byte() -> None:
+    assert JUDGE_POLICY_HASH == "sha256:2659a349456aedc3284606270ce968a811d8aa91708b2956ce366017c932a5f0"
+    assert judge_module._policy_hash(_STATIC_POLICY_BLOCK, JudgeTransport.OPENROUTER) == JUDGE_POLICY_HASH
+
+
 def test_build_messages_caches_static_block_and_wraps_untrusted_data() -> None:
     req = JudgeRequest(
         rule_id="PY-WL-101",
@@ -365,6 +370,19 @@ def test_call_judge_5xx_is_transport_error(monkeypatch) -> None:
         call_judge(_req(), openrouter_transport=_FakeTransport(Response(503, "upstream down")))
 
 
+def test_call_judge_openrouter_status_error_does_not_echo_provider_body(monkeypatch) -> None:
+    monkeypatch.setenv("WARDLINE_OPENROUTER_API_KEY", "k")
+    with pytest.raises(JudgeTransportError) as exc_info:
+        call_judge(
+            _req(),
+            openrouter_transport=_FakeTransport(
+                Response(503, '{"ATTACKER_KEY":"ATTACKER_VALUE"}')
+            ),
+        )
+    assert "ATTACKER_KEY" not in str(exc_info.value)
+    assert "ATTACKER_VALUE" not in str(exc_info.value)
+
+
 def test_call_judge_4xx_is_transport_error(monkeypatch) -> None:
     monkeypatch.setenv("WARDLINE_OPENROUTER_API_KEY", "k")
     with pytest.raises(JudgeTransportError):
@@ -391,6 +409,48 @@ def test_call_judge_malformed_2xx_crashes(monkeypatch, content: str) -> None:
     monkeypatch.setenv("WARDLINE_OPENROUTER_API_KEY", "k")
     with pytest.raises(JudgeContractError):
         call_judge(_req(), openrouter_transport=_FakeTransport(Response(200, _completion(content))))
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        '{"ATTACKER_KEY":"ATTACKER_VALUE"}',
+        "ATTACKER_VALUE",
+        '{"choices":[],"ATTACKER_KEY":"ATTACKER_VALUE"}',
+    ],
+)
+def test_openrouter_contract_diagnostics_do_not_echo_provider_keys_or_values(
+    monkeypatch: pytest.MonkeyPatch,
+    body: str,
+) -> None:
+    monkeypatch.setenv("WARDLINE_OPENROUTER_API_KEY", "k")
+    with pytest.raises(JudgeContractError) as exc_info:
+        call_judge(_req(), openrouter_transport=_FakeTransport(Response(200, body)))
+    message = str(exc_info.value)
+    assert "ATTACKER_KEY" not in message
+    assert "ATTACKER_VALUE" not in message
+
+
+def test_verdict_contract_diagnostic_does_not_echo_attacker_key_or_value(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("WARDLINE_OPENROUTER_API_KEY", "k")
+    raw = json.dumps(
+        {
+            "verdict": "ATTACKER_VALUE",
+            "rationale": "ATTACKER_VALUE",
+            "confidence": 0.5,
+            "ATTACKER_KEY": "ATTACKER_VALUE",
+        }
+    )
+    with pytest.raises(JudgeContractError) as exc_info:
+        call_judge(
+            _req(),
+            openrouter_transport=_FakeTransport(Response(200, _completion(raw))),
+        )
+    message = str(exc_info.value)
+    assert "ATTACKER_KEY" not in message
+    assert "ATTACKER_VALUE" not in message
 
 
 def test_call_judge_truncated_output_crashes(monkeypatch) -> None:
