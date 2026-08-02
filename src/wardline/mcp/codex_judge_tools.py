@@ -9,10 +9,12 @@ from __future__ import annotations
 
 import argparse
 import fnmatch
+import io
 import json
 import os
 import re
 import stat
+import tokenize
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import suppress
 from dataclasses import dataclass, field
@@ -127,7 +129,8 @@ _CREDENTIAL_KEY_RE = re.compile(
     rf"){_CREDENTIAL_LABEL_PATTERN}[ \t]*(?P<delimiter>[:=])"
 )
 _SEMICOLON_CREDENTIAL_KEY_RE = re.compile(rf"(?imx)(?<=;)[ \t]*{_CREDENTIAL_LABEL_PATTERN}[ \t]*(?P<delimiter>[:=])")
-_RAW_CREDENTIAL_KEY_SUFFIXES = frozenset({".py", ".pyi", ".toml", ".yaml", ".yml"})
+_RAW_CREDENTIAL_KEY_SUFFIXES = frozenset({".yaml", ".yml"})
+_PYTHON_LEXICAL_SUFFIXES = frozenset({".py", ".pyi"})
 _SEMICOLON_STATEMENT_SUFFIXES = frozenset({".py", ".pyi"})
 _DECLARATION_PATTERNS = {
     ".bash": (r"export[ \t]+", r""),
@@ -574,12 +577,147 @@ def _starts_hash_comment(text: str, index: int, mode: str) -> bool:
     return mode == "adjacent" or (mode == "separated" and (index == 0 or text[index - 1] in " \t\r\n"))
 
 
+def _python_ignored_credential_spans(text: str) -> tuple[tuple[int, int], ...] | None:
+    if len(text) > _MAX_FILE_BYTES:
+        return None
+    line_starts = [0]
+    line_starts.extend(match.end() for match in re.finditer("\n", text))
+
+    def offset(position: tuple[int, int]) -> int:
+        line, column = position
+        if line < 1 or line > len(line_starts):
+            return len(text)
+        return min(line_starts[line - 1] + column, len(text))
+
+    ignored_token_types = {tokenize.STRING, tokenize.COMMENT}
+    fstring_middle = getattr(tokenize, "FSTRING_MIDDLE", None)
+    if isinstance(fstring_middle, int):
+        ignored_token_types.add(fstring_middle)
+    spans: list[tuple[int, int]] = []
+    try:
+        tokens = tokenize.generate_tokens(io.StringIO(text).readline)
+        for token in tokens:
+            if token.type == tokenize.ERRORTOKEN and not token.string.isspace():
+                return None
+            if token.type in ignored_token_types:
+                spans.append((offset(token.start), offset(token.end)))
+    except (IndentationError, SyntaxError, tokenize.TokenError):
+        return None
+    return tuple(spans)
+
+
+def _toml_basic_escape_end(text: str, start: int, *, multiline: bool) -> int | None:
+    escape_start = start + 1
+    if escape_start >= len(text):
+        return None
+    escape = text[escape_start]
+    if escape in {'"', "\\", "b", "t", "n", "f", "r"}:
+        return escape_start + 1
+    if escape in {"u", "U"}:
+        width = 4 if escape == "u" else 8
+        digits = text[escape_start + 1 : escape_start + 1 + width]
+        if len(digits) != width or any(character not in "0123456789abcdefABCDEF" for character in digits):
+            return None
+        codepoint = int(digits, 16)
+        if codepoint > 0x10FFFF or 0xD800 <= codepoint <= 0xDFFF:
+            return None
+        return escape_start + 1 + width
+    if multiline and escape in "\r\n":
+        if escape == "\r" and (escape_start + 1 >= len(text) or text[escape_start + 1] != "\n"):
+            return None
+        end = escape_start + (2 if escape == "\r" else 1)
+        while end < len(text) and text[end] in " \t\r\n":
+            end += 1
+        return end
+    return None
+
+
+def _toml_string_end(text: str, start: int, *, quote: str, multiline: bool) -> int | None:
+    delimiter_length = 3 if multiline else 1
+    index = start + delimiter_length
+    while index < len(text):
+        character = text[index]
+        if multiline:
+            if character == quote:
+                run_end = index + 1
+                while run_end < len(text) and text[run_end] == quote:
+                    run_end += 1
+                if run_end - index >= 3:
+                    return run_end if run_end - index <= 5 else None
+                index = run_end
+                continue
+        elif character == quote:
+            return index + 1
+        if quote == '"' and character == "\\":
+            escape_end = _toml_basic_escape_end(text, index, multiline=multiline)
+            if escape_end is None:
+                return None
+            index = escape_end
+            continue
+        if character in "\r\n":
+            if not multiline or (character == "\r" and (index + 1 >= len(text) or text[index + 1] != "\n")):
+                return None
+        elif (ord(character) < 0x20 and character != "\t") or ord(character) == 0x7F:
+            return None
+        index += 1
+    return None
+
+
+def _toml_ignored_credential_spans(text: str) -> tuple[tuple[int, int], ...] | None:
+    if len(text) > _MAX_FILE_BYTES:
+        return None
+    spans: list[tuple[int, int]] = []
+    index = 0
+    while index < len(text):
+        character = text[index]
+        if character == "#":
+            end = index + 1
+            while end < len(text) and text[end] not in "\r\n":
+                end += 1
+            spans.append((index, end))
+            index = end
+            continue
+        if character in {'"', "'"}:
+            multiline = text.startswith(character * 3, index)
+            string_end = _toml_string_end(text, index, quote=character, multiline=multiline)
+            if string_end is None:
+                return None
+            spans.append((index, string_end))
+            index = string_end
+            continue
+        index += 1
+    return tuple(spans)
+
+
+def _matches_outside_ignored_spans(
+    pattern: re.Pattern[str], text: str, ignored_spans: tuple[tuple[int, int], ...] | None
+) -> Iterator[re.Match[str]]:
+    span_index = 0
+    for match in pattern.finditer(text):
+        if ignored_spans is not None:
+            while span_index < len(ignored_spans) and ignored_spans[span_index][1] <= match.start():
+                span_index += 1
+            if span_index < len(ignored_spans):
+                span_start, span_end = ignored_spans[span_index]
+                if span_start < match.end() <= span_end:
+                    continue
+        yield match
+
+
 def _credential_scalar_starts(text: str, *, source_suffix: str, source_name: str) -> Iterator[tuple[int, bool, str]]:
+    ignored_spans: tuple[tuple[int, int], ...] | None = None
     if source_suffix in _RAW_CREDENTIAL_KEY_SUFFIXES:
-        # Multiline strings and YAML block scalars may contain arbitrary
-        # unmatched quote or substitution bytes.  Treat structural key
-        # matches as raw evidence instead of approximating language parsers.
+        # YAML block scalars may contain arbitrary unmatched quote or
+        # substitution bytes.  Treat structural key matches as raw evidence.
         for credential in _CREDENTIAL_KEY_RE.finditer(text):
+            yield credential.end(), credential.group("flow") is not None, credential.group("delimiter")
+    elif source_suffix in _PYTHON_LEXICAL_SUFFIXES or source_suffix == ".toml":
+        ignored_spans = (
+            _python_ignored_credential_spans(text)
+            if source_suffix in _PYTHON_LEXICAL_SUFFIXES
+            else _toml_ignored_credential_spans(text)
+        )
+        for credential in _matches_outside_ignored_spans(_CREDENTIAL_KEY_RE, text, ignored_spans):
             yield credential.end(), credential.group("flow") is not None, credential.group("delimiter")
     else:
         cursor = 0
@@ -634,7 +772,7 @@ def _credential_scalar_starts(text: str, *, source_suffix: str, source_name: str
             yield credential.end(), flow_context, credential.group("delimiter")
             cursor = credential.end()
     if source_suffix in _SEMICOLON_STATEMENT_SUFFIXES:
-        for credential in _SEMICOLON_CREDENTIAL_KEY_RE.finditer(text):
+        for credential in _matches_outside_ignored_spans(_SEMICOLON_CREDENTIAL_KEY_RE, text, ignored_spans):
             yield credential.end(), False, credential.group("delimiter")
     if source_suffix in {".ts", ".tsx"}:
         for credential in _TYPESCRIPT_OPTIONAL_CREDENTIAL_RE.finditer(text):

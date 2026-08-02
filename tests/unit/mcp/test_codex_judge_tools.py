@@ -983,10 +983,82 @@ def test_python_assignment_after_multiline_string_on_same_line_is_denied(tmp_pat
     assert content not in message
 
 
+def test_python_multiline_credential_prose_remains_readable(tmp_path: Path) -> None:
+    content = 'note = """documentation\npassword = correct-horse-battery-staple\n"""\n'
+    ast.parse(content)
+    (tmp_path / "configuration.py").write_text(content, encoding="utf-8")
+
+    result = _read_file(_ctx(tmp_path), {"file_path": "configuration.py"})
+    assert all(line in result for line in content.splitlines())
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        'message = "; password = correct-horse-battery-staple"\n',
+        'message = f"; password = correct-horse-battery-staple"\n',
+    ],
+)
+def test_python_string_semicolon_credential_prose_remains_readable(tmp_path: Path, content: str) -> None:
+    ast.parse(content)
+    (tmp_path / "configuration.py").write_text(content, encoding="utf-8")
+
+    result = _read_file(_ctx(tmp_path), {"file_path": "configuration.py"})
+    assert all(line in result for line in content.splitlines())
+
+
+def test_python_comment_semicolon_credential_prose_remains_readable(tmp_path: Path) -> None:
+    content = "# example; password = correct-horse-battery-staple\nstatus = True\n"
+    ast.parse(content)
+    (tmp_path / "configuration.py").write_text(content, encoding="utf-8")
+
+    result = _read_file(_ctx(tmp_path), {"file_path": "configuration.py"})
+    assert all(line in result for line in content.splitlines())
+
+
 def test_toml_multiline_string_quote_cannot_suppress_later_credential(tmp_path: Path) -> None:
     literal = "correct-horse-battery-staple"
     content = f'note = """first line\ninterior " quote\nthird line"""\npassword = "{literal}"\n'
     assert tomllib.loads(content)["password"] == literal
+    (tmp_path / "config.toml").write_text(content, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="credential_assignment") as exc_info:
+        _read_file(_ctx(tmp_path), {"file_path": "config.toml"})
+
+    message = str(exc_info.value)
+    assert literal not in message
+    assert content not in message
+
+
+@pytest.mark.parametrize("delimiter", ['"""', "'''"])
+def test_toml_multiline_credential_prose_remains_readable(tmp_path: Path, delimiter: str) -> None:
+    content = f"note = {delimiter}documentation\npassword = correct-horse-battery-staple\n{delimiter}\n"
+    assert tomllib.loads(content)["note"].startswith("documentation")
+    (tmp_path / "config.toml").write_text(content, encoding="utf-8")
+
+    result = _read_file(_ctx(tmp_path), {"file_path": "config.toml"})
+    assert all(line in result for line in content.splitlines())
+
+
+@pytest.mark.parametrize("filename", ["configuration.py", "config.toml"])
+def test_malformed_source_lexing_remains_fail_closed_without_echo(tmp_path: Path, filename: str) -> None:
+    literal = "correct-horse-battery-staple"
+    content = f'note = """unterminated\npassword = {literal}\n'
+    (tmp_path / filename).write_text(content, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="credential_assignment") as exc_info:
+        _read_file(_ctx(tmp_path), {"file_path": filename})
+
+    message = str(exc_info.value)
+    assert literal not in message
+    assert content not in message
+
+
+def test_malformed_toml_escape_remains_fail_closed_without_echo(tmp_path: Path) -> None:
+    literal = "correct-horse-battery-staple"
+    content = f'note = """invalid \\q\npassword = {literal}\n"""\n'
+    with pytest.raises(tomllib.TOMLDecodeError):
+        tomllib.loads(content)
     (tmp_path / "config.toml").write_text(content, encoding="utf-8")
 
     with pytest.raises(ValueError, match="credential_assignment") as exc_info:
