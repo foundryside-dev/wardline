@@ -295,6 +295,59 @@ def test_codex_jsonl_contract_failures(stdout: str, match: str) -> None:
         _parse_codex_jsonl(stdout, requested_model="gpt-test")
 
 
+def test_codex_jsonl_requires_final_agent_message_before_turn_completion() -> None:
+    completed = json.dumps(
+        {
+            "type": "turn.completed",
+            "usage": {
+                "input_tokens": 20,
+                "cached_input_tokens": 3,
+                "output_tokens": 10,
+            },
+        }
+    )
+    final = json.dumps(
+        {
+            "type": "item.completed",
+            "item": {"type": "agent_message", "text": _verdict()},
+        }
+    )
+
+    with pytest.raises(JudgeContractError, match="precede turn.completed"):
+        _parse_codex_jsonl(completed + "\n" + final, requested_model="gpt-test")
+
+
+@pytest.mark.parametrize(
+    "late_event",
+    [
+        {"type": "item.completed", "item": {"type": "agent_message", "text": _verdict()}},
+        {"type": "item.completed", "item": {"type": "mcp_tool_call", "status": "completed"}},
+        {"type": "turn.started"},
+        {"type": "error", "message": "LATE_EVENT_SECRET_SENTINEL"},
+        {"type": "turn.failed", "message": "LATE_EVENT_SECRET_SENTINEL"},
+    ],
+    ids=["agent-message", "tool-call", "turn", "error", "failed"],
+)
+def test_codex_jsonl_rejects_every_event_after_turn_completion(
+    late_event: dict[str, object],
+) -> None:
+    stdout = _events(_verdict()) + "\n" + json.dumps(late_event)
+
+    with pytest.raises(JudgeContractError, match="after turn.completed") as exc_info:
+        _parse_codex_jsonl(stdout, requested_model="gpt-test")
+
+    assert "LATE_EVENT_SECRET_SENTINEL" not in str(exc_info.value)
+
+
+def test_codex_jsonl_allows_only_whitespace_after_turn_completion() -> None:
+    result = _parse_codex_jsonl(
+        _events(_verdict()) + "\n \t\r\n\n",
+        requested_model="gpt-test",
+    )
+
+    assert result.raw_text == _verdict()
+
+
 @pytest.mark.parametrize(
     "sentinel_stdout",
     [
@@ -531,6 +584,211 @@ def _use_fake_codex_auth(
     codex_home = tmp_path / "fixture-codex-home"
     _write_fake_codex_auth(codex_home / "auth.json")
     monkeypatch.setenv("CODEX_HOME", str(codex_home))
+
+
+class _RetainedCodexTemp:
+    def __init__(self, root: Path, *, cleanup_failure: bool = False) -> None:
+        self.root = root
+        self.cleanup_failure = cleanup_failure
+        self.exit_calls = 0
+        self.auth_entry_present_at_exit: bool | None = None
+        self.credential_bytes_present_at_exit: bool | None = None
+
+    def __enter__(self) -> str:
+        self.root.mkdir()
+        return str(self.root)
+
+    def __exit__(
+        self,
+        _exc_type: object,
+        _exc: object,
+        _traceback: object,
+    ) -> None:
+        self.exit_calls += 1
+        auth_path = self.root / "codex-home" / "auth.json"
+        self.auth_entry_present_at_exit = os.path.lexists(auth_path)
+        credential_sentinels = (
+            _FAKE_ACCOUNT_ID.encode(),
+            _INERT_REFRESH_TOKEN.encode(),
+            b"PARTIAL_AUTH_TOKEN_SENTINEL",
+        )
+        self.credential_bytes_present_at_exit = False
+        for candidate in self.root.rglob("*"):
+            try:
+                if candidate.is_symlink() or not candidate.is_file():
+                    continue
+                data = candidate.read_bytes()
+            except OSError:
+                continue
+            if any(sentinel in data for sentinel in credential_sentinels):
+                self.credential_bytes_present_at_exit = True
+                break
+        if self.cleanup_failure:
+            raise OSError("TEMP_CLEANUP_SECRET_SENTINEL")
+
+
+def _install_retained_codex_temp(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    cleanup_failure: bool = False,
+) -> _RetainedCodexTemp:
+    manager = _RetainedCodexTemp(
+        tmp_path / ("retained-codex-temp-failing" if cleanup_failure else "retained-codex-temp"),
+        cleanup_failure=cleanup_failure,
+    )
+    monkeypatch.setattr(
+        judge_module.tempfile,
+        "TemporaryDirectory",
+        lambda *_args, **_kwargs: manager,
+    )
+    return manager
+
+
+@pytest.mark.parametrize("cleanup_failure", [False, True], ids=["retained", "failing-temp-cleanup"])
+@pytest.mark.parametrize(
+    ("failure_kind", "expected_exception", "expected_message"),
+    [
+        ("launch-missing", JudgeTransportError, "executable became unavailable"),
+        ("timeout", JudgeTransportError, "bounded transport timeout"),
+        ("nonzero", JudgeTransportError, "exited unsuccessfully"),
+        ("malformed-jsonl", JudgeContractError, "malformed JSONL"),
+        ("mutated-auth", JudgeTransportError, "authentication material"),
+    ],
+)
+def test_codex_projected_auth_is_scrubbed_before_retained_temp_cleanup_on_every_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    cleanup_failure: bool,
+    failure_kind: str,
+    expected_exception: type[Exception],
+    expected_message: str,
+) -> None:
+    manager = _install_retained_codex_temp(
+        tmp_path,
+        monkeypatch,
+        cleanup_failure=cleanup_failure,
+    )
+    if failure_kind == "launch-missing":
+        runner: _RecordingProcessRunner = _RecordingProcessRunner(FileNotFoundError("TOKEN_PATH_SENTINEL"))
+    elif failure_kind == "timeout":
+        runner = _RecordingProcessRunner(subprocess.TimeoutExpired(["codex", "exec"], 1, stderr="TOKEN_PATH_SENTINEL"))
+    elif failure_kind == "nonzero":
+        runner = _RecordingProcessRunner(_process_result(returncode=1, stderr="TOKEN_PATH_SENTINEL"))
+    elif failure_kind == "malformed-jsonl":
+        runner = _RecordingProcessRunner(_process_result(stdout="not-json"))
+    else:
+        runner = _MutatingAuthRunner(_process_result())
+
+    with pytest.raises(expected_exception, match=expected_message) as exc_info:
+        _call_codex_cli(
+            _request(),
+            "gpt-test",
+            1024,
+            tool_scope=CodexToolScope(root=tmp_path.resolve()),
+            process_runner=runner,
+        )
+
+    assert "TOKEN_PATH_SENTINEL" not in str(exc_info.value)
+    assert "TEMP_CLEANUP_SECRET_SENTINEL" not in str(exc_info.value)
+    assert manager.exit_calls == 1
+    assert manager.auth_entry_present_at_exit is False
+    assert manager.credential_bytes_present_at_exit is False
+
+
+def test_codex_projected_auth_is_scrubbed_before_retained_temp_cleanup_on_success(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager = _install_retained_codex_temp(tmp_path, monkeypatch)
+
+    _call_codex_cli(
+        _request(),
+        "gpt-test",
+        1024,
+        tool_scope=CodexToolScope(root=tmp_path.resolve()),
+        process_runner=_RecordingProcessRunner(_process_result()),
+    )
+
+    assert manager.exit_calls == 1
+    assert manager.auth_entry_present_at_exit is False
+    assert manager.credential_bytes_present_at_exit is False
+
+
+def test_codex_retention_failure_uses_pre_child_fallback_scrub_even_when_temp_cleanup_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager = _install_retained_codex_temp(tmp_path, monkeypatch, cleanup_failure=True)
+
+    def _fail_retain(_codex_home: Path) -> object:
+        raise OSError("RETAIN_TOKEN_PATH_SENTINEL")
+
+    monkeypatch.setattr(judge_module, "_retain_projected_codex_auth", _fail_retain)
+
+    with pytest.raises(JudgeTransportError) as exc_info:
+        _call_codex_cli(
+            _request(),
+            "gpt-test",
+            1024,
+            tool_scope=CodexToolScope(root=tmp_path.resolve()),
+            process_runner=lambda *_args, **_kwargs: pytest.fail("Codex must not launch"),
+        )
+
+    message = str(exc_info.value)
+    assert "RETAIN_TOKEN_PATH_SENTINEL" not in message
+    assert "TEMP_CLEANUP_SECRET_SENTINEL" not in message
+    assert manager.auth_entry_present_at_exit is False
+    assert manager.credential_bytes_present_at_exit is False
+
+
+def test_codex_partial_stage_failure_scrubs_residual_auth_before_failing_temp_cleanup(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager = _install_retained_codex_temp(tmp_path, monkeypatch, cleanup_failure=True)
+
+    def _partially_stage(codex_home: Path, **_kwargs: object) -> str:
+        codex_home.mkdir(mode=0o700)
+        auth_path = codex_home / "auth.json"
+        auth_path.write_bytes(b"PARTIAL_AUTH_TOKEN_SENTINEL")
+        auth_path.chmod(0o600)
+        raise JudgeTransportError("Codex CLI authentication material could not be staged safely")
+
+    monkeypatch.setattr(judge_module, "stage_codex_execution_auth", _partially_stage)
+
+    with pytest.raises(JudgeTransportError, match="could not be staged safely") as exc_info:
+        _call_codex_cli(
+            _request(),
+            "gpt-test",
+            1024,
+            tool_scope=CodexToolScope(root=tmp_path.resolve()),
+            process_runner=lambda *_args, **_kwargs: pytest.fail("Codex must not launch"),
+        )
+
+    assert "PARTIAL_AUTH_TOKEN_SENTINEL" not in str(exc_info.value)
+    assert "TEMP_CLEANUP_SECRET_SENTINEL" not in str(exc_info.value)
+    assert manager.auth_entry_present_at_exit is False
+    assert manager.credential_bytes_present_at_exit is False
+
+
+def test_codex_failing_temp_cleanup_never_masks_active_base_exception_after_auth_scrub(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager = _install_retained_codex_temp(tmp_path, monkeypatch, cleanup_failure=True)
+
+    with pytest.raises(KeyboardInterrupt, match="PRIMARY_INTERRUPT_SENTINEL"):
+        _call_codex_cli(
+            _request(),
+            "gpt-test",
+            1024,
+            tool_scope=CodexToolScope(root=tmp_path.resolve()),
+            process_runner=_RecordingProcessRunner(KeyboardInterrupt("PRIMARY_INTERRUPT_SENTINEL")),
+        )
+
+    assert manager.auth_entry_present_at_exit is False
+    assert manager.credential_bytes_present_at_exit is False
 
 
 def test_codex_execution_stages_only_auth_in_isolated_homes(
@@ -912,6 +1170,166 @@ def test_codex_execution_rejects_mutated_auth_projection_after_runner(
     assert "MUTATION_SENTINEL" not in str(exc_info.value)
 
 
+class _ReplacingAuthEntryRunner(_RecordingProcessRunner):
+    def __init__(
+        self,
+        result: _BoundedProcessResult,
+        *,
+        replacement: str,
+        symlink_target: Path | None = None,
+    ) -> None:
+        super().__init__(result)
+        self.replacement = replacement
+        self.symlink_target = symlink_target
+
+    def __call__(
+        self,
+        command: list[str],
+        *,
+        input_text: str | None,
+        timeout: float,
+        env: Mapping[str, str],
+        cwd: Path | None,
+        stdout_limit: int,
+        stderr_limit: int,
+    ) -> _BoundedProcessResult:
+        staged_auth = Path(env["CODEX_HOME"]) / "auth.json"
+        staged_auth.unlink()
+        if self.replacement == "missing":
+            pass
+        elif self.replacement == "symlink":
+            assert self.symlink_target is not None
+            staged_auth.symlink_to(self.symlink_target)
+        elif self.replacement == "fifo":
+            os.mkfifo(staged_auth)
+        else:
+            staged_auth.mkdir()
+        return super().__call__(
+            command,
+            input_text=input_text,
+            timeout=timeout,
+            env=env,
+            cwd=cwd,
+            stdout_limit=stdout_limit,
+            stderr_limit=stderr_limit,
+        )
+
+
+def test_codex_auth_cleanup_accepts_already_missing_entry_after_scrubbing_retained_inode(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager = _install_retained_codex_temp(tmp_path, monkeypatch)
+    monkeypatch.setattr(judge_module, "verify_codex_execution_auth", lambda *_args, **_kwargs: None)
+
+    _call_codex_cli(
+        _request(),
+        "gpt-test",
+        1024,
+        tool_scope=CodexToolScope(root=tmp_path.resolve()),
+        process_runner=_ReplacingAuthEntryRunner(
+            _process_result(),
+            replacement="missing",
+        ),
+    )
+
+    assert manager.auth_entry_present_at_exit is False
+    assert manager.credential_bytes_present_at_exit is False
+
+
+def test_codex_auth_cleanup_unlinks_replacement_symlink_without_following_target(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager = _install_retained_codex_temp(tmp_path, monkeypatch)
+    ambient_target = tmp_path / "ambient-auth-target.json"
+    ambient_bytes = b"AMBIENT_AUTH_TARGET_SENTINEL"
+    ambient_target.write_bytes(ambient_bytes)
+    runner = _ReplacingAuthEntryRunner(
+        _process_result(),
+        replacement="symlink",
+        symlink_target=ambient_target,
+    )
+
+    with pytest.raises(JudgeTransportError) as exc_info:
+        _call_codex_cli(
+            _request(),
+            "gpt-test",
+            1024,
+            tool_scope=CodexToolScope(root=tmp_path.resolve()),
+            process_runner=runner,
+        )
+
+    assert "AMBIENT_AUTH_TARGET_SENTINEL" not in str(exc_info.value)
+    assert ambient_target.read_bytes() == ambient_bytes
+    assert manager.auth_entry_present_at_exit is False
+    assert manager.credential_bytes_present_at_exit is False
+
+
+@pytest.mark.parametrize("replacement", ["fifo", "directory"])
+def test_codex_auth_cleanup_rejects_and_removes_nonregular_replacement_without_blocking(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    replacement: str,
+) -> None:
+    manager = _install_retained_codex_temp(tmp_path, monkeypatch)
+    runner = _ReplacingAuthEntryRunner(
+        _process_result(),
+        replacement=replacement,
+    )
+
+    with pytest.raises(JudgeTransportError, match="authentication") as exc_info:
+        _call_codex_cli(
+            _request(),
+            "gpt-test",
+            1024,
+            tool_scope=CodexToolScope(root=tmp_path.resolve()),
+            process_runner=runner,
+        )
+
+    assert str(manager.root) not in str(exc_info.value)
+    assert manager.auth_entry_present_at_exit is False
+    assert manager.credential_bytes_present_at_exit is False
+
+
+@pytest.mark.parametrize("permission_target", ["auth-file", "codex-home"])
+def test_codex_auth_cleanup_handles_permission_mutation_via_retained_descriptors(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    permission_target: str,
+) -> None:
+    manager = _install_retained_codex_temp(tmp_path, monkeypatch)
+    monkeypatch.setattr(judge_module, "verify_codex_execution_auth", lambda *_args, **_kwargs: None)
+
+    def _mutate_permissions(
+        command: list[str],
+        *,
+        input_text: str | None,
+        timeout: float,
+        env: Mapping[str, str],
+        cwd: Path | None,
+        stdout_limit: int,
+        stderr_limit: int,
+    ) -> _BoundedProcessResult:
+        del command, input_text, timeout, cwd, stdout_limit, stderr_limit
+        codex_home = Path(env["CODEX_HOME"])
+        target = codex_home / "auth.json" if permission_target == "auth-file" else codex_home
+        target.chmod(0)
+        return _process_result()
+
+    _call_codex_cli(
+        _request(),
+        "gpt-test",
+        1024,
+        tool_scope=CodexToolScope(root=tmp_path.resolve()),
+        process_runner=_mutate_permissions,
+    )
+
+    assert stat.S_IMODE((manager.root / "codex-home").stat().st_mode) == 0o700
+    assert manager.auth_entry_present_at_exit is False
+    assert manager.credential_bytes_present_at_exit is False
+
+
 @pytest.mark.parametrize("changed_field", ["mode", "identity", "size", "mtime"])
 def test_codex_auth_source_descriptor_must_remain_stable_through_read(
     tmp_path: Path,
@@ -1036,6 +1454,34 @@ def test_codex_file_auth_projection_fails_closed_when_private_acl_is_unsupported
             tool_scope=CodexToolScope(root=tmp_path.resolve()),
             process_runner=lambda *_args, **_kwargs: pytest.fail("Codex must not launch"),
         )
+
+
+@pytest.mark.parametrize("missing_capability", ["O_NOFOLLOW", "O_DIRECTORY", "O_NONBLOCK"])
+def test_codex_safe_scrub_support_requires_every_platform_capability(
+    monkeypatch: pytest.MonkeyPatch,
+    missing_capability: str,
+) -> None:
+    monkeypatch.delattr(judge_module.os, missing_capability)
+
+    assert judge_module._projected_codex_auth_scrub_supported() is False
+
+
+def test_codex_file_auth_projection_fails_closed_when_safe_scrub_is_unsupported(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(judge_module, "_projected_codex_auth_scrub_supported", lambda: False)
+
+    with pytest.raises(JudgeTransportError, match="authentication material") as exc_info:
+        _call_codex_cli(
+            _request(),
+            "gpt-test",
+            1024,
+            tool_scope=CodexToolScope(root=tmp_path.resolve()),
+            process_runner=lambda *_args, **_kwargs: pytest.fail("Codex must not launch"),
+        )
+
+    assert str(tmp_path) not in str(exc_info.value)
 
 
 def test_codex_invocation_is_deterministic_sealed_and_uses_empty_cwd(
@@ -1230,6 +1676,68 @@ def test_codex_cleanup_error_does_not_mask_typed_primary_failure(
         )
 
     assert cleanup_sentinel not in str(exc_info.value)
+
+
+@pytest.mark.parametrize(
+    ("primary", "expected_exception"),
+    [
+        (_process_result(stdout="not-json"), JudgeContractError),
+        (FileNotFoundError("PRIMARY_TOKEN_PATH_SENTINEL"), JudgeTransportError),
+    ],
+    ids=["contract", "transport"],
+)
+def test_codex_auth_scrub_failure_is_visible_sanitized_and_preserves_primary_taxonomy(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    primary: _BoundedProcessResult | BaseException,
+    expected_exception: type[Exception],
+) -> None:
+    def _fail_scrub(*_args: object, **_kwargs: object) -> None:
+        raise OSError("SCRUB_TOKEN_PATH_SENTINEL")
+
+    monkeypatch.setattr(
+        judge_module,
+        "_scrub_projected_codex_auth",
+        _fail_scrub,
+        raising=False,
+    )
+
+    with pytest.raises(expected_exception, match="authentication cleanup") as exc_info:
+        _call_codex_cli(
+            _request(),
+            "gpt-test",
+            1024,
+            tool_scope=CodexToolScope(root=tmp_path.resolve()),
+            process_runner=_RecordingProcessRunner(primary),
+        )
+
+    message = str(exc_info.value)
+    assert "SCRUB_TOKEN_PATH_SENTINEL" not in message
+    assert "PRIMARY_TOKEN_PATH_SENTINEL" not in message
+    assert str(tmp_path) not in message
+
+
+def test_codex_auth_descriptor_close_failure_is_visible_sanitized_and_preserves_contract_taxonomy(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _fail_close(_projected: object) -> None:
+        raise OSError("CLOSE_TOKEN_PATH_SENTINEL")
+
+    monkeypatch.setattr(judge_module._ProjectedCodexAuth, "close", _fail_close)
+
+    with pytest.raises(JudgeContractError, match="authentication cleanup") as exc_info:
+        _call_codex_cli(
+            _request(),
+            "gpt-test",
+            1024,
+            tool_scope=CodexToolScope(root=tmp_path.resolve()),
+            process_runner=_RecordingProcessRunner(_process_result(stdout="not-json")),
+        )
+
+    message = str(exc_info.value)
+    assert "CLOSE_TOKEN_PATH_SENTINEL" not in message
+    assert str(tmp_path) not in message
 
 
 @pytest.mark.parametrize(

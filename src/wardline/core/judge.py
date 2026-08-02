@@ -14,6 +14,7 @@ import hashlib
 import json
 import math
 import os
+import stat
 import subprocess
 import sys
 import tempfile
@@ -385,6 +386,178 @@ CodexProcessRunner = Callable[..., _BoundedProcessResult]
 _CODEX_STDOUT_BYTE_LIMIT = 2 * 1024 * 1024
 _CODEX_STDERR_BYTE_LIMIT = 64 * 1024
 _CODEX_READONLY_MCP_TOOLS = ("read_file", "grep_files", "glob_files")
+_CODEX_AUTH_SCRUB_CHUNK_BYTES = 64 * 1024
+
+
+@dataclass(slots=True)
+class _ProjectedCodexAuth:
+    directory_fd: int
+    auth_fd: int
+    device: int
+    inode: int
+    size: int
+
+    def close(self) -> None:
+        failed = False
+        for descriptor_name in ("auth_fd", "directory_fd"):
+            descriptor = getattr(self, descriptor_name)
+            if descriptor < 0:
+                continue
+            setattr(self, descriptor_name, -1)
+            try:
+                os.close(descriptor)
+            except OSError:
+                failed = True
+        if failed:
+            raise OSError("projected Codex authentication descriptor cleanup failed")
+
+
+def _projected_codex_auth_scrub_supported() -> bool:
+    """Return whether this platform can anchor and scrub projected auth safely."""
+    required_flags = ("O_CLOEXEC", "O_DIRECTORY", "O_NOFOLLOW", "O_NONBLOCK")
+    required_functions = (
+        "close",
+        "fchmod",
+        "fstat",
+        "fsync",
+        "ftruncate",
+        "lseek",
+        "open",
+        "rmdir",
+        "stat",
+        "unlink",
+        "write",
+    )
+    if not all(hasattr(os, name) for name in (*required_flags, *required_functions)):
+        return False
+    dir_fd_functions = (os.open, os.rmdir, os.stat, os.unlink)
+    return all(function in os.supports_dir_fd for function in dir_fd_functions) and (
+        os.stat in os.supports_follow_symlinks
+    )
+
+
+def _open_projected_codex_auth(
+    codex_home: Path,
+    *,
+    require_nonempty: bool,
+) -> _ProjectedCodexAuth:
+    """Open anchored auth descriptors without following replacement links."""
+    if not _projected_codex_auth_scrub_supported():
+        raise OSError("projected Codex authentication cleanup is unsupported")
+    directory_flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | os.O_DIRECTORY | os.O_NOFOLLOW
+    file_flags = os.O_RDWR | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NONBLOCK", 0) | os.O_NOFOLLOW
+    directory_fd = -1
+    auth_fd = -1
+    try:
+        directory_fd = os.open(codex_home, directory_flags)
+        auth_fd = os.open("auth.json", file_flags, dir_fd=directory_fd)
+        metadata = os.fstat(auth_fd)
+        if not stat.S_ISREG(metadata.st_mode) or (require_nonempty and metadata.st_size <= 0):
+            raise OSError("projected Codex authentication file is invalid")
+        return _ProjectedCodexAuth(
+            directory_fd=directory_fd,
+            auth_fd=auth_fd,
+            device=metadata.st_dev,
+            inode=metadata.st_ino,
+            size=metadata.st_size,
+        )
+    except BaseException:
+        close_failed = False
+        for descriptor in (auth_fd, directory_fd):
+            if descriptor >= 0:
+                try:
+                    os.close(descriptor)
+                except OSError:
+                    close_failed = True
+        if close_failed:
+            raise OSError("projected Codex authentication descriptor cleanup failed") from None
+        raise
+
+
+def _retain_projected_codex_auth(codex_home: Path) -> _ProjectedCodexAuth:
+    """Retain anchored descriptors so cleanup survives path and mode mutation."""
+    try:
+        return _open_projected_codex_auth(codex_home, require_nonempty=True)
+    except (OSError, ValueError):
+        raise OSError("projected Codex authentication could not be retained safely") from None
+
+
+def _scrub_projected_codex_auth(projected: _ProjectedCodexAuth) -> None:
+    """Overwrite and unlink projected auth without following a replaced path."""
+    failed = False
+    try:
+        metadata = os.fstat(projected.auth_fd)
+        if (
+            not stat.S_ISREG(metadata.st_mode)
+            or metadata.st_dev != projected.device
+            or metadata.st_ino != projected.inode
+        ):
+            failed = True
+        os.lseek(projected.auth_fd, 0, os.SEEK_SET)
+        remaining = projected.size
+        zero_chunk = b"\0" * min(_CODEX_AUTH_SCRUB_CHUNK_BYTES, max(1, remaining))
+        while remaining > 0:
+            written = os.write(projected.auth_fd, zero_chunk[:remaining])
+            if written <= 0:
+                raise OSError("projected Codex authentication scrub made no progress")
+            remaining -= written
+        os.fsync(projected.auth_fd)
+        os.ftruncate(projected.auth_fd, 0)
+        os.fsync(projected.auth_fd)
+    except (OSError, ValueError):
+        failed = True
+
+    try:
+        os.fchmod(projected.directory_fd, 0o700)
+    except OSError:
+        failed = True
+
+    entry_is_directory = False
+    entry_missing = False
+    try:
+        current = os.stat("auth.json", dir_fd=projected.directory_fd, follow_symlinks=False)
+        entry_is_directory = stat.S_ISDIR(current.st_mode)
+        if not stat.S_ISREG(current.st_mode) or current.st_dev != projected.device or current.st_ino != projected.inode:
+            failed = True
+    except FileNotFoundError:
+        entry_missing = True
+    except OSError:
+        failed = True
+
+    if not entry_missing:
+        try:
+            if entry_is_directory:
+                os.rmdir("auth.json", dir_fd=projected.directory_fd)
+            else:
+                os.unlink("auth.json", dir_fd=projected.directory_fd)
+            os.fsync(projected.directory_fd)
+        except OSError:
+            failed = True
+
+    if failed:
+        raise OSError("projected Codex authentication cleanup failed")
+
+
+def _scrub_unretained_codex_auth(codex_home: Path) -> None:
+    """Scrub partial auth staging before any child process can be launched."""
+    try:
+        projected = _open_projected_codex_auth(codex_home, require_nonempty=False)
+    except FileNotFoundError:
+        return
+    except (OSError, ValueError):
+        raise OSError("partial Codex authentication could not be retained for cleanup") from None
+
+    failed = False
+    try:
+        _scrub_projected_codex_auth(projected)
+    except (OSError, ValueError):
+        failed = True
+    try:
+        projected.close()
+    except OSError:
+        failed = True
+    if failed:
+        raise OSError("partial Codex authentication cleanup failed")
 
 
 def _codex_prompt(
@@ -508,17 +681,24 @@ def _call_codex_cli(
     try:
         temp_manager = tempfile.TemporaryDirectory(prefix="wardline-judge-codex-")
         temp_dir = temp_manager.__enter__()
+        projected_auth: _ProjectedCodexAuth | None = None
+        execution_codex_home: Path | None = None
+        auth_stage_attempted = False
         try:
             temp_root = Path(temp_dir)
             execution_home = temp_root / "home"
             execution_home.mkdir(mode=0o700)
             os.chmod(execution_home, 0o700)
             execution_codex_home = temp_root / "codex-home"
+            if not _projected_codex_auth_scrub_supported():
+                raise JudgeTransportError("Codex CLI authentication material could not be staged safely")
+            auth_stage_attempted = True
             auth_digest = stage_codex_execution_auth(
                 execution_codex_home,
                 source=operator_env,
                 minimum_remaining_seconds=(timeout_seconds + CODEX_AUTH_EXPIRY_MARGIN_SECONDS),
             )
+            projected_auth = _retain_projected_codex_auth(execution_codex_home)
             work_root = temp_root / "work"
             work_root.mkdir()
             schema_path = temp_root / "judge-response.schema.json"
@@ -587,14 +767,32 @@ def _call_codex_cli(
             )
         finally:
             exception_type, exception, traceback = sys.exc_info()
+            auth_cleanup_failed = False
+            if projected_auth is not None:
+                try:
+                    _scrub_projected_codex_auth(projected_auth)
+                except (OSError, ValueError):
+                    auth_cleanup_failed = True
+                try:
+                    projected_auth.close()
+                except OSError:
+                    auth_cleanup_failed = True
+            elif auth_stage_attempted and execution_codex_home is not None:
+                try:
+                    _scrub_unretained_codex_auth(execution_codex_home)
+                except (OSError, ValueError):
+                    auth_cleanup_failed = True
             try:
                 temp_manager.__exit__(exception_type, exception, traceback)
             except OSError:
-                if not isinstance(
-                    exception,
-                    (JudgeTransportError, JudgeContractError),
-                ):
+                if exception is None and not auth_cleanup_failed:
                     raise
+            if auth_cleanup_failed:
+                if isinstance(exception, JudgeContractError):
+                    raise JudgeContractError(
+                        "Codex CLI output contract failed and authentication cleanup also failed"
+                    ) from None
+                raise JudgeTransportError("Codex CLI authentication cleanup failed") from None
     except (JudgeTransportError, JudgeContractError):
         raise
     except OSError:
@@ -802,6 +1000,10 @@ def _parse_codex_jsonl(stdout: str, *, requested_model: str) -> _TransportResult
     for line_number, raw_line in enumerate(_jsonl_records(stdout), start=1):
         if not raw_line.strip():
             continue
+        if completed_turns:
+            raise JudgeContractError(
+                "Codex CLI must emit exactly one turn.completed event and no event after turn.completed"
+            )
         try:
             event = _strict_json_loads(raw_line)
         except JudgeContractError as exc:
@@ -835,6 +1037,8 @@ def _parse_codex_jsonl(stdout: str, *, requested_model: str) -> _TransportResult
                     raise JudgeContractError("Codex CLI agent_message.text must be non-empty")
                 final_text = text
         if event_type == "turn.completed":
+            if final_text is None:
+                raise JudgeContractError("Codex CLI final agent message must precede turn.completed")
             completed_turns += 1
             if completed_turns != 1:
                 raise JudgeContractError("Codex CLI must emit exactly one turn.completed event")
