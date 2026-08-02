@@ -1,121 +1,191 @@
 # LLM triage judge
 
-The judge is an **opt-in** escalation pass. It reads each *active* DEFECT
-finding cold — no human rationale — and labels it `TRUE_POSITIVE` or
-`FALSE_POSITIVE` with a calibrated confidence and a short, verbatim rationale.
-Its practical job for a solo team is a false-positive filter over the taint
-engine's known, documented over-approximations.
+The judge is an **opt-in** escalation pass. It reads each active DEFECT finding
+and labels it `TRUE_POSITIVE` or `FALSE_POSITIVE` with calibrated confidence and
+a short rationale. It never runs as part of `wardline scan`, and it writes no
+suppression unless you pass `--write`.
 
-!!! info "Never required"
-    There is **no LLM cost by default**. `wardline scan` never calls a model.
-    The judge runs only when you invoke `wardline judge`, and even then it only
-    *writes* suppressions when you pass `--write`. The whole feature is additive:
-    Wardline boots, scans, and gates without it.
+Wardline adds no runtime dependency for judging. It either invokes an installed
+Codex CLI or sends a standard-library `urllib` request to OpenRouter; it does not
+install an LLM SDK.
 
-## Dependency-free by design
+## Choose a transport
 
-The judge ships in core with **no new runtime dependency**. Transport is a plain
-standard-library `urllib` POST to OpenRouter's chat-completions endpoint
-(`https://openrouter.ai/api/v1/chat/completions`), at `temperature=0` for
-reproducible verdicts. There is no SDK, no `litellm`, no `anthropic` package — a
-dep-free judge that works out of the box fits "lightweight, opt-in, no cost by
-default".
+The default transport is `auto`:
 
-## The API key
+1. Wardline checks whether a compatible Codex CLI is installed, authenticated,
+   and safe to run through Wardline's isolated auth projection.
+2. If that narrow preflight succeeds, Wardline selects `codex-cli`.
+3. If Codex is missing, incompatible, unauthenticated, or its authentication
+   cannot be projected safely, Wardline selects `openrouter`.
 
-The judge authenticates with an OpenRouter key in
-`WARDLINE_OPENROUTER_API_KEY` (note the `WARDLINE_` prefix). The core reads it
-from the environment only — it never touches the filesystem for the key.
+Selection happens once before per-finding triage. After Wardline selects a
+provider, it **does not switch** providers because of a timeout, non-zero exit,
+provider error, or malformed response. This prevents one run from silently
+mixing adjudication contracts.
 
-As a CLI convenience, if the variable is unset the `judge` command reads a single
-`WARDLINE_OPENROUTER_API_KEY=...` line from a `.env` file in the scan root. An
-already-set environment value always wins; the `.env` read never silently
-overrides it.
+Select a provider explicitly when fallback would hide an operator error:
 
-If no key can be found and there are active defects to triage, the judge fails
-loud with remediation guidance:
-
-```console
-$ wardline judge .
-error: WARDLINE_OPENROUTER_API_KEY is not set. `wardline judge` calls OpenRouter to triage findings. Export the key (`export WARDLINE_OPENROUTER_API_KEY=sk-or-...`) or place it in a .env in the scan root, then re-run.
+```bash
+wardline judge . --transport codex-cli
+wardline judge . --transport openrouter
 ```
+
+An explicit `codex-cli` selection fails with exit `2` when preflight cannot
+prove availability; it never falls back. An explicit `openrouter` selection
+does not probe Codex.
+
+## Authentication
+
+### Codex CLI
+
+Authenticate the local CLI with ChatGPT before running Wardline:
+
+```bash
+codex login
+codex login status
+wardline judge . --transport codex-cli
+```
+
+Wardline does not copy the ChatGPT refresh token into the judge process. It
+projects only a still-valid access identity into a temporary Codex home and
+uses an inert refresh value. The access token must remain valid for the bounded
+judge timeout plus a safety margin. Authentication that Wardline cannot project
+safely is unavailable to `auto`; explicit Codex fails loudly. File-backed
+ChatGPT projection currently requires POSIX private-file permissions, so select
+OpenRouter on platforms where that guarantee is unavailable.
+
+### OpenRouter
+
+Set `WARDLINE_OPENROUTER_API_KEY` in the environment:
+
+```bash
+export WARDLINE_OPENROUTER_API_KEY=fake_openrouter_key_for_docs_only
+wardline judge . --transport openrouter
+```
+
+Replace the obviously fake value with your operator key and never commit the
+real key. As a CLI convenience, `wardline judge` can read one
+`WARDLINE_OPENROUTER_API_KEY=...` entry from `.env` in the scan root when the
+environment variable is unset. An existing environment value always wins.
+Wardline never reads an OpenRouter key from `weft.toml`.
+
+No OpenRouter key is required when Codex is selected.
+
+## Codex execution boundary
+
+Wardline launches `codex exec` in an **empty temporary working directory** with
+ephemeral state, read-only sandboxing, strict configuration, an output schema,
+and a minimal allowlisted environment. It ignores operator config and project
+execution rules. Ambient web access, apps, hooks, memory, goals, subagents,
+remote plugins, arbitrary MCP servers, and write tools are not available to the
+judge.
+
+The scanned repository is not the Codex working directory. Wardline exposes
+only three bounded, read-only tools through a private MCP server:
+
+- `read_file` reads a bounded source excerpt.
+- `grep_files` returns bounded file names or counts for literal matches.
+- `glob_files` returns a bounded set of repository-relative paths.
+
+The tools confine paths to the scan root, reject symlink escapes, instruction
+files, credential files, binaries, invalid UTF-8, oversized input, and common
+secret patterns. Repository source, comments, policy, and instruction-like text
+remain untrusted evidence. If a read is denied or cannot establish the missing
+context, the judge must keep the conservative true-positive prior.
 
 ## Usage
 
-```
-wardline judge [OPTIONS] [PATH]
-
-  Triage active DEFECTs with the opt-in LLM judge.
+```text
+Usage: wardline judge [OPTIONS] [PATH]
 
 Options:
   --config FILE
-  --model TEXT             OpenRouter model slug (overrides config).
-  --context-lines INTEGER  Excerpt radius (default 30).
-  --max-findings INTEGER   Cap findings triaged this run.
-  --write                  Append FALSE_POSITIVE verdicts to
-                           .weft/wardline/judged.yaml (default: dry-run).
-  --trust-judge-policy     Allow loading judge.policy_file from the scanned
-                           project as untrusted judge context.
-  --trust-judge-config     Allow project judge config to select model,
-                           context, cap, and write confidence floor.
-  --trust-pack TEXT        Allow importing this trust-grammar pack from
-                           weft.toml [wardline]. May be repeated.
-  --allow-custom-packs     Allow loading custom trust-grammar packs from the
-                           local project directory.
-  --strict-defaults        Ignore repository-supplied custom configuration
-                           overrides (weft.toml).
-  --help                   Show this message and exit.
+  --transport [auto|codex-cli|openrouter]
+                                  Judge transport: auto, codex-cli, or
+                                  openrouter (default auto).
+  --model TEXT                    OpenRouter model slug (overrides config).
+  --codex-model TEXT              Codex CLI model id (overrides config).
+  --context-lines INTEGER         Excerpt radius (default 30).
+  --max-findings INTEGER          Cap findings triaged this run.
+  --write                         Append FALSE_POSITIVE verdicts to
+                                  .weft/wardline/judged.yaml (default: dry-
+                                  run).
+  --trust-judge-policy            Load judge.policy_file as untrusted context.
+  --trust-judge-config            Allow project config to select transport,
+                                  both models, context, cap, and write floor.
+  --trust-pack TEXT
+  --allow-custom-packs
+  --strict-defaults
+  --help
 ```
 
-The judge loads config, scans, applies the existing baseline / waiver / judged
-suppressions, and triages only the DEFECTs still active after that. So baselines
-and waivers already shrink the set the judge pays for. With nothing active to
-triage, it is a no-op and never calls a model:
+Flags override `[wardline.judge]` configuration. Without
+`--trust-judge-config`, repository configuration cannot choose a transport,
+model, context radius, cap, or write confidence floor. `policy_file` has its
+separate `--trust-judge-policy` gate and remains untrusted model context.
+
+The OpenRouter default is `anthropic/claude-opus-4-8`. The Codex default is
+`gpt-5.6-sol`, with reasoning effort pinned to `high`. These settings are
+separate because an OpenRouter routing slug is not a Codex model identifier.
+Codex JSONL does not attest the backend model that served the request, so its
+recorded `model_id` is the requested Codex model. OpenRouter records the served
+model when the provider supplies it, otherwise the requested model.
+
+The judge applies existing baseline, waiver, and judged suppressions, then
+selects one transport and triages only the remaining active DEFECT findings.
+When no active defects remain, it does not probe or call a provider:
 
 ```console
 $ wardline judge .
 triaged 0 defect(s): 0 true / 0 false
 ```
 
-Flags override config (see the [`[wardline.judge]` config section](configuration.md#wardlinejudge)).
-The default model is `anthropic/claude-opus-4-8`; the default excerpt radius is
-30 lines.
+## Dry run, persistence, and provenance
 
-## Dry-run vs. `--write`
+By default the command is a dry run. Each CLI verdict includes the concrete
+transport and model as `via <judge_transport>/<model_id>`. The MCP `judge` tool
+returns the same `judge_transport` and `model_id` fields in every flattened
+verdict. `judge_transport` is always `codex-cli` or `openrouter`, never `auto`.
 
-By default `judge` is a **dry-run**: it prints a verdict per finding and writes
-nothing. Each line shows a `TP`/`FP` tag, confidence, rule ID, location, and the
-rationale. Low-confidence FP verdicts are tagged `FP?` and noted as held back.
+`--write` persists eligible false positives to
+`.weft/wardline/judged.yaml`. Wardline writes only verdicts at or above
+`judge.write_confidence_floor` (default `0.5`); it reports lower-confidence
+false positives but holds them back.
 
-`--write` appends the FALSE_POSITIVE verdicts to `.weft/wardline/judged.yaml`, which a
-later scan or judge run reads as suppressions
-([judged FPs](suppression.md#judged-false-positives)).
+Each version 2 judged record contains the model's verbatim rationale plus
+`model_id`, `judge_transport`, `confidence`, `recorded_at`, and `policy_hash`.
+Re-judging the same fingerprint replaces that record rather than duplicating
+it. See [Suppressing findings](suppression.md#judged-false-positives) for the
+schema and legacy version 1 compatibility.
 
-### The confidence floor
+## Failure contract
 
-`--write` is conservative: it writes a FALSE_POSITIVE only when its confidence is
-**at or above** `judge.write_confidence_floor` (default `0.5`). The prior is
-deliberate — never suppress a possibly-real defect on a low-confidence guess.
-Below-floor FPs are reported but held back, and the held-back count is surfaced in
-the summary in both modes. Set the floor to `0.0` to write every FP, or raise it
-to demand more confidence.
+Malformed JSONL, missing usage or final output, a schema-invalid verdict, or
+truncated output raises `JudgeContractError` and aborts the run. Wardline never
+coerces malformed model output and never falls back after it.
 
-## What gets written
+A selected provider's timeout or transport failure uses the existing
+skip-and-count behavior. For Codex, Wardline stops launching more subprocesses
+after the first transport failure and counts the remaining findings as skipped;
+it does not send them to OpenRouter. Configuration and authentication failures
+remain loud exit-`2` errors.
 
-Each written record carries the model's verbatim `rationale` (the audit
-primitive) plus `model_id`, `confidence`, `recorded_at`, and a `policy_hash`. A
-re-judge of the same fingerprint updates its record rather than duplicating it.
-The verdict is advisory: the rationale is recorded so a human can audit it and
-revert by deleting the entry. The judge never edits or deletes code. See
-[Suppressing findings](suppression.md#judged-false-positives) for the file shape.
+## Optional live verification
 
-A malformed model response is **never coerced** — it crashes with a contract
-error (exit `2`), because a corrupted audit record is worse than none. A bad key,
-model, or request (a 4xx) is likewise loud (exit `2`); a transient server outage
-(5xx / connection failure) is treated as a skip-and-warn, since the judge is not
-a load-bearing stage.
+The default test suite makes no provider calls. To verify the installed,
+authenticated Codex CLI explicitly:
+
+```bash
+WARDLINE_CODEX_LIVE=1 uv run pytest -m codex_live -v tests/e2e/test_judge_codex_live.py
+```
+
+The live test checks both a normal verdict and a completed bounded repository
+read. OpenRouter retains its separate opt-in `network` live test.
 
 ## See also
 
-- [Configuration](configuration.md#wardlinejudge) — the `[wardline.judge]` settings.
-- [Suppressing findings](suppression.md) — where judged FPs sit among baseline and waivers.
+- [Configuration](configuration.md#wardlinejudge)
+- [Suppressing findings](suppression.md)
+- [CLI reference](../reference/cli.md#wardline-judge)
+- [MCP reference](../reference/mcp.md#judge)

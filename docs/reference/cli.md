@@ -16,7 +16,7 @@ the base CLI.
 | `decorator-coverage` | `wardline[scanner]` | Re-derives trust-decorator coverage rows from the analyzer context. |
 | `baseline create` / `baseline update` | `wardline[scanner]` | Re-derives findings from a scan, so it pulls in the full scanner stack. |
 | `vocab` | `wardline[scanner]` | Ships with the CLI (`click`), which arrives via the `scanner` extra. |
-| `judge` | no extra | The SP5 LLM triage judge talks to OpenRouter over stdlib `urllib`; no third-party dependency is needed beyond the base CLI. |
+| `judge` | no extra | The LLM triage judge uses an installed Codex CLI or OpenRouter over stdlib `urllib`; Wardline adds no LLM SDK dependency. |
 
 Install the scanner stack with:
 
@@ -420,9 +420,11 @@ fix without prompting.
 ## `wardline judge`
 
 **Purpose:** run the opt-in LLM triage judge over the *active* DEFECT findings
-(those not already suppressed by the baseline) and classify each as a true
-positive or a false positive. Dependency-free — it reaches OpenRouter over
-stdlib `urllib`, so no extra is required.
+(those not already suppressed by the baseline, a waiver, or a prior judged
+record) and classify each as a true positive or a false positive. The default
+`auto` transport prefers an installed,
+authenticated Codex CLI and selects OpenRouter only when Codex preflight reports
+it unavailable. No extra Wardline dependency is required.
 
 ```text
 Usage: wardline judge [OPTIONS] [PATH]
@@ -431,28 +433,36 @@ Usage: wardline judge [OPTIONS] [PATH]
 
 Options:
   --config FILE
-  --model TEXT             OpenRouter model slug (overrides config).
-  --context-lines INTEGER  Excerpt radius (default 30).
-  --max-findings INTEGER   Cap findings triaged this run.
-  --write                  Append FALSE_POSITIVE verdicts to
-                           .weft/wardline/judged.yaml (default: dry-run).
-  --trust-judge-policy     Allow loading judge.policy_file from the scanned
-                           project as untrusted judge context.
-  --trust-judge-config     Allow project judge config to select model,
-                           context, cap, and write confidence floor.
-  --trust-pack TEXT        Allow importing this trust-grammar pack from
-                           weft.toml [wardline]. May be repeated.
-  --allow-custom-packs     Allow loading custom trust-grammar packs from the
-                           local project directory.
-  --strict-defaults        Ignore repository-supplied custom configuration
-                           overrides (weft.toml).
-  --help                   Show this message and exit.
+  --transport [auto|codex-cli|openrouter]
+                                  Judge transport: auto, codex-cli, or
+                                  openrouter (default auto).
+  --model TEXT                    OpenRouter model slug (overrides config).
+  --codex-model TEXT              Codex CLI model id (overrides config).
+  --context-lines INTEGER         Excerpt radius (default 30).
+  --max-findings INTEGER          Cap findings triaged this run.
+  --write                         Append FALSE_POSITIVE verdicts to
+                                  .weft/wardline/judged.yaml (default: dry-
+                                  run).
+  --trust-judge-policy            Allow loading judge.policy_file from the
+                                  scanned project as untrusted judge context.
+  --trust-judge-config            Allow project judge config to select
+                                  transport, both models, context, cap, and
+                                  write confidence floor.
+  --trust-pack TEXT               Allow importing this trust-grammar pack from
+                                  weft.toml [wardline]. May be repeated.
+  --allow-custom-packs            Allow loading custom trust-grammar packs
+                                  from the local project directory.
+  --strict-defaults               Ignore repository-supplied custom
+                                  configuration overrides (weft.toml).
+  --help                          Show this message and exit.
 ```
 
 | Option | Effect |
 | --- | --- |
-| `--config FILE` | Path to a `weft.toml` config; its `[wardline]` table supplies the default model slug and other judge settings. The API key is **never** read from config — it comes only from the `WARDLINE_OPENROUTER_API_KEY` environment variable or a `.env` in the scan root. |
-| `--model TEXT` | OpenRouter model slug, overriding whatever the config sets for this one run. |
+| `--config FILE` | Path to a `weft.toml` config. Project judge execution settings take effect only with `--trust-judge-config`; OpenRouter keys are never read from config. |
+| `--transport auto\|codex-cli\|openrouter` | Select the transport. `auto` prefers Codex after capability/auth preflight; explicit Codex fails instead of falling back. Selection occurs once per run. |
+| `--model TEXT` | OpenRouter model slug, overriding the OpenRouter config for this run. |
+| `--codex-model TEXT` | Codex CLI model identifier, overriding `judge.codex_model` for this run. |
 | `--context-lines INTEGER` | How many source lines on each side of a finding to include in the excerpt sent to the model. Default is `30`. |
 | `--max-findings INTEGER` | Hard cap on how many findings to triage this run — useful to bound token spend. |
 | `--write` | Persist `FALSE_POSITIVE` verdicts to `.weft/wardline/judged.yaml`. **Without `--write` the command is a dry run** that prints verdicts but changes nothing. |
@@ -460,10 +470,16 @@ Options:
 By default `judge` is a dry run: it prints what it *would* suppress. Add
 `--write` only once you trust the verdicts.
 
-Dry-run triage of at most 20 findings with an explicit model:
+Dry-run triage of at most 20 findings with explicit OpenRouter selection:
 
 ```text
-$ wardline judge src/ --model anthropic/claude-opus-4-8 --max-findings 20
+$ wardline judge src/ --transport openrouter --model anthropic/claude-opus-4-8 --max-findings 20
+```
+
+Require the local authenticated Codex CLI with its separate model namespace:
+
+```text
+$ wardline judge src/ --transport codex-cli --codex-model gpt-5.6-sol
 ```
 
 Commit the suppressions once satisfied:
@@ -472,7 +488,10 @@ Commit the suppressions once satisfied:
 $ wardline judge src/ --write
 ```
 
-The judge is opt-in and the safe default is dry-run; see the
+Each printed verdict includes `via <judge_transport>/<model_id>`, where the
+transport is concrete (`codex-cli` or `openrouter`, never `auto`). The MCP twin
+returns the same `judge_transport` and `model_id` provenance. The judge is
+opt-in and the safe default is dry-run; see the
 [judge guide](../guides/judge.md) for credentials, the `.weft/wardline/judged.yaml`
 format, and the false-positive workflow.
 

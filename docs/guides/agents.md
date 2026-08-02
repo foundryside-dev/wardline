@@ -211,22 +211,37 @@ The taint engine is intentionally conservative and will sometimes over-report.
 nothing by default — `wardline scan` never calls a model, and `judge` runs only
 when you invoke it.
 
-It also fails loud rather than guessing, which keeps an agent honest: with no
-API key configured it stops with remediation guidance and exit `2`, so the agent
-never mistakes "couldn't triage" for "nothing to triage".
+The default `auto` transport prefers an installed, authenticated Codex CLI and
+uses OpenRouter only when Codex preflight reports an unavailable capability or
+authentication state. Selection happens once before triage; a provider error or
+malformed answer never causes mid-run switching.
 
 ```console
-$ wardline judge .
-error: WARDLINE_OPENROUTER_API_KEY is not set. `wardline judge` calls OpenRouter to triage findings. Export the key (`export WARDLINE_OPENROUTER_API_KEY=sk-or-...`) or place it in a .env in the scan root, then re-run.
+$ codex login status
+Logged in using ChatGPT
+$ wardline judge . --transport codex-cli
 ```
 
-With a key, `judge` triages cold and prints one line per verdict. Pass `--write`
-to append `FALSE_POSITIVE` verdicts to `.weft/wardline/judged.yaml` — but only those
-at or above the **confidence floor** (`judge.write_confidence_floor`, default
-`0.5`); a low-confidence FP is reported and held back rather than silently
-suppressed. A subsequent `wardline scan` reads `.weft/wardline/judged.yaml` and treats
-those fingerprints as suppressed, so the gate stops tripping on triaged
-false positives while still flagging anything new.
+Codex needs no OpenRouter key. To require OpenRouter instead, set
+`WARDLINE_OPENROUTER_API_KEY` in the operator environment and run:
+
+```bash
+wardline judge . --transport openrouter
+```
+
+An explicit unavailable Codex selection and a missing OpenRouter key both fail
+loud with exit `2`, so an agent cannot mistake "couldn't triage" for "nothing to
+triage". Codex runs in Wardline's empty temporary workspace and can inspect only
+bounded, secret-aware repository reads; project instructions remain untrusted
+data.
+
+The command prints the concrete transport and model on every verdict. Pass
+`--write` to append `FALSE_POSITIVE` verdicts to
+`.weft/wardline/judged.yaml` — but only those at or above the **confidence
+floor** (`judge.write_confidence_floor`, default `0.5`). A low-confidence FP is
+reported and held back rather than silently suppressed. A subsequent
+`wardline scan` reads the version 2 record, including `judge_transport` and
+`model_id`, and treats its fingerprint as judged.
 
 For an agent this closes the loop: scan flags a defect, judge classifies it,
 and an above-floor false positive is recorded as an audited suppression rather

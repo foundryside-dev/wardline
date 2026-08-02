@@ -279,18 +279,26 @@ Filigree (network) under the non-dry-run paths.
 
 ## `judge`
 
-**Purpose:** NETWORK — opt-in LLM triage of active defects via OpenRouter
-(needs `WARDLINE_OPENROUTER_API_KEY`). Labels each TRUE/FALSE positive. Never
-run automatically; never folded into `scan`.
+**Purpose:** NETWORK/PROCESS — opt-in LLM triage of active defects. The default
+`auto` transport prefers an installed, authenticated Codex CLI after a bounded
+capability/auth preflight; otherwise it selects OpenRouter. Explicit
+`codex-cli` fails rather than falling back, and no provider switch occurs after
+selection. Never run automatically; never folded into `scan`.
 
-**Key params:** `model` (OpenRouter slug), `max_findings` (bound token spend),
-`write` (append above-floor false positives to `.weft/wardline/judged.yaml` —
-**without it the call is a dry run**), `context_lines`, `config`.
+**Key params:** `transport` (`auto`, `codex-cli`, or `openrouter`), `model`
+(OpenRouter slug), `codex_model` (Codex CLI model identifier), `max_findings`
+(bound token spend), `write` (append above-floor false positives to
+`.weft/wardline/judged.yaml` — **without it the call is a dry run**),
+`context_lines`, `config`, `trust_judge_config`, and `trust_judge_policy`.
+Codex uses `codex login` state and needs no OpenRouter key; OpenRouter needs
+`WARDLINE_OPENROUTER_API_KEY`.
 
 **Returns:** `verdicts[]` (each with `fingerprint`, `rule_id`, `path`, `line`,
 `label` — the TRUE/FALSE-positive classification — `confidence`, and
-`rationale`), plus `wrote` and `held_back` counts. Writes `judged.yaml` only
-under `write: true`. See the [LLM triage judge guide](../guides/judge.md).
+`rationale`, plus concrete `judge_transport` and provider-specific `model_id`),
+plus `wrote` and `held_back` counts. `judge_transport` is never `auto`. Writes
+version 2 `judged.yaml` only under `write: true`. See the
+[LLM triage judge guide](../guides/judge.md).
 
 ## `baseline`
 

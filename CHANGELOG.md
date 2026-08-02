@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Codex CLI judge transport with explicit selection and provenance.** The
+  opt-in judge now accepts `auto`, `codex-cli`, or `openrouter`; `auto` prefers
+  an installed, compatible, safely projectable ChatGPT-authenticated Codex CLI
+  and otherwise selects OpenRouter. Explicit Codex fails loudly, and Wardline
+  never switches providers after selection. Codex runs ephemerally in a sealed
+  read-only environment with a strict output schema and three bounded,
+  secret-aware repository tools. CLI/MCP verdicts and version 2 judged records
+  carry the concrete `judge_transport` and provider-specific `model_id`; legacy
+  version 1 records remain readable as OpenRouter provenance. A separately
+  opted-in authenticated live test covers Codex execution and repository reads.
+
 ## [1.5.0] - 2026-07-31
 
 ### Added
