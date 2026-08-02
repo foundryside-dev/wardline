@@ -2466,7 +2466,8 @@ def test_main_refuses_sensitive_environment_before_server_start(
 
 
 def test_main_validates_root_and_enters_stdio(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    for name in _SENSITIVE_ENVIRONMENT_NAMES:
+        monkeypatch.delenv(name, raising=False)
     captured: list[CodexToolScope] = []
 
     class _FakeServer:
