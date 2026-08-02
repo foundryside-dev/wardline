@@ -589,9 +589,14 @@ def _credential_scalar_starts(text: str, *, source_suffix: str, source_name: str
         index = cursor
         while index < credential.start():
             character = text[index]
+            if character in "\r\n":
+                quote = None
+                escaped = False
+                substitution_depth = 0
+                in_comment = False
+                index += 1
+                continue
             if in_comment:
-                if character in "\r\n":
-                    in_comment = False
                 index += 1
                 continue
             if substitution_depth:
