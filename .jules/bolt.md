@@ -1,0 +1,3 @@
+## 2024-05-24 - Avoid eager list materialization in AST traversal
+**Learning:** In highly recursive AST traversal functions like `_assignment_callee` and `_collect_return_paths`, wrapping `ast.iter_child_nodes()` or `func_node.body` in `list()` eagerly materializes the generator. This forces unnecessary memory allocations for intermediate list structures, hurting performance across large Python codebases.
+**Action:** Accept `Iterable[ast.AST]` in traversal signatures instead of `list[ast.AST]` and pass the generators directly.
