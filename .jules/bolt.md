@@ -1,0 +1,3 @@
+## 2024-08-05 - Avoid eager materialization of AST child nodes
+**Learning:** Eagerly materializing AST node generators (e.g., `list(ast.iter_child_nodes(node))`) into lists creates unnecessary memory allocations and performance overhead, particularly during deep or recursive AST traversals in static analysis like `wardline`'s taint tracking. Functions in Python accept iterables perfectly fine without lists.
+**Action:** When implementing or modifying AST traversal functions, pass generators directly and update type hints to accept `Iterable[ast.AST]` from `collections.abc` instead of eagerly converting them to lists.
