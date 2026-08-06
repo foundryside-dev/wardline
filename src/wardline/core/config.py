@@ -157,6 +157,53 @@ def _is_local_pack(pack_name: str, config_path: Path | None) -> bool:
     return False
 
 
+def _local_pack_import_root(pack_name: str, config_path: Path | None) -> Path | None:
+    """The config-file directory, iff importing ``pack_name`` would resolve inside it.
+
+    A repo-local pack is addressed relative to the config file that declares it,
+    whether or not the caller arranged for that directory to be on ``sys.path``
+    (wardline-7a76f6c5a0 Gap B: neither the CLI nor a long-lived MCP server may
+    require external PYTHONPATH surgery to honor a granted local pack — and the
+    local-pack guard must classify such a pack as local even when no existing
+    ``sys.path`` entry reaches it). Stat-only — never imports.
+    """
+    if config_path is None:
+        return None
+    parts = pack_name.split(".")
+    if not parts or any(not part for part in parts):
+        return None
+    root = config_path.parent.resolve()
+    return root if _local_module_path_exists(root, parts) else None
+
+
+def _import_pack(pack_name: str, local_import_root: Path | None) -> Any:
+    """Import a granted pack; a granted LOCAL pack imports with the config's
+    directory temporarily appended to ``sys.path``.
+
+    Appended, not prepended: a repo checkout may fill the gap when the module
+    only exists locally, never shadow an installed distribution of the same
+    name. The entry is removed again immediately; the module stays cached in
+    ``sys.modules``, so a pack edited under a long-lived server process takes
+    effect on the next process, not the next scan.
+    """
+    import contextlib
+    import importlib
+    import sys
+
+    entry: str | None = None
+    if local_import_root is not None and str(local_import_root) not in sys.path:
+        entry = str(local_import_root)
+        sys.path.append(entry)
+    try:
+        return importlib.import_module(pack_name)
+    except ImportError as exc:
+        raise ConfigError(f"failed to load trust-grammar pack {pack_name!r}: {exc}") from exc
+    finally:
+        if entry is not None:
+            with contextlib.suppress(ValueError):
+                sys.path.remove(entry)
+
+
 def load(
     path: Path | None,
     *,
@@ -226,19 +273,17 @@ def load(
             raise ConfigError(f"packs list in {path.name} must contain strings only")
         if pack_name not in trusted_pack_names:
             raise ConfigError(
-                f"trust-grammar pack {pack_name!r} is not trusted. Pass --trust-pack {pack_name} to allow importing it."
+                f"trust-grammar pack {pack_name!r} is not trusted. Grant it with --trust-pack {pack_name} "
+                f"(CLI or `wardline mcp` launch flag) or the `trust_packs` MCP tool argument."
             )
-        if not trust_local_packs and _is_local_pack(pack_name, path):
+        local_import_root = _local_pack_import_root(pack_name, path)
+        if not trust_local_packs and (local_import_root is not None or _is_local_pack(pack_name, path)):
             raise ConfigError(
                 f"loading trust-grammar pack {pack_name!r} from local project directory is disabled "
-                f"for security. Use trust_local_packs to override."
+                f"for security. Grant it with --allow-custom-packs (CLI or `wardline mcp` launch flag) "
+                f"or the `trust_local_packs` MCP tool argument."
             )
-        try:
-            import importlib
-
-            pkg = importlib.import_module(pack_name)
-        except ImportError as exc:
-            raise ConfigError(f"failed to load trust-grammar pack {pack_name!r}: {exc}") from exc
+        pkg = _import_pack(pack_name, local_import_root)
 
         pack_modules[pack_name] = pkg
         pack_config = getattr(pkg, "config", None)

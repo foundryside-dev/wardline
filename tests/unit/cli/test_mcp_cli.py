@@ -62,6 +62,8 @@ def test_mcp_command_is_registered() -> None:
     assert "stdio" in result.output.lower() or "mcp" in result.output.lower()
     assert "--read-only" in result.output
     assert "--no-network" in result.output
+    assert "--trust-pack" in result.output
+    assert "--allow-custom-packs" in result.output
 
 
 def test_mcp_command_passes_policy_flags(tmp_path, monkeypatch) -> None:
@@ -85,6 +87,8 @@ def test_mcp_command_passes_policy_flags(tmp_path, monkeypatch) -> None:
             filigree_url_source=None,
             allow_write=True,
             allow_network=True,
+            trusted_packs=(),
+            trust_local_packs=False,
         ) -> None:
             captured.update(
                 {
@@ -95,6 +99,8 @@ def test_mcp_command_passes_policy_flags(tmp_path, monkeypatch) -> None:
                     "filigree_url_source": filigree_url_source,
                     "allow_write": allow_write,
                     "allow_network": allow_network,
+                    "trusted_packs": trusted_packs,
+                    "trust_local_packs": trust_local_packs,
                 }
             )
             self.rpc = FakeRpc()
@@ -124,6 +130,48 @@ def test_mcp_command_passes_policy_flags(tmp_path, monkeypatch) -> None:
     assert captured["filigree_url_source"] == "--filigree-url launch flag"
     assert captured["allow_write"] is False
     assert captured["allow_network"] is False
+    assert captured["ran"] is True
+    assert captured["trusted_packs"] == ()
+    assert captured["trust_local_packs"] is False
+
+
+def test_mcp_command_passes_trust_pack_grants(tmp_path, monkeypatch) -> None:
+    """--trust-pack (repeatable) and --allow-custom-packs are the .mcp.json-resident
+    home for pack grants (Gap A, wardline-7a76f6c5a0)."""
+    import wardline.cli.mcp as mcp_cli
+    from wardline.cli.main import cli
+
+    captured: dict[str, object] = {}
+
+    class FakeRpc:
+        def run_stdio(self) -> None:
+            captured["ran"] = True
+
+    class FakeServer:
+        def __init__(self, *, trusted_packs=(), trust_local_packs=False, **kwargs) -> None:
+            captured["trusted_packs"] = trusted_packs
+            captured["trust_local_packs"] = trust_local_packs
+            self.rpc = FakeRpc()
+
+    monkeypatch.setattr(mcp_cli, "WardlineMCPServer", FakeServer)
+
+    result = CliRunner().invoke(
+        cli,
+        [
+            "mcp",
+            "--root",
+            str(tmp_path),
+            "--trust-pack",
+            "scripts.wardline_pack",
+            "--trust-pack",
+            "other.pack",
+            "--allow-custom-packs",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert captured["trusted_packs"] == ("scripts.wardline_pack", "other.pack")
+    assert captured["trust_local_packs"] is True
     assert captured["ran"] is True
 
 

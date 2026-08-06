@@ -50,6 +50,8 @@ def test_mcp_resolves_loomweave_url_from_env(tmp_path: Path, monkeypatch) -> Non
             filigree_url_source: str | None = None,
             allow_write: bool = True,
             allow_network: bool = True,
+            trusted_packs: tuple[str, ...] = (),
+            trust_local_packs: bool = False,
         ) -> None:
             captured["loomweave_url"] = loomweave_url
             captured["loomweave_url_source"] = loomweave_url_source

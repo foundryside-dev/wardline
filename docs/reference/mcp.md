@@ -12,6 +12,17 @@ config. The rest mutate project files on disk or reach a sibling over the
 network; each is marked below. Launch with `--read-only` to drop the
 write-capable tools and `--no-network` to drop the network-capable ones.
 
+Projects that declare trust-grammar packs in `weft.toml [wardline]` need the
+packs *granted* or every scan-shaped call fails closed with "pack … is not
+trusted". Grant them at launch with `--trust-pack <name>` (repeatable) and —
+for packs that live inside the project checkout — `--allow-custom-packs`; the
+server unions those grants into every tool call's `trust_packs` /
+`trust_local_packs` arguments, so callers need not re-pass them. The launch
+flags belong in the launcher config (e.g. the `.mcp.json` args array), keeping
+the grant a human-controlled switch. Per-call arguments still work and only
+ever add to the launch grants. A granted repo-local pack imports relative to
+the config file's directory; no PYTHONPATH arrangement is required.
+
 Every tool is rooted at the launch project path (`--root`, default cwd). Any
 `path`/`config`/`cache_dir`/`output` argument is confined under that root —
 the same containment guarantee as the CLI.

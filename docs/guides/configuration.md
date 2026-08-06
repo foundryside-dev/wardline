@@ -135,7 +135,13 @@ behalf.
 packs = ["myorg.trustpack"]
 ```
 
-Then assert the pack at scan/judge time with `--trust-pack myorg.trustpack`.
+Then assert the pack at scan/judge time with `--trust-pack myorg.trustpack`,
+or grant it once for a whole MCP server with
+`wardline mcp --trust-pack myorg.trustpack` (in the `.mcp.json` args array) so
+agent tool calls need not re-pass `trust_packs`. A pack that lives inside the
+project checkout additionally needs `--allow-custom-packs` (MCP tool argument
+`trust_local_packs`); Wardline imports such a pack relative to the `weft.toml`
+that declares it — no PYTHONPATH arrangement is needed.
 
 ### `[wardline.rules]`
 

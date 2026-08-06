@@ -704,7 +704,12 @@ install-and-federation health checks doctor runs.
 agent transport — it exposes the full tool surface (`scan`, `explain_taint`,
 `assure`, `dossier`, `attest`, and the rest) without scraping terminal output.
 `--read-only` and `--no-network` drop the tools that would write to disk or
-reach a sibling, for a hardened launch.
+reach a sibling, for a hardened launch. `--trust-pack` / `--allow-custom-packs`
+are the server-resident pack grants: set them in the launcher config (e.g. the
+`.mcp.json` args array) so a project whose `weft.toml [wardline]` declares
+trust-grammar packs is scannable without every caller re-passing
+`trust_packs` / `trust_local_packs` per tool call. Per-call grants still work
+and union with the launch grants.
 
 ```text
 Usage: wardline mcp [OPTIONS]
@@ -720,6 +725,12 @@ Options:
                         it.
   --read-only           Disable MCP tools that require write capability.
   --no-network          Disable MCP tools that require network capability.
+  --trust-pack TEXT     Allow importing this trust-grammar pack from weft.toml
+                        [wardline] on every tool call, without callers re-
+                        passing `trust_packs`. May be repeated.
+  --allow-custom-packs  Allow loading custom trust-grammar packs from the
+                        local project directory on every tool call, without
+                        callers re-passing `trust_local_packs`.
   --help                Show this message and exit.
 ```
 

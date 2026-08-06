@@ -4682,12 +4682,19 @@ class WardlineMCPServer:
         filigree_url_source: str | None = None,
         allow_write: bool = True,
         allow_network: bool = True,
+        trusted_packs: tuple[str, ...] = (),
+        trust_local_packs: bool = False,
     ) -> None:
         self.root = Path(root)
         self.loomweave_url = loomweave_url
         self.loomweave_url_source = loomweave_url_source
         self.filigree_url = filigree_url
         self.filigree_url_source = filigree_url_source
+        # Launch-flag pack grants (--trust-pack / --allow-custom-packs): the
+        # .mcp.json-resident, human-controlled counterpart of the CLI scan flags,
+        # unioned into every tool call's arguments (wardline-7a76f6c5a0 Gap A).
+        self._default_trusted_packs = tuple(trusted_packs)
+        self._default_trust_local_packs = bool(trust_local_packs)
         # Recorded once at construction: the doctor tool's freshness verdict compares
         # on-disk source mtimes against this to expose a stale long-lived server.
         self.started_at = time.time()
@@ -5049,6 +5056,36 @@ class WardlineMCPServer:
                 capabilities.add(ToolCapability.NETWORK)
         return frozenset(capabilities)
 
+    def _grants_merged_arguments(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        """Union the launch-flag pack grants into a tool call's arguments.
+
+        Grants only ever ADD: a caller's well-formed values are extended, never
+        replaced, and a malformed caller value (string boolean, non-list packs)
+        is left untouched so the handlers' strict guards still reject it in the
+        degraded no-jsonschema mode — injection must not launder bad input into
+        a valid-looking grant (see test_server_arg_hardening.py). Applied
+        tool-agnostically: tools that take no trust arguments ignore the extra
+        keys, matching the schemas' open additionalProperties posture.
+        """
+        if not self._default_trusted_packs and not self._default_trust_local_packs:
+            return arguments
+        merged = dict(arguments)
+        if self._default_trusted_packs:
+            caller_packs = merged.get("trust_packs")
+            if caller_packs is None or (
+                isinstance(caller_packs, list) and all(isinstance(p, str) for p in caller_packs)
+            ):
+                merged["trust_packs"] = list(
+                    dict.fromkeys([*(caller_packs or []), *self._default_trusted_packs])
+                )
+        if self._default_trust_local_packs:
+            caller_local = merged.get("trust_local_packs")
+            # Identity checks, not equality: 0 == False, and masking a caller's
+            # invalid 0 with True would defeat _bool_arg's strict rejection.
+            if caller_local is None or caller_local is False:
+                merged["trust_local_packs"] = True
+        return merged
+
     def _tools_call(self, params: dict[str, Any]) -> dict[str, Any]:
         name = params.get("name")
         if not isinstance(name, str):
@@ -5078,6 +5115,8 @@ class WardlineMCPServer:
                 print("Warning: jsonschema is missing; skipping MCP tool argument validation.", file=sys.stderr)
             except jsonschema.ValidationError as exc:
                 return self._is_error(f"invalid arguments: {exc.message}")
+
+        arguments = self._grants_merged_arguments(arguments)
 
         try:
             effective_capabilities = self._effective_tool_capabilities(tool, arguments)
