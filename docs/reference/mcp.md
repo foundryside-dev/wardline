@@ -22,6 +22,10 @@ flags belong in the launcher config (e.g. the `.mcp.json` args array), keeping
 the grant a human-controlled switch. Per-call arguments still work and only
 ever add to the launch grants. A granted repo-local pack imports relative to
 the config file's directory; no PYTHONPATH arrangement is required.
+`wardline install` / `doctor --repair` preserve the grant flags when
+canonicalising the `.mcp.json` (and Codex) entries, and doctor's
+`wardline.config` check loads the project config with the grants recorded
+there — a granted, working gate never reads as unhealthy.
 
 Every tool is rooted at the launch project path (`--root`, default cwd). Any
 `path`/`config`/`cache_dir`/`output` argument is confined under that root —

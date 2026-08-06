@@ -38,9 +38,10 @@ from wardline.install.detect import (
 )
 from wardline.install.mcp_json import (
     _codex_config_path,
-    _codex_mcp_entry,
+    _desired_codex_entry,
     _desired_local_entry,
     install_codex_mcp,
+    mcp_entry_pack_grants,
     merge_mcp_entry,
 )
 from wardline.install.skill import install_skill
@@ -306,12 +307,17 @@ def _check_project_mcp(root: Path) -> CheckResult:
     if not isinstance(servers, dict):
         return CheckResult(".mcp.json", False, "missing mcpServers object")
     entry = servers.get("wardline")
-    # An entry carrying operator-pinned --loomweave-url/--filigree-url args is well-formed:
-    # compare against the canonical entry augmented with those preserved args (and the
-    # live server-mode filigree scope, if any), not the bare canonical entry (which would
-    # flag a configured emit target as misconfiguration).
-    if entry != _desired_local_entry(entry, root):
+    # An entry carrying operator-pinned --loomweave-url/--filigree-url args or pack
+    # grants (--trust-pack/--allow-custom-packs) is well-formed: compare against the
+    # canonical entry augmented with those preserved args (and the live server-mode
+    # filigree scope, if any), not the bare canonical entry (which would flag a
+    # configured emit target or granted pack as misconfiguration).
+    if entry is None:
         return CheckResult(".mcp.json", False, "missing wardline server")
+    if entry != _desired_local_entry(entry, root):
+        # A present-but-noncanonical entry is a different failure than an absent one;
+        # calling it "missing" sends the operator chasing the wrong problem.
+        return CheckResult(".mcp.json", False, "wardline entry differs from canonical (doctor --repair reconciles it)")
     return CheckResult(".mcp.json", True, "configured")
 
 
@@ -325,8 +331,12 @@ def _check_codex_mcp() -> CheckResult:
         return CheckResult("Codex MCP", False, "invalid TOML")
     servers = parsed.get("mcp_servers")
     entry = servers.get("wardline") if isinstance(servers, dict) else None
-    if entry != _codex_mcp_entry():
+    if entry is None:
         return CheckResult("Codex MCP", False, "missing wardline server")
+    # Compare against the canonical entry preserving the operator's pack grants,
+    # mirroring the project .mcp.json check.
+    if entry != _desired_codex_entry(entry):
+        return CheckResult("Codex MCP", False, "wardline entry differs from canonical (doctor --repair reconciles it)")
     return CheckResult("Codex MCP", True, "configured")
 
 
@@ -366,8 +376,15 @@ def _check_config(root: Path, *, fixed: bool) -> DoctorCheck:
             return DoctorCheck(
                 "wardline.config", "error", fixed=False, message="[wardline] in weft.toml must be a table"
             )
+    # Load with the pack grants recorded in .mcp.json's wardline entry — the
+    # operator's standing authorization that every server spawn already runs with.
+    # Judging a granted, working gate against a grantless re-derivation produced a
+    # FALSE "pack not trusted" error (wardline-7a76f6c5a0 follow-up). The standing
+    # record (not a live server's in-memory grants) is deliberately the source:
+    # doctor reports the health of the configuration as it will next spawn.
+    trusted_packs, trust_local_packs = mcp_entry_pack_grants(root)
     try:
-        load(cfg_path)
+        load(cfg_path, trusted_packs=trusted_packs, trust_local_packs=trust_local_packs)
     except ConfigError as exc:
         return DoctorCheck("wardline.config", "error", fixed=False, message=str(exc))
     return DoctorCheck("wardline.config", "ok", fixed=fixed)

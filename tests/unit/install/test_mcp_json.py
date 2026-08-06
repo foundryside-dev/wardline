@@ -530,3 +530,135 @@ def test_same_scope_target_handles_malformed_port_without_crashing() -> None:
     assert _same_scope_target("http://localhost:8749/x", "http://localhost:8749/x") is True
     assert _same_scope_target("ftp://localhost:8749/x", "http://localhost:8749/x") is False
     assert _same_scope_target("http://localhost:8749/x?project=a", "http://localhost:8749/x?project=b") is False
+
+
+def test_repair_preserves_trust_pack_grant_flags(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # wardline-7a76f6c5a0 / repair footgun: --trust-pack / --allow-custom-packs are the
+    # operator's standing pack authorization. Stripping them on repair silently returns
+    # a working taint gate to inert — the exact entry shape elspeth runs must round-trip
+    # as "unchanged".
+    monkeypatch.setattr("wardline.install.mcp_json._find_wardline_command", lambda: "/bin/wardline")
+    args = [
+        "mcp",
+        "--root",
+        ".",
+        "--loomweave-url",
+        "http://127.0.0.1:10251",
+        "--trust-pack",
+        "scripts.wardline_pack",
+        "--allow-custom-packs",
+    ]
+    (tmp_path / ".mcp.json").write_text(
+        json.dumps(
+            {"mcpServers": {"wardline": {"type": "stdio", "command": "/bin/wardline", "args": list(args)}}}
+        ),
+        encoding="utf-8",
+    )
+    assert merge_mcp_entry(tmp_path) == "unchanged"
+    entry = json.loads((tmp_path / ".mcp.json").read_text(encoding="utf-8"))["mcpServers"]["wardline"]
+    assert entry["args"] == args
+
+
+def test_repair_preserves_repeated_trust_pack_grants(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("wardline.install.mcp_json._find_wardline_command", lambda: "/bin/wardline")
+    (tmp_path / ".mcp.json").write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "wardline": {
+                        "type": "stdio",
+                        "command": "OLD",
+                        "args": ["mcp", "--trust-pack", "a.pack", "--trust-pack", "b.pack"],
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert merge_mcp_entry(tmp_path) == "updated"  # command refresh + canonical base args
+    entry = json.loads((tmp_path / ".mcp.json").read_text(encoding="utf-8"))["mcpServers"]["wardline"]
+    assert entry["args"] == ["mcp", "--root", ".", "--trust-pack", "a.pack", "--trust-pack", "b.pack"]
+    assert merge_mcp_entry(tmp_path) == "unchanged"
+
+
+def test_repair_drops_dangling_trust_pack_but_keeps_bare_grant(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A --trust-pack with a missing or flag-shaped value is malformed: it must be
+    # dropped cleanly, and must never swallow the following --allow-custom-packs.
+    monkeypatch.setattr("wardline.install.mcp_json._find_wardline_command", lambda: "/bin/wardline")
+    (tmp_path / ".mcp.json").write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "wardline": {
+                        "type": "stdio",
+                        "command": "/bin/wardline",
+                        "args": ["mcp", "--root", ".", "--trust-pack", "--allow-custom-packs"],
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert merge_mcp_entry(tmp_path) == "updated"
+    entry = json.loads((tmp_path / ".mcp.json").read_text(encoding="utf-8"))["mcpServers"]["wardline"]
+    assert entry["args"] == ["mcp", "--root", ".", "--allow-custom-packs"]
+
+
+def test_repair_keeps_grants_while_dropping_untrusted_remote_url(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("wardline.install.mcp_json._find_wardline_command", lambda: "/bin/wardline")
+    (tmp_path / ".mcp.json").write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "wardline": {
+                        "type": "stdio",
+                        "command": "/bin/wardline",
+                        "args": [
+                            "mcp",
+                            "--root",
+                            ".",
+                            "--loomweave-url",
+                            "http://evil.example.com:9100",
+                            "--trust-pack",
+                            "scripts.wardline_pack",
+                            "--allow-custom-packs",
+                        ],
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert merge_mcp_entry(tmp_path) == "updated"
+    entry = json.loads((tmp_path / ".mcp.json").read_text(encoding="utf-8"))["mcpServers"]["wardline"]
+    assert entry["args"] == [
+        "mcp",
+        "--root",
+        ".",
+        "--trust-pack",
+        "scripts.wardline_pack",
+        "--allow-custom-packs",
+    ]
+
+
+def test_install_codex_mcp_preserves_trust_pack_grants(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # The global Codex entry gets the same repair discipline as .mcp.json: an
+    # operator's pack grants are preserved verbatim, never stripped back to inert.
+    home = tmp_path / "home"
+    config = home / ".codex" / "config.toml"
+    config.parent.mkdir(parents=True)
+    config.write_text(
+        '[mcp_servers.wardline]\ncommand = "/bin/wardline"\n'
+        'args = ["mcp", "--trust-pack", "scripts.wardline_pack", "--allow-custom-packs"]\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("wardline.install.mcp_json.Path.home", lambda: home)
+    monkeypatch.setattr("wardline.install.mcp_json._find_wardline_command", lambda: "/bin/wardline")
+
+    assert install_codex_mcp(tmp_path) == "unchanged"
+    content = config.read_text(encoding="utf-8")
+    assert '"--trust-pack", "scripts.wardline_pack", "--allow-custom-packs"' in content
