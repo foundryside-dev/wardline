@@ -388,3 +388,58 @@ def test_own_marker_shielded_in_unclosed_foreign_converges(tmp_path: Path) -> No
     assert f.read_text(encoding="utf-8") == after_first
     assert inject_block(f) == "unchanged"
     assert f.read_text(encoding="utf-8") == after_first
+
+
+def _pack_project(tmp_path: Path, *, local: bool) -> Path:
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    (proj / "weft.toml").write_text('[wardline]\npacks = ["scripts.guidepack"]\n', encoding="utf-8")
+    if local:
+        (proj / "scripts").mkdir()
+        (proj / "scripts" / "guidepack.py").write_text("config = {}\n", encoding="utf-8")
+    return proj
+
+
+def test_inject_emits_granted_scan_line_for_pack_project(tmp_path: Path) -> None:
+    # wardline-2e4443418c: in a pack-declaring project the stock guidance command
+    # exits 2 (pack not trusted) — the installer must emit the granted command line
+    # and say why, or it ships guidance broken for the very feature it supports.
+    proj = _pack_project(tmp_path, local=True)
+    target = proj / "CLAUDE.md"
+    assert inject_block(target) == "created"
+    text = target.read_text(encoding="utf-8")
+    assert "wardline scan . --fail-on ERROR --trust-pack scripts.guidepack --allow-custom-packs" in text
+    assert "scripts.guidepack" in text
+    assert "not trusted" in text or "grant" in text.lower()
+
+
+def test_inject_omits_local_grant_for_installed_pack(tmp_path: Path) -> None:
+    # A declared pack whose files are NOT in the project directory needs only the
+    # name grant, not --allow-custom-packs.
+    proj = _pack_project(tmp_path, local=False)
+    target = proj / "CLAUDE.md"
+    inject_block(target)
+    text = target.read_text(encoding="utf-8")
+    assert "--trust-pack scripts.guidepack" in text
+    assert "--allow-custom-packs" not in text
+
+
+def test_inject_stock_text_without_packs(tmp_path: Path) -> None:
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    target = proj / "CLAUDE.md"
+    inject_block(target)
+    text = target.read_text(encoding="utf-8")
+    assert "wardline scan . --fail-on ERROR`" in text
+    assert "--trust-pack" not in text
+
+
+def test_inject_pack_aware_block_is_idempotent_and_upgrades_stock(tmp_path: Path) -> None:
+    proj = _pack_project(tmp_path, local=True)
+    target = proj / "CLAUDE.md"
+    # A stale stock block (written before the pack was declared) upgrades in place...
+    _atomic_write_text(target, render_block() + "\n")
+    assert inject_block(target) == "updated"
+    # ...and the pack-aware block is stable thereafter.
+    assert inject_block(target) == "unchanged"
+    assert target.read_text(encoding="utf-8").count("wardline:instructions:v") == 1

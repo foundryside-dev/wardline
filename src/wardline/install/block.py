@@ -31,14 +31,55 @@ AGENTS_MD = "AGENTS.md"
 
 _BLOCK_VERSION = "1"
 
-_BODY = (
-    "This project uses **wardline** as its trust-boundary gate. Before handing "
-    "back code that touches external input, run `wardline scan . --fail-on ERROR` "
-    "(exit 0 = clean, 1 = gate tripped, 2 = wardline error) and fix findings at "
-    "the boundary, not the sink. The full scan -> explain -> fix -> rescan loop "
-    "and the baseline-vs-waiver discipline live in the `wardline-gate` skill and "
-    "in `docs/agents.md`."
-)
+def _compose_body(grant_suffix: str = "", grant_sentence: str = "") -> str:
+    return (
+        "This project uses **wardline** as its trust-boundary gate. Before handing "
+        f"back code that touches external input, run `wardline scan . --fail-on ERROR{grant_suffix}` "
+        "(exit 0 = clean, 1 = gate tripped, 2 = wardline error) and fix findings at "
+        f"the boundary, not the sink.{grant_sentence} The full scan -> explain -> fix -> rescan loop "
+        "and the baseline-vs-waiver discipline live in the `wardline-gate` skill and "
+        "in `docs/agents.md`."
+    )
+
+
+_BODY = _compose_body()
+
+
+def _pack_guidance(project_root: Path) -> tuple[str, str]:
+    """(scan-command grant suffix, explanatory sentence) when the project's weft.toml
+    declares trust-grammar packs, else ``("", "")``.
+
+    Without the grants the stock command exits 2 ("pack not trusted") in every
+    pack-declaring project — guidance that cannot work for the very feature it
+    supports (wardline-2e4443418c). The suffix documents the command the human
+    already sanctioned by declaring the pack; it grants nothing by itself.
+    Fail-soft: an unreadable/malformed config reads as no packs (stock text).
+    """
+    import tomllib
+
+    from wardline.core.config import _local_pack_import_root
+
+    weft = project_root / "weft.toml"
+    try:
+        parsed = tomllib.loads(weft.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError):
+        return "", ""
+    table = parsed.get("wardline")
+    packs = table.get("packs") if isinstance(table, dict) else None
+    if not isinstance(packs, list):
+        return "", ""
+    names = [p for p in packs if isinstance(p, str)]
+    if not names:
+        return "", ""
+    suffix = "".join(f" --trust-pack {name}" for name in names)
+    if any(_local_pack_import_root(name, weft) is not None for name in names):
+        suffix += " --allow-custom-packs"
+    sentence = (
+        f" This project declares trust-grammar pack(s) {', '.join(names)} in weft.toml; "
+        "the grant flags shown are REQUIRED — without them the scan exits 2 (pack not "
+        "trusted), because repository config cannot self-authorise importing code."
+    )
+    return suffix, sentence
 
 _OWN_NS = "wardline"
 _END_MARKER = f"<!-- /{_OWN_NS}:instructions -->"
@@ -64,12 +105,16 @@ _FENCE_RE = re.compile(
 _INSTR_FENCE_RE = re.compile(r"<!--\s*(?P<close>/?)(?P<ns>[A-Za-z0-9_-]+):instructions")
 
 
-def _body_hash() -> str:
-    return hashlib.sha256(_BODY.encode("utf-8")).hexdigest()[:8]
+def _body_hash(body: str) -> str:
+    return hashlib.sha256(body.encode("utf-8")).hexdigest()[:8]
 
 
-def render_block() -> str:
-    return f"<!-- {_OWN_NS}:instructions:v{_BLOCK_VERSION}:{_body_hash()} -->\n{_WRITER_MARKER}\n{_BODY}\n{_END_MARKER}"
+def render_block(project_root: Path | None = None) -> str:
+    """The canonical block: stock text, or — given a project root — the pack-aware
+    text whose scan command carries the project's required trust grants."""
+    body = _BODY if project_root is None else _compose_body(*_pack_guidance(project_root))
+    open_fence = f"<!-- {_OWN_NS}:instructions:v{_BLOCK_VERSION}:{_body_hash(body)} -->"
+    return f"{open_fence}\n{_WRITER_MARKER}\n{body}\n{_END_MARKER}"
 
 
 def _first_real_foreign_block_pos(content: str, search_from: int) -> int:
@@ -256,7 +301,7 @@ def inject_block(file_path: Path) -> str:
     created|updated|unchanged.
     """
     file_path = safe_project_file(file_path.parent, file_path, label=file_path.name)
-    block = render_block()
+    block = render_block(file_path.parent)
     if not file_path.exists():
         _atomic_write_text(file_path, block + "\n")
         return "created"
