@@ -226,6 +226,13 @@ class GateDecision:
     fail_on_unanalyzed: bool = False
     severity_tripped: bool = False
     unanalyzed_tripped: bool = False
+    # The inert sub-gate (wardline-2a05ff700e). ``fail_on_inert`` trips when the scan's
+    # resolution posture is INERT — zero recognized trust boundaries over a non-trivial
+    # amount of code (the posture's exploration floor is inherited, not re-decided).
+    # Without it an annotation-free tree passes ``--fail-on ERROR`` green while checking
+    # nothing, and every pack consumer carries a wrapper just to catch that.
+    fail_on_inert: bool = False
+    inert_tripped: bool = False
     # Files-scanned visibility ON the decision itself (the factory always sets it from
     # ``ScanResult.files_scanned``; ``None`` only for a directly-constructed decision).
     # A configured gate over ZERO scanned files judged nothing — ``gate_decision`` returns
@@ -257,11 +264,11 @@ class GateDecision:
         if (
             self.verdict == "NOT_EVALUATED"
             and self.fail_on is None
-            and self.fail_on_unanalyzed
+            and (self.fail_on_unanalyzed or self.fail_on_inert)
             and self.files_scanned != 0
         ):
-            raise ValueError("verdict NOT_EVALUATED with only --fail-on-unanalyzed would hide an evaluated gate")
-        if self.verdict == "PASSED" and self.fail_on is None and not self.fail_on_unanalyzed:
+            raise ValueError("verdict NOT_EVALUATED with a configured sub-gate would hide an evaluated gate")
+        if self.verdict == "PASSED" and self.fail_on is None and not self.fail_on_unanalyzed and not self.fail_on_inert:
             raise ValueError("verdict PASSED requires a configured gate")
         # A configured gate over zero scanned files judged NOTHING — PASSED there is the
         # 0-files false green. FAILED stays constructible (fail-closed: e.g. the unanalyzed
@@ -281,12 +288,14 @@ class GateDecision:
             raise ValueError(f"would_trip_at {self.would_trip_at!r} is not a valid Severity value")
         # The sub-trip decomposition must EXPLAIN the overall trip — an overall trip no
         # sub-gate accounts for (or a sub-trip without its knob) is an illegal state.
-        if self.tripped != (self.severity_tripped or self.unanalyzed_tripped):
-            raise ValueError("tripped must equal (severity_tripped or unanalyzed_tripped)")
+        if self.tripped != (self.severity_tripped or self.unanalyzed_tripped or self.inert_tripped):
+            raise ValueError("tripped must equal (severity_tripped or unanalyzed_tripped or inert_tripped)")
         if self.severity_tripped and self.fail_on is None:
             raise ValueError("severity_tripped requires a fail_on threshold")
         if self.unanalyzed_tripped and not self.fail_on_unanalyzed:
             raise ValueError("unanalyzed_tripped requires fail_on_unanalyzed")
+        if self.inert_tripped and not self.fail_on_inert:
+            raise ValueError("inert_tripped requires fail_on_inert")
 
 
 def run_scan(
@@ -761,16 +770,27 @@ def _advisory_delta_reason(scope: DeltaScopeReport, fail_on: Severity, evaluated
     )
 
 
-def gate_decision(result: ScanResult, fail_on: Severity | None, *, fail_on_unanalyzed: bool = False) -> GateDecision:
+def gate_decision(
+    result: ScanResult,
+    fail_on: Severity | None,
+    *,
+    fail_on_unanalyzed: bool = False,
+    fail_on_inert: bool = False,
+) -> GateDecision:
     """Translate a scan into a pass/fail verdict. A trip is data, not an error.
 
-    Two independent sub-gates compose into one decision: the severity gate (``fail_on``)
-    and the unanalyzed gate (``fail_on_unanalyzed`` — trips when any file was discovered
-    but never analysed; benign no-module skips excluded, see ``ScanSummary.unanalyzed``).
-    Folding the unanalyzed gate in HERE (A4, wardline-7fd0f3a82c) is what lets both
-    surfaces share it: the CLI exits on ``tripped`` and the MCP gate block serialises the
-    same decision, so neither can drift.
+    Three independent sub-gates compose into one decision: the severity gate
+    (``fail_on``), the unanalyzed gate (``fail_on_unanalyzed`` — trips when any file was
+    discovered but never analysed; benign no-module skips excluded, see
+    ``ScanSummary.unanalyzed``), and the inert gate (``fail_on_inert`` — trips when the
+    scan recognized ZERO trust boundaries over a non-trivial amount of code, i.e. the
+    gate would otherwise pass green while checking nothing). Folding the sub-gates in
+    HERE (A4, wardline-7fd0f3a82c; wardline-2a05ff700e) is what lets both surfaces share
+    them: the CLI exits on ``tripped`` and the MCP gate block serialises the same
+    decision, so neither can drift.
     """
+    from wardline.core.resolution_posture import compute_resolution_posture
+
     gate_population = result.gate_population.findings
     honors_suppressions = result.gate_population.honors_suppressions
     would_trip_at = _would_trip_at(gate_population)
@@ -779,7 +799,7 @@ def gate_decision(result: ScanResult, fail_on: Severity | None, *, fail_on_unana
         if honors_suppressions
         else "unsuppressed (repository baseline/waiver/judged ignored)"
     )
-    if fail_on is None and not fail_on_unanalyzed:
+    if fail_on is None and not fail_on_unanalyzed and not fail_on_inert:
         # NOT a clean pass — the gate never ran. The verdict says so; would_trip_at names the
         # worst severity present so the agent's first bare scan is not a false green.
         return GateDecision(
@@ -794,7 +814,9 @@ def gate_decision(result: ScanResult, fail_on: Severity | None, *, fail_on_unana
         )
     severity_tripped = fail_on is not None and gate_trips(gate_population, fail_on)
     unanalyzed_tripped = bool(fail_on_unanalyzed and result.summary.unanalyzed)
-    tripped = severity_tripped or unanalyzed_tripped
+    posture = compute_resolution_posture(result.findings) if fail_on_inert else None
+    inert_tripped = bool(posture is not None and posture.inert)
+    tripped = severity_tripped or unanalyzed_tripped or inert_tripped
     if not tripped and result.files_scanned == 0:
         # Vacuous scan: a configured gate over ZERO scanned files judged nothing — an
         # existing-but-empty source root or an exclude-all config would otherwise read as
@@ -818,6 +840,7 @@ def gate_decision(result: ScanResult, fail_on: Severity | None, *, fail_on_unana
             evaluated=evaluated,
             would_trip_at=would_trip_at,
             fail_on_unanalyzed=fail_on_unanalyzed,
+            fail_on_inert=fail_on_inert,
             files_scanned=0,
         )
     advisory_scope = result.scope if result.scope is not None and result.scope.mode == "delta" else None
@@ -840,6 +863,14 @@ def gate_decision(result: ScanResult, fail_on: Severity | None, *, fail_on_unana
             else "0 files unanalyzed (fail_on_unanalyzed passed)"
         )
         reason = f"{prefix}; {reason}"
+    if posture is not None:
+        prefix = (
+            f"taint gate INERT: 0 trust boundaries recognized across "
+            f"{posture.functions_analyzed} analyzed functions (fail_on_inert tripped)"
+            if inert_tripped
+            else f"{posture.recognized_boundaries} recognized trust boundaries (fail_on_inert passed)"
+        )
+        reason = f"{prefix}; {reason}"
     return GateDecision(
         tripped=tripped,
         fail_on=fail_on.value if fail_on is not None else None,
@@ -851,6 +882,8 @@ def gate_decision(result: ScanResult, fail_on: Severity | None, *, fail_on_unana
         fail_on_unanalyzed=fail_on_unanalyzed,
         severity_tripped=severity_tripped,
         unanalyzed_tripped=unanalyzed_tripped,
+        fail_on_inert=fail_on_inert,
+        inert_tripped=inert_tripped,
         files_scanned=result.files_scanned,
     )
 

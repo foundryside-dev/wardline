@@ -492,6 +492,7 @@ def run_scan_job_worker(root: Path, job_id: str, *, filigree_url: str | None = N
             result,
             Severity(fail_on) if fail_on is not None else None,
             fail_on_unanalyzed=bool(request.get("fail_on_unanalyzed", False)),
+            fail_on_inert=bool(request.get("fail_on_inert", False)),
         )
         filigree_block = _filigree_status(emit_result)
         migration_hint = baseline_migration_hint(result, decision, root=root, new_since=request.get("new_since"))
@@ -542,6 +543,7 @@ def run_scan_job_worker(root: Path, job_id: str, *, filigree_url: str | None = N
                     "tripped": decision.tripped,
                     "fail_on": decision.fail_on,
                     "fail_on_unanalyzed": decision.fail_on_unanalyzed,
+                    "fail_on_inert": decision.fail_on_inert,
                     "exit_class": decision.exit_class,
                     "verdict": decision.verdict,
                     "reason": decision.reason,

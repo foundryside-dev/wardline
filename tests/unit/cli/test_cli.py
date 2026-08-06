@@ -1084,6 +1084,40 @@ def test_scan_unanalyzed_default_does_not_gate(tmp_path) -> None:
     assert res.exit_code == 0, res.output
 
 
+_INERT_SRC = "\n".join(f"def f{i}(x):\n    return x\n" for i in range(6))
+
+
+def test_scan_fail_on_inert_exits_one(tmp_path) -> None:
+    # wardline-2a05ff700e: an annotation-free tree used to pass every gate green while
+    # checking nothing; --fail-on-inert turns that into exit 1 without a wrapper.
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    _write(proj, "plain.py", _INERT_SRC)
+    res = CliRunner().invoke(scan, [str(proj), "--output", str(tmp_path / "f.jsonl"), "--fail-on-inert"])
+    assert res.exit_code == 1, res.output
+    assert "--fail-on-inert" in res.output
+    assert "INERT" in res.output
+
+
+def test_scan_inert_default_does_not_gate(tmp_path) -> None:
+    # Without the flag, inertness stays a reported posture, never an exit-code change.
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    _write(proj, "plain.py", _INERT_SRC)
+    res = CliRunner().invoke(scan, [str(proj), "--output", str(tmp_path / "f.jsonl")])
+    assert res.exit_code == 0, res.output
+
+
+def test_scan_fail_on_inert_annotated_passes(tmp_path) -> None:
+    # Declared boundaries => non-inert => the inert-only gate PASSES and names its knob.
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    _write(proj, "svc.py", _LEAKY_SRC)
+    res = CliRunner().invoke(scan, [str(proj), "--output", str(tmp_path / "f.jsonl"), "--fail-on-inert"])
+    assert res.exit_code == 0, res.output
+    assert "gate: PASSED (--fail-on-inert only)" in res.output
+
+
 def test_scan_benign_no_module_is_quiet(tmp_path) -> None:
     # (b refinement) A benign top-level __init__.py (no module mapping, nothing to
     # analyze) must NOT print the "could not be analyzed" line nor a stderr warning

@@ -513,6 +513,92 @@ def test_gate_decision_default_ignores_unanalyzed() -> None:
     assert decision.fail_on_unanalyzed is False and decision.unanalyzed_tripped is False
 
 
+def _posture_result(counts: dict[str, int]) -> ScanResult:
+    # The inert sub-gate reads the engine's own WLN-ENGINE-METRICS provenance histogram
+    # (resolution_posture); the severity-gate population stays empty.
+    metrics = Finding(
+        rule_id="WLN-ENGINE-METRICS",
+        message="L3 resolver run metrics",
+        severity=Severity.NONE,
+        kind=Kind.METRIC,
+        location=Location(path=ENGINE_PATH),
+        fingerprint="fp-metrics",
+        properties={"taint_source_counts": counts},
+    )
+    return ScanResult(
+        findings=[metrics],
+        summary=ScanSummary(1, 0, 0, 0, 0, informational=1),
+        files_scanned=1,
+        context=None,
+        gate_population=GatePopulation.honoring(()),
+    )
+
+
+def test_gate_decision_fail_on_inert_trips_without_threshold() -> None:
+    # wardline-2a05ff700e: an inert scan (0 recognized boundaries over real code) exits 0
+    # today even with --fail-on ERROR — every pack consumer carries a wrapper just to
+    # catch it. The inert sub-gate lives IN the decision, like the unanalyzed gate, so
+    # the CLI exit and the MCP gate block cannot drift.
+    decision = gate_decision(_posture_result({"anchored": 0, "fallback": 300}), None, fail_on_inert=True)
+    assert decision.tripped is True and decision.exit_class == 1
+    assert decision.verdict == "FAILED"
+    assert decision.fail_on is None and decision.fail_on_inert is True
+    assert decision.inert_tripped is True
+    assert decision.severity_tripped is False and decision.unanalyzed_tripped is False
+    assert decision.reason is not None and "INERT" in decision.reason
+    # The severity gate still never ran — the reason must say so.
+    assert "no --fail-on threshold set" in decision.reason
+
+
+def test_gate_decision_fail_on_inert_clean_passes_without_threshold() -> None:
+    decision = gate_decision(_posture_result({"anchored": 43, "fallback": 5}), None, fail_on_inert=True)
+    assert decision.tripped is False and decision.exit_class == 0
+    assert decision.verdict == "PASSED"
+    assert decision.fail_on_inert is True and decision.inert_tripped is False
+    assert decision.reason is not None and "fail_on_inert passed" in decision.reason
+    assert "43" in decision.reason  # names the recognized-boundary count
+
+
+def test_gate_decision_fail_on_inert_composes_with_severity_gate(tmp_path: Path) -> None:
+    # The leaky fixture declares boundaries (non-inert): severity trips, inert does not,
+    # and the reason names both outcomes.
+    proj, _fp_ = _leaky_proj(tmp_path)
+    decision = gate_decision(run_scan(proj), Severity.ERROR, fail_on_inert=True)
+    assert decision.severity_tripped is True and decision.inert_tripped is False
+    assert decision.tripped is True and decision.verdict == "FAILED"
+    assert decision.reason is not None and "fail_on_inert passed" in decision.reason
+
+
+def test_gate_decision_fail_on_inert_exempts_sub_floor_exploration() -> None:
+    # Below the resolution-posture function floor a scan is an exploration, not a gate —
+    # the sub-gate inherits that exemption rather than re-deciding it.
+    decision = gate_decision(_posture_result({"anchored": 0, "fallback": 3}), None, fail_on_inert=True)
+    assert decision.tripped is False and decision.verdict == "PASSED"
+    assert decision.inert_tripped is False
+
+
+def test_gate_decision_default_ignores_inert() -> None:
+    # Default (knob off) preserves released behaviour: inertness is reported (posture,
+    # banner, agent-summary), never gated.
+    decision = gate_decision(_posture_result({"anchored": 0, "fallback": 300}), Severity.ERROR)
+    assert decision.tripped is False
+    assert decision.fail_on_inert is False and decision.inert_tripped is False
+
+
+def test_gate_decision_inert_tripped_requires_knob() -> None:
+    # A second constructor must not fabricate an inert trip without its knob.
+    with pytest.raises(ValueError, match="inert_tripped requires fail_on_inert"):
+        GateDecision(
+            tripped=True,
+            fail_on=None,
+            exit_class=1,
+            verdict="FAILED",
+            reason="x",
+            inert_tripped=True,
+            files_scanned=1,
+        )
+
+
 def test_gate_decision_unanalyzed_invariants_unconstructible() -> None:
     # The sub-trip decomposition is guarded the same way dogfood #2 is: an overall trip
     # that no sub-gate explains (or vice versa) must not construct.

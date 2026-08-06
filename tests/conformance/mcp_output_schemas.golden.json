@@ -3114,8 +3114,16 @@
               null
             ]
           },
+          "fail_on_inert": {
+            "description": "Whether the inert sub-gate knob was set.",
+            "type": "boolean"
+          },
           "fail_on_unanalyzed": {
             "description": "Whether the unanalyzed sub-gate knob was set.",
+            "type": "boolean"
+          },
+          "inert_tripped": {
+            "description": "Sub-gate attribution: the inert gate tripped (zero recognized trust boundaries over non-trivial code).",
             "type": "boolean"
           },
           "migration_hint": {
@@ -3164,10 +3172,12 @@
           "tripped",
           "fail_on",
           "fail_on_unanalyzed",
+          "fail_on_inert",
           "exit_class",
           "verdict",
           "severity_tripped",
           "unanalyzed_tripped",
+          "inert_tripped",
           "would_trip_at",
           "reason",
           "evaluated",

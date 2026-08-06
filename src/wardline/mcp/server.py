@@ -698,6 +698,7 @@ def _scan_job_request(args: dict[str, Any], root: Path, filigree_url: str | None
         "output": str(output) if output is not None else None,
         "fail_on": fail_on.value if fail_on else None,
         "fail_on_unanalyzed": _bool_arg(args, "fail_on_unanalyzed", False),
+        "fail_on_inert": _bool_arg(args, "fail_on_inert", False),
         "cache_dir": str(cache_dir) if cache_dir is not None else None,
         "filigree_url": None if local_only else filigree_url,
         "local_only": local_only,
@@ -753,6 +754,8 @@ def _scan(
     threshold = _fail_on_arg(args.get("fail_on"))
     # A4 (wardline-7fd0f3a82c): the CLI's --fail-on-unanalyzed knob, same default (off).
     fail_on_unanalyzed = _bool_arg(args, "fail_on_unanalyzed", False)
+    # wardline-2a05ff700e: the CLI's --fail-on-inert knob, same default (off).
+    fail_on_inert = _bool_arg(args, "fail_on_inert", False)
     new_since = args.get("new_since")
     # --affected delta scope: an inline worklist/entity-list object|array, or a path under
     # root to one. The inline form is the MCP-primary ergonomic and bypasses
@@ -844,7 +847,7 @@ def _scan(
             "unresolved_qualnames": list(wr.unresolved_qualnames),
             "disabled_reason": wr.disabled_reason,
         }
-    decision = gate_decision(result, threshold, fail_on_unanalyzed=fail_on_unanalyzed)
+    decision = gate_decision(result, threshold, fail_on_unanalyzed=fail_on_unanalyzed, fail_on_inert=fail_on_inert)
     migration_hint = baseline_migration_hint(result, decision, root=path, new_since=new_since)
     # INV-5: a delta scan emits the FULL discovery list as scanned_paths but a FILTERED
     # findings list, so Filigree's auto mark_unseen would read every out-of-scope finding as
@@ -963,12 +966,14 @@ def _scan(
             "tripped": decision.tripped,
             "fail_on": decision.fail_on,
             "fail_on_unanalyzed": decision.fail_on_unanalyzed,
+            "fail_on_inert": decision.fail_on_inert,
             "exit_class": decision.exit_class,
             "verdict": decision.verdict,
             # Sub-gate attribution: which knob(s) the overall trip came from, so an agent
             # never has to parse `reason` to tell a severity trip from an unanalyzed one.
             "severity_tripped": decision.severity_tripped,
             "unanalyzed_tripped": decision.unanalyzed_tripped,
+            "inert_tripped": decision.inert_tripped,
             "would_trip_at": decision.would_trip_at,
             "reason": decision.reason,
             "evaluated": decision.evaluated,
@@ -1067,6 +1072,10 @@ _SCAN_OUTPUT_SCHEMA: dict[str, Any] = {
                     "type": "boolean",
                     "description": "Whether the unanalyzed sub-gate knob was set.",
                 },
+                "fail_on_inert": {
+                    "type": "boolean",
+                    "description": "Whether the inert sub-gate knob was set.",
+                },
                 "exit_class": {
                     "type": "integer",
                     "enum": [0, 1],
@@ -1085,6 +1094,11 @@ _SCAN_OUTPUT_SCHEMA: dict[str, Any] = {
                 "unanalyzed_tripped": {
                     "type": "boolean",
                     "description": "Sub-gate attribution: the unanalyzed gate tripped.",
+                },
+                "inert_tripped": {
+                    "type": "boolean",
+                    "description": "Sub-gate attribution: the inert gate tripped (zero recognized "
+                    "trust boundaries over non-trivial code).",
                 },
                 "would_trip_at": {
                     "description": "Highest severity at which the gate WOULD trip on the evaluated population, or "
@@ -1108,10 +1122,12 @@ _SCAN_OUTPUT_SCHEMA: dict[str, Any] = {
                 "tripped",
                 "fail_on",
                 "fail_on_unanalyzed",
+                "fail_on_inert",
                 "exit_class",
                 "verdict",
                 "severity_tripped",
                 "unanalyzed_tripped",
+                "inert_tripped",
                 "would_trip_at",
                 "reason",
                 "evaluated",
@@ -1887,6 +1903,14 @@ _SCAN_TOOL: dict[str, Any] = {
                 "--fail-on-unanalyzed; summary.unanalyzed always reports the count either "
                 "way, and gate.unanalyzed_tripped attributes a trip to this knob.",
             },
+            "fail_on_inert": {
+                "type": "boolean",
+                "description": "Also trip the gate when the scan recognized ZERO trust "
+                "boundaries over non-trivial code (an inert gate passes green while "
+                "checking nothing). Default false — same default as the CLI's "
+                "--fail-on-inert; agent_summary.resolution always reports the posture "
+                "either way, and gate.inert_tripped attributes a trip to this knob.",
+            },
             "config": {"type": "string"},
             "lang": {
                 "type": "string",
@@ -2057,6 +2081,10 @@ _SCAN_JOB_START_INPUT_PROPERTIES: dict[str, Any] = {
     "fail_on_unanalyzed": {
         "type": "boolean",
         "description": "Trip the gate when any file was discovered but could not be analyzed.",
+    },
+    "fail_on_inert": {
+        "type": "boolean",
+        "description": "Trip the gate when the scan recognized zero trust boundaries over non-trivial code.",
     },
     "cache_dir": {"type": "string", "description": "summary-cache directory relative to project root"},
     "local_only": {

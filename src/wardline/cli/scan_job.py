@@ -41,6 +41,7 @@ def _redact_scan_job_status(status: dict[str, object]) -> dict[str, object]:
 @click.option("--output", type=click.Path(path_type=Path), default=None)
 @click.option("--fail-on", type=click.Choice(["CRITICAL", "ERROR", "WARN", "INFO"], case_sensitive=False), default=None)
 @click.option("--fail-on-unanalyzed/--no-fail-on-unanalyzed", default=False)
+@click.option("--fail-on-inert/--no-fail-on-inert", default=False)
 @click.option("--cache-dir", type=click.Path(path_type=Path), default=None)
 @click.option("--filigree-url", "filigree_url", default=None)
 @click.option("--local-only", "--no-emit", "local_only", is_flag=True, default=False)
@@ -66,6 +67,7 @@ def start(
     output: Path | None,
     fail_on: str | None,
     fail_on_unanalyzed: bool,
+    fail_on_inert: bool,
     cache_dir: Path | None,
     filigree_url: str | None,
     local_only: bool,
@@ -86,6 +88,7 @@ def start(
         "output": str(output) if output else None,
         "fail_on": fail_on.upper() if fail_on else None,
         "fail_on_unanalyzed": fail_on_unanalyzed,
+        "fail_on_inert": fail_on_inert,
         "cache_dir": str(cache_dir) if cache_dir else None,
         "filigree_url": filigree_url,
         "local_only": local_only,

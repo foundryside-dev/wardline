@@ -99,6 +99,10 @@ Options:
   --fail-on-unanalyzed / --no-fail-on-unanalyzed
                                   Exit 1 if any file was discovered but could
                                   not be analyzed.
+  --fail-on-inert / --no-fail-on-inert
+                                  Exit 1 if the scan recognized zero trust
+                                  boundaries over non-trivial code (inert
+                                  gate).
   --cache-dir PATH                Persist L3 summary cache here for faster
                                   incremental scans.
   --filigree-url TEXT             POST findings to this Filigree Weft scan-
@@ -163,6 +167,7 @@ it at a package root, not a single file.
 | `--filigree-max-findings-per-request INTEGER` | Cap findings per Filigree scan-results POST. Precedence is explicit CLI value, then `WARDLINE_FILIGREE_MAX_FINDINGS_PER_REQUEST`, then Filigree's advertised scan-results limit from `/api/files/_schema` when reachable, then Wardline's safe default (`1000`). Wardline chunks by complete file groups when possible so Filigree reconciliation does not mark later chunks as fixed. |
 | `--loomweave-url TEXT` | Opt-in, fail-soft: persist per-entity taint facts to a Loomweave taint-store endpoint alongside local output. |
 | `--fail-on-unanalyzed` / `--no-fail-on-unanalyzed` | Exit `1` if any file was discovered but could not be analyzed (e.g. a parse failure), even when no finding trips `--fail-on`. |
+| `--fail-on-inert` / `--no-fail-on-inert` | Exit `1` if the scan recognized **zero** trust boundaries over non-trivial code — an inert gate passes green while checking nothing. Turns the always-reported `resolution.inert` posture into an enforced sub-gate, so pack consumers need no wrapper script to reject inert scans. |
 | `--new-since TEXT` | PR-scoped "new findings only" gate: gate only on findings in files/entities changed since this git ref. Mutually exclusive with `--affected`. |
 | `--affected FILENAME` | Scope analysis to the entities named in a `warpline.reverify_worklist.v1` worklist (or a bare entity list; file path, or `-` for stdin) — the inner-loop fast path. The affected set is caller-closure expanded so cross-file taint into a changed callee is still computed. **Advisory, not a gate:** only the scoped files are analyzed, so it cannot certify out-of-scope files and is **rejected together with `--fail-on`** — use `--new-since` for an authoritative change-scoped gate (full analysis, gates the changed subset) or a full scan for the gate of record (a `scope` block records the mode, gate authority, and `analyzed N of M` accounting). An empty or all-unresolvable scope falls back to a full scan. Mutually exclusive with `--new-since` and `--fail-on`. |
 | `--trust-pack TEXT` (repeatable), `--allow-custom-packs` | Allow loading trust-grammar packs declared in `weft.toml [wardline]` (`--trust-pack`) or from the local project directory (`--allow-custom-packs`). |

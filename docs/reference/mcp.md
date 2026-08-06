@@ -75,7 +75,7 @@ write column of `doctor`/`rekey`, the explicit write opt-in.
 findings, the suppression summary, and the gate verdict.
 
 **Key params:** `path` (subdir), `fail_on` (`CRITICAL`/`ERROR`/`WARN`/`INFO`),
-`fail_on_unanalyzed`, `lang` (`python`/`rust`), `where` (conjunctive filter:
+`fail_on_unanalyzed`, `fail_on_inert`, `lang` (`python`/`rust`), `where` (conjunctive filter:
 `rule_id`, `qualname`, `severity`, `suppression`, `kind`, `path_glob`, `sink`,
 `tier`), `explain` (inline each active defect's provenance), `summary_only`,
 `full`, `max_findings`, `offset`, `include_suppressed`, `new_since`,
@@ -136,7 +136,7 @@ id plus initial status. The MCP-safe surface for long scans — prefer it over
 synchronous `scan` when a project may take more than a short call.
 
 **Key params:** `path`, `config`, `format` (`jsonl`/`sarif`/`agent-summary`),
-`output`, `fail_on`, `fail_on_unanalyzed`, `cache_dir`, `local_only`,
+`output`, `fail_on`, `fail_on_unanalyzed`, `fail_on_inert`, `cache_dir`, `local_only`,
 `timeout_seconds` (default 1800; `0` disables), `lang`, `new_since`,
 `trust_suppressions`.
 
