@@ -18,7 +18,13 @@ Extend wardline's declaration surface — today exactly three function-level dec
 4. **Restoration boundaries** — evidence-based declarations producing the two reserved lattice states `UNKNOWN_ASSURED` / `UNKNOWN_GUARDED`.
 5. **Dependency-taint declarations** — caller-granted claims about third-party call returns.
 
-**Out of scope** (John, program scope decision): the runtime structural layer; any governance apparatus (reviewer identity, approvals, ratification — legis's jurisdiction; wardline stays "No governance"); the type-system layer.
+### 1.1 Non-goals (unmissable version)
+
+- **No governance apparatus** — no reviewer identity, approvals, expiry adjudication, or ratification anywhere in wardline; that is legis's jurisdiction and wardline stays "No governance" (John, program scope decision).
+- **No runtime structural layer and no type-system layer** — the surface remains static-analysis markers that are runtime no-ops.
+- **The existing three markers' signatures are frozen** — `@external_boundary`, `@trust_boundary`, `@trusted` gain no arguments, ever (§4.3 is why).
+- **No contract inheritance** — a `Contract` cannot extend or compose another contract in v1; every contract states its fields in full. Deliberate surface-minimalism, not an oversight; revisit only with real duplication evidence.
+- **No field-sensitive taint** — labels carry mapping-level identity only; per-field taint states are out of scope.
 
 ## 2. Design principles
 
@@ -112,7 +118,7 @@ def fetch_order(raw: bytes) -> dict[str, object]:
 ### 5.2 Label mechanics (the value-label plane)
 
 - A `_CURRENT_VAR_CONTRACTS` contextvar mirrors the shipped `_CURRENT_VAR_TYPES` trio exactly: arm-local branch copy, **union** merge with a **poison** sentinel on partial/conflicting arms (poison ⇒ silent but explainable — distinguishable from "no label"), strong update/copy/invalidate discipline. `combine`/`least_trusted` never see a label.
-- Label survives exactly: `Name` read, `x = y` copy, `ast.Await` unwrap (122 of the measured candidate sites are await-bound), `Starred` unwrap, and a labelled call's return. Every aggregation and value-merge **drops** the label (mapping-level identity, not field sensitivity — the honest FN, documented in the rule).
+- Label survives exactly: `Name` read, `x = y` copy, `ast.Await` unwrap (122 of the measured candidate sites are await-bound), `Starred` unwrap, and a labelled call's return. Every aggregation and value-merge **drops** the label (mapping-level identity, not field sensitivity — the honest FN, documented in the rule). Worked example of the call-boundary case, to be carried in the rule metadata: `order = fetch_order(req)` followed by `order.get("order_id", 0)` fires — `fetch_order` is `@schema(ORDER_CONTRACT)`-declared, its return label enters `function_return_contracts` via the L2 fixed point, the assignment copies it, and the `.get` site sees the labelled receiver. The same holds through `await fetch_order(req)`.
 - **Interprocedural via the analyzer's existing L2 fixed point, not L3 summaries**: `param_contracts`, `function_return_contracts`, and `class_attr_contracts` ride as siblings of `param_meets`/`function_return_taints`/`class_attr_taints`. Measured necessity: param-in receivers are ~24% of candidate sites in two of three repos, call-return receivers ~50%, `self.attr` 25% of legis's — intraprocedural-only would miss half the target. **Hard constraints**: the label merge is monotone with finite height (union-over-declared-ids + poison), labels enter the convergence check and the `_L2InputKey` memo, and label maps are list-ordered, never set-iterated (byte-identity oracle).
 - The `.get`-site is exposed to rules via a sibling of the existing call-site side-channel (`call_site_receiver_contracts`, keyed on `id(call)`); the taint combiner is not modified.
 - L2 work-budget charging extends to the label plane explicitly (branch copies double).
@@ -286,6 +292,7 @@ S1 before S2 because facets prove the extension path (registry, vocabulary v2, s
 
 1. "Inside a declared validation boundary" is **lexical** in v1 (deterministic, cheap); the dataflow-reachable variant is a recorded refinement candidate.
 2. Measure WL-001 candidate volume on two third-party codebases with real external-data boundaries before finalising the INFO-stream calibration (the fallback ladder if intolerable: sensitivity-gated per-field policy → posture count `contract_defaulted: N` → never plain suppression).
+2a. Measure the label plane's L2 work-budget cost on real codebases during S2 (branch copies double the charge surface; the `L2BudgetExceeded` threshold moves) — quantified before S2 ships, not after.
 3. The `try/except KeyError` paired detection (the rewrite-pressure FN).
 4. `Field.default` non-scalar defaults (`[]`/`{}` are cheaply readable) — decide at implementation.
 5. Synthetic-failure recall injector using contracts as ground truth.
