@@ -1,4 +1,4 @@
-# S0 — Hardening + Consumer-First Cross-Product Prep — Implementation Plan (rev 3.1)
+# S0 — Hardening + Consumer-First Cross-Product Prep — Implementation Plan (rev 3.2)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 >
@@ -6,11 +6,13 @@
 >
 > **Rev 3 custody decision** (post adversarial core/QE/consumer scrub of rev 2): rescue this plan in place so the ticket link remains canonical. Builtin call grammar now includes bare-vs-called form; literal `**{...}` values share the PY-WL-114/provider reader; dynamic `**mapping` is described truthfully as statically unverifiable; custom packs remain untouched; mixed-root shadows are filtered per marker; S0 bumps the resolver cache epoch; P11 is split honestly; the complete per-kind QE floor is specified; custom-grammar hashing is collision-resistant; and consumer readiness is separated into local coordinated and published-release gates. Preview vectors are non-normative and pinned to the design-spec blob until real S1 serializers replace them.
 >
-> **Rev 3.1 (pre-execution resolutions):** the Task 1 spec correction was pre-landed as spec rev 3 (commit `1244f627`, blob `4956ba3b33ad3c594f0ad47db98ee6d636ad3051`) so the pending P0 re-review reads the corrected spec — Task 1 is now code-only and the spec pin is a static constant below; the Legis clean-target stop was resolved by committing the untracked plainweave plan on legis `main` (`a117a21`); the preflight claim uses the executing session's actor; and the shared `read_level`'s declared-sibling widening is now a named, pinned contract (Task 2). With the 1.5.0→main merge, wardline's fixed target branch is **`release/2.0.0`** (the wardline-2 program residency — this plan and its spec ARE wardline 2); loomweave remains `release/1.5.0`.
+> **Rev 3.1 (pre-execution resolutions):** the Task 1 spec correction was pre-landed as the then-current spec rev 3 (`1244f627`); the Legis clean-target stop was resolved by committing the untracked plainweave plan on legis `main` (`a117a21`); the preflight claim uses the executing session's actor; and the shared `read_level`'s declared-sibling widening is now a named, pinned contract (Task 2). With the 1.5.0→main merge, wardline's fixed target branch is **`release/2.0.0`** (the wardline-2 program residency — this plan and its spec ARE wardline 2); loomweave remains `release/1.5.0`.
+>
+> **Rev 3.2 (spec reconciliation):** spec revision 4 is committed at `ae968b540470467258be5989d451991252f7f8dd` with blob `b43aab4bab1f93f419c189e26fd533afdcc6d387`. It owns the complete S0 engine/QE/consumer contract, corrects P11b's generic `TokenSetArg` gate to S2 with an Evidence-domain repeat in S3, and makes the per-kind clean-sentinel and low-sample receipt floors explicit. This plan now pins that revision and supplies the corresponding executable steps.
 
-**Goal:** Ship stage S0 of the declaration-surface-v2 program: fix the live false green `wardline-4928b75782` (PY-WL-130 + `WLN-ENGINE-UNKNOWN-MARKER`), land the §4.2 registry-owned argument and call-form grammar, close QE prerequisites P1–P10 and P12–P14, close P11a (forward vocabulary skew), bind P11b to the first `TOKEN_SET` stage, and stage consumer-first cross-product prep — all before any new marker vocabulary exists. “Stage” means merged, commit-anchored consumer support plus an isolated local-install proof; it does not mean a public consumer release has shipped.
+**Goal:** Ship stage S0 of the declaration-surface-v2 program: fix the live false green `wardline-4928b75782` (PY-WL-130 + `WLN-ENGINE-UNKNOWN-MARKER`), land the §4.2 registry-owned argument and call-form grammar, close QE prerequisites P1–P10 and P12–P14, close P11a (forward vocabulary skew), defer P11b's generic `TokenSetArg` gate to S2 and its Evidence-domain integration repeat to S3, and stage consumer-first cross-product prep — all before any new marker vocabulary exists. “Stage” means merged, commit-anchored consumer support plus an isolated local-install proof; it does not mean a public consumer release has shipped.
 
-**Custody verdict:** **GO for local S0 implementation once the clean-target preflight passes.** **NO-GO for published generic-3 or attest-3 emission** until the Published-release gate is satisfied. At review time, the known unrelated untracked file in the Legis target correctly keeps cross-repository execution stopped; that is an environment precondition, not a plan defect.
+**Custody verdict:** **GO for local S0 implementation once the live clean-target preflight passes.** **NO-GO for published generic-3 or attest-3 emission** until the Published-release gate is satisfied. The former unrelated Legis clean-target blocker was resolved on Legis `main` at `a117a21`; execution still requires the live preflight to remain clean.
 
 **Architecture:** Builtin marker calls use one registry-owned grammar: `RegistryEntry.call_form`, `kwargs`, and `arg_kinds`. The L1 provider and PY-WL-130 share `call_shape_offences`; the provider and PY-WL-114 share literal-keyword extraction and level-token reading; PY-WL-110 applies the same exact-export and per-root shadow rules. This validation is builtin-only. Custom `BoundaryType` packs retain their released contract: `level_args` declares values Wardline reads, and a custom type with `level_args=()` may carry foreign metadata kwargs Wardline ignores. Dynamic `**mapping` is runtime-ambiguous but outside Wardline's statically readable declaration grammar, so the seed drops and PY-WL-130 explains the analyzer limitation. The unknown-marker FACT rides the `SeedResult → FunctionSeed → pipeline` channel exactly like `WLN-ENGINE-UNPROVABLE-BOUNDARY`. Wardline still emits `wardline-generic-2` and `wardline-attest-2` after S0.
 
@@ -26,8 +28,8 @@
 - **The three shipped markers' runtime signatures are frozen** — no edits to `src/wardline/decorators/` or `packages/weft-markers/`. `@external_boundary` is bare-only, `@trust_boundary` call-only, and `@trusted` bare-or-called; Task 1 records those forms without changing runtime code.
 - **Custom-pack compatibility is a hard gate.** Tasks 1–7 must keep `tests/grammar/test_thirdparty_pack_bridge.py` green and preserve its two recognised boundaries. PY-WL-130 never validates custom marker kwargs.
 - **Truthful diagnostics.** PY-WL-130 may call a shape runtime-invalid only for a proved runtime-invalid reason. `unreadable_splat` says Wardline cannot statically prove the mapping; it never promises Python raises `TypeError`.
-- **P11 is split.** P11a (new marker on old Wardline) lands in Task 6. P11b (unknown `TOKEN_SET`/evidence token makes the whole declaration unreadable) is a Phase 3 release gate and must land before the first evidence-bearing marker emits; a LEVEL-token proxy is not accepted as evidence.
-- **Preview-vector source pin.** The governing spec pin is blob `4956ba3b33ad3c594f0ad47db98ee6d636ad3051` (spec rev 3, commit `1244f627`) — the call-form/P11 corrections are already IN the committed spec, so no task amends it. Blob `0f04eeb172e4479c330a806b37ff9b2132917f20` at commit `ed7bfe860d836f4bbab891eddfbada90330db825` is rev-2 review provenance only. Tasks 17, 18, and 20 verify the rev-3 blob via the execution preflight's static check; any spec drift after `1244f627` is STOP-and-re-review. S1's first serializer gate replaces every non-normative preview with real producer output and compares it before emission.
+- **P11 is split by lifetime.** P11a (new marker on old Wardline) lands in Task 6. P11b's generic unknown-`TokenSetArg` contract is an S2 release gate proved with an unknown `Sensitivity` token; S3 repeats the integration gate with an unknown `Evidence` token. A LEVEL-token proxy satisfies neither obligation.
+- **Preview-vector source pin.** The governing spec pin is blob `b43aab4bab1f93f419c189e26fd533afdcc6d387` (spec rev 4, commit `ae968b540470467258be5989d451991252f7f8dd`). Blobs `4956ba3b33ad3c594f0ad47db98ee6d636ad3051` at `1244f627` and `0f04eeb172e4479c330a806b37ff9b2132917f20` at `ed7bfe860d836f4bbab891eddfbada90330db825` are rev-3/rev-2 review provenance only. Tasks 17, 18, and 20 verify the rev-4 blob via the execution preflight's static check; any later spec drift is STOP-and-re-review. S1's first serializer gate replaces every non-normative preview with real producer output and compares it before emission.
 - New rule id is exactly **`PY-WL-130`**; new FACT id is exactly **`WLN-ENGINE-UNKNOWN-MARKER`** (ids reserved by the spec; next free id after this plan is 131).
 - Conventions: FACTs are `Severity.NONE` + `Kind.FACT`; PY-WL-130 is `Severity.ERROR` + `Kind.DEFECT`, `maturity=Maturity.STABLE` (default), `multi_emit=True`.
 - Test commands run from `/home/john/wardline` unless a task names another repo. Full suite = `uv run pytest -q`.
@@ -83,16 +85,16 @@ Immediately before each cross-repository commit, recheck the branch, then requir
 
 For every non-target worktree, inspect `git status --short --branch` and check the owning agent/session. If a live or dirty worktree overlaps a named file, STOP and coordinate. Clean status alone is not a liveness proof. Cross-repo tasks edit the primary targets above only, stage explicit paths only, and verify the resulting commit is an ancestor of the named target branch. (The formerly untracked Legis file `docs/superpowers/plans/2026-07-14-plainweave-preflight-v2-conformance.md` was preserved byte-for-byte and committed on legis `main` as `a117a21` — that preflight stop is resolved; the check above still guards against any NEW dirt.)
 
-Recheck the committed spec rev 3 pin before consumer work:
+Recheck the committed spec rev 4 pin before consumer work:
 
 ```bash
 test "$(git hash-object docs/superpowers/specs/2026-08-09-declaration-surface-v2-design.md)" = \
-  "4956ba3b33ad3c594f0ad47db98ee6d636ad3051"
+  "b43aab4bab1f93f419c189e26fd533afdcc6d387"
 ```
 
 ## Task dependency order
 
-T1 → T2 → T3 → T4 → T5 → T6 → T7; T8–T16 depend only on earlier Wardline tasks where stated (T12 needs T5+T6). Cross-repo: **T17, T18, and T20 require the pre-landed spec rev 3 pin (preflight blob check), independent of T1; T18 precedes T19; T21 requires T18+T19 and runs after T20 so both consumer receipts exist.** Recommended execution order is numeric.
+T1 → T2 → T3 → T4 → T5 → T6 → T7; T8–T16 depend only on earlier Wardline tasks where stated (T12 needs T5+T6). Cross-repo: **T17, T18, and T20 require the committed spec rev 4 pin (preflight blob check), independent of T1; T18 precedes T19; T21 requires T18+T19 and runs after T20 so both consumer receipts exist.** Recommended execution order is numeric.
 
 ## Filigree discipline
 
@@ -197,9 +199,10 @@ class ArgKind(StrEnum):
     """The marker-argument grammar (declaration-surface-v2 §4.2, P14).
 
     Declares how the engine READS each keyword argument of a registered marker.
-    S0 ships only ``LEVEL`` consumers; ``TOKEN_SET`` (tuples of value tokens,
-    e.g. ``evidence=``/``marks=``) and ``REF`` (module-level declaration
-    references, e.g. ``contract=``) get their readers in S2/S3. Every kind is
+    S0 ships only ``LEVEL`` consumers. ``TOKEN_SET`` (tuples of value tokens,
+    e.g. ``marks=``/``evidence=``) and ``REF`` (module-level declaration
+    references, e.g. ``contract=``) get their generic readers with their first
+    S2 consumers; S3 reuses TOKEN_SET for the Evidence domain. Every kind is
     fail-closed on any deviation from its form. There is no ignored/compat
     keyword concept: a keyword outside ``kwargs`` is PY-WL-130's DEFECT and the
     seed drops (the runtime signatures reject it too).
@@ -1332,8 +1335,8 @@ When a new marker reaches an older Wardline, a decorator rooted in the vocabular
 (``wardline.decorators`` / ``weft_markers``) that THIS engine does not recognise
 takes no opinion (fail-closed), never crashes, and leaves a FACT.
 
-This is P11a only. P11b is the future TOKEN_SET/evidence-token contract and is
-not represented by a LEVEL typo; it remains a hard release gate on Phase 3.
+This is P11a only. P11b's generic TokenSetArg contract is an S2 release gate;
+S3 repeats it for the Evidence domain. A LEVEL typo represents neither gate.
 """
 
 from __future__ import annotations
@@ -1624,11 +1627,13 @@ def unknown_vocabulary_marker(
 
 (`_fp` here is pipeline.py's own positional NUL-join sha256 helper at `:32` — NOT `compute_finding_fingerprint`; this matches the sibling FACT's style exactly.)
 
-- [ ] **Step 5: Record the deferred half of P11 on its owning ticket.** Run:
+- [ ] **Step 5: Record both deferred P11b lifetimes on their owning tickets.** Run:
 
 ```bash
+filigree --actor codex add-comment wardline-1c0524c578 \
+  "P11b generic release gate (S2): before @sensitive(marks=...) emits, an unknown Sensitivity token must make the whole declaration unreadable. The generic TokenSetArg reader lands here; a LEVEL-token test is not a proxy. S0 Task 6 closes P11a only."
 filigree --actor codex add-comment wardline-b9d70c6a3a \
-  "P11b release gate: before the first TOKEN_SET/evidence-bearing marker emits, an unknown evidence token must make the whole declaration unreadable; a LEVEL-token test is not a proxy. S0 Task 6 closes P11a only."
+  "P11b Evidence integration repeat (S3): before @restoration_boundary(evidence=...) emits, an unknown Evidence token must make the whole declaration unreadable through the existing TokenSetArg reader. A LEVEL-token test is not a proxy."
 ```
 
 - [ ] **Step 6: Run tests to verify they pass** — `uv run pytest tests/grammar/test_unknown_marker.py tests/unit/scanner/test_pipeline.py tests/grammar tests/unit/scanner/taint -q`. Expected: PASS (no fixture carries an unknown marker; FACTs are maturity-STABLE but the identity corpus excludes FACTs by construction — the byte oracle is a stream over corpus fixtures which contain none of these shapes).
@@ -1756,7 +1761,7 @@ Before the full suite, add `_UNKNOWN_SRC = "import weft_markers\n@weft_markers.a
 
 **Interfaces:**
 - Consumes: `BUILTIN_RULE_CLASSES` metadata (rule_id → maturity).
-- Produces: `Expectation` gains `maturity`, `kind`, `interaction`, and `section`; `Reconciliation` gains `active_by_kind` and `fp_by_kind` with `default_factory=dict`. The loader rejects malformed top-level/section/entry shapes, missing and unknown fields, unknown rules/files, bad maturity/kind/interaction/label values, maturity drift, and duplicate reconciliation keys. It computes live rule maturities once per load. The PREVIEW skip at `harness.py:96-97` is deleted. `interaction="contradiction"` is a true-positive sentinel; `interaction="match"` is its false-positive/clean counterpart.
+- Produces: `Expectation` gains `maturity`, `kind`, `interaction`, and `section`; `Reconciliation` gains `active_by_kind` and `fp_by_kind` with `default_factory=dict`. The loader rejects malformed top-level/section/entry shapes, missing and unknown fields, unknown rules/files, bad maturity/kind/interaction/label values, maturity drift, and duplicate reconciliation keys. It computes live rule maturities once per load. The PREVIEW skip at `harness.py:96-97` is deleted. `interaction="contradiction"` is a true-positive interaction specimen; `interaction="match"` is its false-positive clean sentinel.
 
 - [ ] **Step 1: Write the failing tests** — append to `tests/corpus/test_fp_rate.py`:
 
@@ -1881,8 +1886,10 @@ def test_preview_finding_moves_numerator_and_denominator(monkeypatch, tmp_path):
 
 
 def test_per_kind_fp_rate_within_budget():
-    # P3: every declared kind has >=3 distinct TP fixture files. At >=10 active defects it
-    # meets the 5% FP budget; below 10 it has >=5 defect specimens instead.
+    # P3: every declared kind has >=3 distinct clean sentinel files and >=5 TP
+    # specimens. TP fixture-file diversity is retained as an additional gate.
+    # At >=10 active defects the kind meets the 5% FP budget; below 10 it is
+    # sentinel-gated low-sample and its counts go into the implementation receipt.
     rec = harness.reconcile()
     from collections import Counter
 
@@ -1893,11 +1900,22 @@ def test_per_kind_fp_rate_within_budget():
                and e.label == harness.TRUE_POSITIVE}
         for kind in manifest_kinds
     }
+    clean_sentinel_paths = {
+        kind: {
+            e.path for e in entries
+            if e.kind == kind and e.section == "sentinels"
+            and e.label == harness.FALSE_POSITIVE
+        }
+        for kind in manifest_kinds
+    }
     true_specimens = Counter(e.kind for e in entries if e.label == harness.TRUE_POSITIVE)
     assert set(rec.active_by_kind) == manifest_kinds
     for kind in sorted(manifest_kinds):
         defects = rec.active_by_kind[kind]
         fps = rec.fp_by_kind.get(kind, 0)
+        assert len(clean_sentinel_paths[kind]) >= 3, (
+            f"kind {kind}: fewer than 3 distinct clean sentinel files"
+        )
         assert len(true_fixture_paths[kind]) >= 3, f"kind {kind}: fewer than 3 true fixture files"
         assert true_specimens[kind] >= 5, f"kind {kind}: fewer than 5 true-positive specimens"
         if defects >= 10:
@@ -1906,7 +1924,7 @@ def test_per_kind_fp_rate_within_budget():
             assert defects >= 5, f"kind {kind}: fewer than 5 active defect specimens"
 ```
 
-Add loader-negative tests for: non-mapping top level; an unknown/missing section; a section that is not a mapping; an entry that is not a mapping; each missing required field (`rule_id`, `qualname`, `label`); unknown label; duplicate `(section, path, rule_id, qualname)`; and a sentinel file placed under the wrong section. Pass `complete=False` only for tests whose purpose is malformed top-level/section structure. Add the same-rule pair assertion: PY-WL-110 must have both a `contradiction`/TRUE_POSITIVE sentinel and a `match`/FALSE_POSITIVE clean sentinel.
+Add loader-negative tests for: non-mapping top level; an unknown/missing section; a section that is not a mapping; an entry that is not a mapping; each missing required field (`rule_id`, `qualname`, `label`); unknown label; duplicate `(section, path, rule_id, qualname)`; and a sentinel file placed under the wrong section. Pass `complete=False` only for tests whose purpose is malformed top-level/section structure. Add the same-rule pair assertion: PY-WL-110 must have both a `contradiction`/TRUE_POSITIVE interaction specimen and a `match`/FALSE_POSITIVE clean sentinel.
 
 - [ ] **Step 2: Run to verify failures** — `cd tests && uv run pytest corpus/test_fp_rate.py -v`. Expected: the new tests FAIL (no strict keys, preview skip still present, no per-kind fields).
 
@@ -1989,7 +2007,39 @@ def _rule_maturities() -> dict[str, str]:
 
 Run: `cd tests && uv run python -c "from corpus.harness import reconcile; r = reconcile(); [print(k) for k in r.unaccounted]"`
 For EACH `(path, rule_id, qualname)` printed (these are the previously-skipped PREVIEW findings over fixtures/sentinels), add a manifest row under its file with `maturity: preview` and an honest label: `TRUE_POSITIVE` if the fixture genuinely exhibits that preview rule's defect shape at that site, `FALSE_POSITIVE` if the rule wrongly fires. Add a `note:` per row. Update the MANIFEST.yaml header comment to document the three new fields and their defaults. The dead PY-WL-118 sentinel row (`clean_sql_parameterized.py:60`) gains `maturity: preview` and is now LIVE.
-Create `sentinels/clean_matching_trust.py` as the repeated-same-trust clean counterpart to the existing contradictory marker sentinel, and manifest the PY-WL-110 pair with `interaction: contradiction`/TRUE_POSITIVE and `interaction: match`/FALSE_POSITIVE. Populate every manifest kind to the floor asserted above.
+Create `sentinels/clean_matching_trust.py` as the repeated-same-trust clean counterpart to the existing contradictory marker TP interaction specimen, and manifest the PY-WL-110 pair with `interaction: contradiction`/TRUE_POSITIVE and `interaction: match`/FALSE_POSITIVE. Populate every manifest kind to the floor asserted above.
+
+After reconciliation is clean, generate the low-sample receipt rows:
+
+```bash
+cd tests
+uv run python - <<'PY'
+from collections import Counter
+from corpus import harness
+
+rec = harness.reconcile()
+entries = harness.load_manifest()
+tp = Counter(e.kind for e in entries if e.label == harness.TRUE_POSITIVE)
+clean = {
+    kind: len({
+        e.path for e in entries
+        if e.kind == kind and e.section == "sentinels"
+        and e.label == harness.FALSE_POSITIVE
+    })
+    for kind in rec.active_by_kind
+}
+for kind in sorted(rec.active_by_kind):
+    defects = rec.active_by_kind[kind]
+    if defects < 10:
+        print(
+            f"{kind}|active_defects={defects}|fps={rec.fp_by_kind.get(kind, 0)}|"
+            f"clean_sentinels={clean[kind]}|tp_specimens={tp[kind]}|"
+            "status=sentinel-gated-low-sample"
+        )
+PY
+```
+
+Copy every emitted row into the Task 8 implementation receipt/Filigree comment. Do not report an FP percentage for those kinds as validated; the status is `sentinel-gated-low-sample`.
 
 **Decision gate:** if the resulting global or per-kind budget fails, STOP — do not relabel findings to pass. Report the failing rate and offending rule ids (preview-rule triage is a separate decision).
 
@@ -2584,6 +2634,7 @@ def test_inert_iff_zero_recognized_at_or_above_floor() -> None:
     assert compute_resolution_posture([_metrics({"fallback": 5, "config": 1})]).inert is False
     # callgraph/module_default recognition does NOT clear the trip.
     assert compute_resolution_posture([_metrics({"fallback": 5, "callgraph": 3})]).inert is True
+    assert compute_resolution_posture([_metrics({"fallback": 5, "module_default": 3})]).inert is True
 ```
 
 - [ ] **Step 4: Run** — `uv run pytest tests/unit/core/test_taint_invariants.py tests/unit/core/test_raw_zone_matrix.py tests/unit/core/test_resolution_posture_pins.py -v`. Expected: PASS.
@@ -3048,7 +3099,7 @@ def test_vendored_warpline_copy_is_byte_identical_when_present() -> None:
     assert vendored.read_bytes() == VECTOR.read_bytes()
 ```
 
-- [ ] **Step 2: Recheck the spec blob pin (the static rev-3 blob check from the execution preflight), then generate the non-normative preview vector once** (scratch script; the tests then freeze it — the HMAC pin makes any later edit loud). Mark the vector and contract status `DRAFT/S0 preview`; S1's first real serializer output must be byte- and semantic-compared before replacing it.
+- [ ] **Step 2: Recheck the spec blob pin (the static rev-4 blob check from the execution preflight), then generate the non-normative preview vector once** (scratch script; the tests then freeze it — the HMAC pin makes any later edit loud). Mark the vector and contract status `DRAFT/S0 preview`; S1's first real serializer output must be byte- and semantic-compared before replacing it.
 
 ```bash
 uv run python - <<'PY'
@@ -3563,6 +3614,6 @@ Restart long-running Wardline/federation processes. Passing this gate permits lo
 
 ## Self-review notes (spec + review coverage)
 
-- Ticket item (a) → Tasks 1–5; (b) → Tasks 6–7; (c) P1/P2/P3 → Task 8, P4 → Task 9, P7 → Task 10, P8 → Task 11, P9 → Task 2, P10 → Task 12, P13 → Task 14; (d) → Task 15; (e) → Task 16. Spec §12 P5/P6/P12 → Task 13; P11a → Task 6 and P11b → the Phase 3 ticket gate. P14 → Tasks 1–5. §13.1.1 → Task 17; §13.1.2 → Tasks 18–19 plus Task 21's receipt; §13.1.3 → Task 20; §13.1 sequencing → Rollout Fence.
+- Ticket item (a) → Tasks 1–5; (b) → Tasks 6–7; (c) P1/P2/P3 → Task 8, P4 → Task 9, P7 → Task 10, P8 → Task 11, P9 → Task 2, P10 → Task 12, P13 → Task 14; (d) → Task 15; (e) → Task 16. Spec §12 P5/P6/P12 → Task 13; P11a → Task 6; P11b generic gate → the S2 sensitivity ticket; its Evidence-domain integration repeat → the S3 restoration ticket. P14 → Tasks 1–5. §13.1.1 → Task 17; §13.1.2 → Tasks 18–19 plus Task 21's receipt; §13.1.3 → Task 20; §13.1 sequencing → Rollout Fence.
 - NO-GO findings disposition: `to_level` tolerance removed; complete call grammar and cache invalidation added; QE loader/population/per-kind floors made total; custom fingerprints made collision-resistant; waiver usage remains zero under a reviewed ceiling of five; descriptor acceptance made pair-aware; Warpline's non-key-holding role stated accurately; two-sided receipt precedes seam truth-up; and local coordination is separated from published emission readiness.
 - Deliberately NOT in S0: any weft-markers export, `REGISTRY_VERSION`/`vocabulary.yaml`/`ATTEST_SCHEMA` changes, attest-3 EMISSION, the declarations inventory factory, per-group inertness arming, fixes to the two Task 13-filed engine bugs (golden-drifting / semantics-changing — S1+ with their own tickets).
