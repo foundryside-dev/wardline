@@ -6,6 +6,8 @@ import pytest
 
 from wardline.core.gitignore import GitignoreMatcher
 
+_SAFE_GIT_CONFIG = ("-c", "core.fsmonitor=false")
+
 
 def test_comments_and_blanks_ignored() -> None:
     m = GitignoreMatcher.from_text("# comment\n\n   \nnode_modules/\n")
@@ -113,7 +115,7 @@ def test_repo_gitignore_tracks_wardline_suppression_state() -> None:
         pytest.skip("git is required to validate repository ignore policy")
     repo = Path(__file__).resolve().parents[3]
     in_worktree = subprocess.run(
-        ["git", "-C", str(repo), "rev-parse", "--is-inside-work-tree"],
+        ["git", *_SAFE_GIT_CONFIG, "-C", str(repo), "rev-parse", "--is-inside-work-tree"],
         check=False,
         capture_output=True,
         text=True,
@@ -123,7 +125,7 @@ def test_repo_gitignore_tracks_wardline_suppression_state() -> None:
 
     def check_ignore(path: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
-            ["git", "-C", str(repo), "check-ignore", "--no-index", "-v", path],
+            ["git", *_SAFE_GIT_CONFIG, "-C", str(repo), "check-ignore", "--no-index", "-v", path],
             check=False,
             capture_output=True,
             text=True,
