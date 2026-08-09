@@ -15,7 +15,10 @@ import yaml
 
 from wardline.core.finding import FINGERPRINT_SCHEME
 from wardline.core.judge import JudgeResponse, JudgeVerdict
+from wardline.core.judge_run import JudgeOutcome
+from wardline.core.judge_types import JudgeTransport
 from wardline.core.paths import baseline_path
+from wardline.core.triage import TriageResult
 from wardline.mcp.server import WardlineMCPServer
 
 FIXTURE = Path("tests/fixtures/sample_project")
@@ -215,6 +218,34 @@ def test_judge_tool_is_advertised_with_network_flag() -> None:
     resp = server.rpc.dispatch({"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}})
     judge = next(t for t in resp["result"]["tools"] if t["name"] == "judge")
     assert "network" in judge["description"].lower()
+    assert "openrouter-only" not in judge["description"].lower()
+    assert judge["inputSchema"]["properties"]["transport"]["enum"] == ["auto", "codex-cli", "openrouter"]
+    assert judge["inputSchema"]["properties"]["codex_model"] == {"type": "string"}
+
+
+def test_judge_tool_forwards_transport_and_codex_model(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, object] = {}
+
+    def _run(root: Path, **kwargs: object) -> JudgeOutcome:
+        captured.update(kwargs)
+        return JudgeOutcome(
+            verdicts=[],
+            wrote=0,
+            held_back=0,
+            result=TriageResult(),
+            write_confidence_floor=0.5,
+        )
+
+    monkeypatch.setattr("wardline.mcp.server.run_judge", _run)
+    server = WardlineMCPServer(root=_leaky_project(tmp_path))
+
+    assert _call(server, "judge", {"transport": "codex-cli", "codex_model": "gpt-test"}) == {
+        "verdicts": [],
+        "wrote": 0,
+        "held_back": 0,
+    }
+    assert captured["transport"] == "codex-cli"
+    assert captured["codex_model"] == "gpt-test"
 
 
 def test_prompts_list_has_loop() -> None:
@@ -251,13 +282,21 @@ def _fake_response() -> JudgeResponse:
         prompt_tokens_total=128,
         prompt_tokens_cached=None,
         policy_hash="deadbeef",
+        judge_transport=JudgeTransport.OPENROUTER,
     )
+
+
+def _select_openrouter(requested: JudgeTransport, *, probe: object) -> JudgeTransport:
+    del probe
+    assert requested is JudgeTransport.AUTO
+    return JudgeTransport.OPENROUTER
 
 
 def test_judge_tool_success_via_monkeypatch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     # run_judge builds its default caller from call_judge imported INTO the
     # judge_run namespace; patch it there so the network is never touched.
     monkeypatch.setattr("wardline.core.judge_run.call_judge", lambda *a, **k: _fake_response())
+    monkeypatch.setattr("wardline.core.judge_run.resolve_judge_transport", _select_openrouter)
     # call_judge is patched out, and the env-key check lives inside it — so no key is
     # actually read and no network is hit. The setenv just keeps the default-caller
     # construction path representative; it is not load-bearing for this test.
@@ -275,6 +314,11 @@ def test_judge_tool_success_via_monkeypatch(tmp_path: Path, monkeypatch: pytest.
 
 def test_judge_tool_missing_key_is_iserror_with_guidance(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("WARDLINE_OPENROUTER_API_KEY", raising=False)
+
+    # This test exercises OpenRouter's missing-key guidance, not auto-selection.
+    # Pin the concrete transport so an authenticated developer Codex installation
+    # cannot turn a unit test into a live provider call.
+    monkeypatch.setattr("wardline.core.judge_run.resolve_judge_transport", _select_openrouter)
     proj = _leaky_project(tmp_path)  # no .env in this bare project
     server = WardlineMCPServer(root=proj)
     resp = server.rpc.dispatch(

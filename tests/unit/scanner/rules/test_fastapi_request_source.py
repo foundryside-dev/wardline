@@ -17,7 +17,9 @@ SOURCE visible (an undecorated handler fires nothing, by design).
 
 from __future__ import annotations
 
+import ast
 import textwrap
+import time
 from pathlib import Path
 
 import pytest
@@ -25,6 +27,8 @@ import pytest
 from wardline.core.config import WardlineConfig
 from wardline.core.finding import Kind
 from wardline.scanner.analyzer import WardlineAnalyzer
+from wardline.scanner.taint import fastapi_sources
+from wardline.scanner.taint.fastapi_sources import discover_parameter_types
 
 
 def _defect_rules(tmp_path: Path, src: str) -> set[str]:
@@ -37,6 +41,33 @@ def _defect_rules(tmp_path: Path, src: str) -> set[str]:
 # --- MUST FIRE: curated request-data members reaching a command sink (PY-WL-108) -------
 
 _MUST_FIRE = {
+    "fastapi_requests_reexport": """
+        import os
+        from wardline.decorators import trusted
+        from fastapi.requests import Request
+
+        @trusted(level='ASSURED')
+        def h(req: Request):
+            os.system(req.query_params.get('x'))
+    """,
+    "url_query": """
+        import os
+        from wardline.decorators import trusted
+        from fastapi import Request
+
+        @trusted(level='ASSURED')
+        def h(req: Request):
+            os.system(req.url.query)
+    """,
+    "scope_query_string": """
+        import os
+        from wardline.decorators import trusted
+        from fastapi import Request
+
+        @trusted(level='ASSURED')
+        def h(req: Request):
+            os.system(req.scope['query_string'])
+    """,
     "query_params_get": """
         import os
         from wardline.decorators import trusted
@@ -175,6 +206,70 @@ _RETURN_BOUNDARY_LEAK = {
             q = req.query_params.get('x')
             return q
     """,
+    "query_params_return_before_unreachable_rebind": """
+        from wardline.decorators import trusted
+        from fastapi import Request
+
+        @trusted(level='ASSURED')
+        def extract(req: Request):
+            return req.query_params.get('x')
+            req = None
+    """,
+    "await_json_return_before_unreachable_rebind": """
+        from wardline.decorators import trusted
+        from fastapi import Request
+
+        @trusted(level='ASSURED')
+        async def extract(req: Request):
+            return await req.json()
+            req = None
+    """,
+    "conditional_return_before_rebind": """
+        from wardline.decorators import trusted
+        from fastapi import Request
+
+        @trusted(level='ASSURED')
+        def extract(req: Request, enabled: bool):
+            if enabled:
+                return req.query_params.get('x')
+            req = None
+            return 'disabled'
+    """,
+    "loop_return_snapshot_survives_fixpoint_revisit": """
+        from wardline.decorators import external_boundary, trusted
+        from fastapi import Request
+
+        @external_boundary
+        def read_raw():
+            return 'raw'
+
+        @trusted(level='ASSURED')
+        def extract(req: Request, xs):
+            x = 1
+            for _ in xs:
+                return req.query_params.get('x')
+                req = None
+                x = read_raw()
+            return 'disabled'
+    """,
+    "yield_query_params_before_unreachable_rebind": """
+        from wardline.decorators import trusted
+        from fastapi import Request
+
+        @trusted(level='ASSURED')
+        def extract(req: Request):
+            yield req.query_params.get('x')
+            req = None
+    """,
+    "yield_from_stream_before_unreachable_rebind": """
+        from wardline.decorators import trusted
+        from fastapi import Request
+
+        @trusted(level='ASSURED')
+        def extract(req: Request):
+            yield from req.stream()
+            req = None
+    """,
 }
 
 
@@ -195,9 +290,75 @@ def test_undecorated_handler_returning_request_source_is_quiet(tmp_path: Path) -
     assert "PY-WL-101" not in _defect_rules(tmp_path, src)
 
 
+def test_request_rebound_before_return_is_not_treated_as_request_source(tmp_path: Path) -> None:
+    src = """
+        from wardline.decorators import trusted
+        from fastapi import Request
+
+        @trusted(level='ASSURED')
+        def extract(req: Request):
+            req = None
+            return req.query_params.get('x')
+    """
+    assert "PY-WL-101" not in _defect_rules(tmp_path, src)
+
+
 @pytest.mark.parametrize("name", sorted(_MUST_FIRE))
 def test_fastapi_request_source_fires(tmp_path: Path, name: str) -> None:
     assert "PY-WL-108" in _defect_rules(tmp_path, _MUST_FIRE[name]), name
+
+
+_EXISTING_BEHAVIOR_MUST_FIRE = {
+    "async_stream_iteration": """
+        import os
+        from wardline.decorators import trusted
+        from fastapi import Request
+
+        @trusted(level='ASSURED')
+        async def h(req: Request):
+            async for chunk in req.stream():
+                os.system(chunk)
+    """,
+    "multi_items": """
+        import os
+        from wardline.decorators import trusted
+        from fastapi import Request
+
+        @trusted(level='ASSURED')
+        def h(req: Request):
+            os.system(str(req.query_params.multi_items()))
+    """,
+    "getlist": """
+        import os
+        from wardline.decorators import trusted
+        from fastapi import Request
+
+        @trusted(level='ASSURED')
+        def h(req: Request):
+            os.system(str(req.query_params.getlist('x')))
+    """,
+}
+
+
+@pytest.mark.parametrize("name", sorted(_EXISTING_BEHAVIOR_MUST_FIRE))
+def test_existing_request_container_and_stream_flows_stay_visible(tmp_path: Path, name: str) -> None:
+    assert "PY-WL-108" in _defect_rules(tmp_path, _EXISTING_BEHAVIOR_MUST_FIRE[name]), name
+
+
+def test_depends_default_retains_conservative_raw_seed(tmp_path: Path) -> None:
+    src = """
+        import os
+        from fastapi import Depends
+        from wardline.decorators import trusted
+
+        def validated_value() -> str:
+            return 'fixed'
+
+        @trusted(level='ASSURED')
+        def h(value: str = Depends(validated_value)):
+            os.system(value)
+    """
+    assert "PY-WL-108" in _defect_rules(tmp_path, src)
 
 
 # --- MUST NOT FIRE: framework objects, name-only, whole-param, freedom zone ------------
@@ -324,3 +485,418 @@ _MUST_NOT_FIRE = {
 @pytest.mark.parametrize("name", sorted(_MUST_NOT_FIRE))
 def test_fastapi_request_source_does_not_fire(tmp_path: Path, name: str) -> None:
     assert "PY-WL-108" not in _defect_rules(tmp_path, _MUST_NOT_FIRE[name]), name
+
+
+def test_shadowed_imported_request_type_is_not_fastapi_request(tmp_path: Path) -> None:
+    src = """
+        import os
+        from fastapi import Request
+        from wardline.decorators import trusted
+
+        class Request: ...
+
+        @trusted(level='ASSURED')
+        def h(req: Request):
+            os.system(req.query_params.get('x'))
+    """
+    assert "PY-WL-108" not in _defect_rules(tmp_path, src)
+
+
+def test_rebound_fastapi_requests_module_alias_is_not_request_type(tmp_path: Path) -> None:
+    src = """
+        import os
+        import fastapi.requests as fr
+        from wardline.decorators import trusted
+
+        class Local: ...
+        fr = Local()
+
+        @trusted(level='ASSURED')
+        def h(req: fr.Request):
+            os.system(req.query_params.get('x'))
+    """
+    assert "PY-WL-108" not in _defect_rules(tmp_path, src)
+
+
+@pytest.mark.parametrize(
+    "setup_and_annotation",
+    [
+        ("import fastapi", "fastapi.Request"),
+        ("import fastapi.requests", "fastapi.requests.Request"),
+        ("import fastapi.requests as fr", "fr.Request"),
+        ("from fastapi import Request as WebRequest", "WebRequest"),
+    ],
+)
+def test_genuine_request_import_forms_stay_recognized(
+    tmp_path: Path,
+    setup_and_annotation: tuple[str, str],
+) -> None:
+    setup, annotation = setup_and_annotation
+    src = f"""
+        import os
+        {setup}
+        from wardline.decorators import trusted
+
+        @trusted(level='ASSURED')
+        def h(req: {annotation}):
+            os.system(req.query_params.get('x'))
+    """
+    assert "PY-WL-108" in _defect_rules(tmp_path, src)
+
+
+def test_request_binding_is_temporal_and_survives_later_shadow(tmp_path: Path) -> None:
+    src = """
+        import os
+        from fastapi import Request
+        from wardline.decorators import trusted
+
+        @trusted(level='ASSURED')
+        def h(req: Request):
+            os.system(req.query_params.get('x'))
+
+        class Request: ...
+    """
+    assert "PY-WL-108" in _defect_rules(tmp_path, src)
+
+
+def test_reimport_restores_request_binding(tmp_path: Path) -> None:
+    src = """
+        import os
+        from fastapi import Request
+        from wardline.decorators import trusted
+
+        class Request: ...
+        from fastapi import Request
+
+        @trusted(level='ASSURED')
+        def h(req: Request):
+            os.system(req.query_params.get('x'))
+    """
+    assert "PY-WL-108" in _defect_rules(tmp_path, src)
+
+
+@pytest.mark.parametrize("container", ["function", "class"])
+def test_lexical_scope_request_shadow_is_not_fastapi_request(tmp_path: Path, container: str) -> None:
+    if container == "function":
+        scoped = """
+            def register():
+                class Request: ...
+                @trusted(level='ASSURED')
+                def h(req: Request):
+                    os.system(req.query_params.get('x'))
+                return h
+        """
+    else:
+        scoped = """
+            class Routes:
+                class Request: ...
+                @trusted(level='ASSURED')
+                def h(req: Request):
+                    os.system(req.query_params.get('x'))
+        """
+    src = f"""
+        import os
+        from fastapi import Request
+        from wardline.decorators import trusted
+{textwrap.indent(textwrap.dedent(scoped), "        ")}
+    """
+    rules = _defect_rules(tmp_path, src)
+    assert "WLN-ENGINE-PARSE-ERROR" not in rules
+    assert "PY-WL-108" not in rules
+
+
+def test_conditional_function_keeps_static_request_resolution_fallback(tmp_path: Path) -> None:
+    src = """
+        import os
+        from fastapi import Request
+        from wardline.decorators import trusted
+
+        if True:
+            @trusted(level='ASSURED')
+            def h(req: Request):
+                os.system(req.query_params.get('x'))
+    """
+    assert "PY-WL-108" in _defect_rules(tmp_path, src)
+
+
+def test_conditional_function_after_request_shadow_is_clean(tmp_path: Path) -> None:
+    src = """
+        import os
+        from fastapi import Request
+        from wardline.decorators import trusted
+
+        class Request: ...
+        if True:
+            @trusted(level='ASSURED')
+            def h(req: Request):
+                os.system(req.query_params.get('x'))
+    """
+    rules = _defect_rules(tmp_path, src)
+    assert "WLN-ENGINE-PARSE-ERROR" not in rules
+    assert "WLN-ENGINE-FILE-FAILED" not in rules
+    assert "PY-WL-108" not in rules
+
+
+def test_conditional_request_import_is_recognized(tmp_path: Path) -> None:
+    src = """
+        import os
+        from wardline.decorators import trusted
+
+        if True:
+            from fastapi import Request
+            @trusted(level='ASSURED')
+            def h(req: Request):
+                os.system(req.query_params.get('x'))
+    """
+    rules = _defect_rules(tmp_path, src)
+    assert "WLN-ENGINE-PARSE-ERROR" not in rules
+    assert "WLN-ENGINE-FILE-FAILED" not in rules
+    assert "PY-WL-108" in rules
+
+
+@pytest.mark.parametrize(
+    ("assigned", "should_fire"),
+    [
+        ("WebRequest", True),
+        ("Local", False),
+    ],
+)
+def test_destructuring_assignment_updates_request_binding(
+    tmp_path: Path,
+    assigned: str,
+    should_fire: bool,
+) -> None:
+    src = f"""
+        import os
+        from fastapi import Request as WebRequest
+        from wardline.decorators import trusted
+
+        class Local: ...
+        Request = {"Local" if should_fire else "WebRequest"}
+        Request, other = {assigned}, None
+        @trusted(level='ASSURED')
+        def h(req: Request):
+            os.system(req.query_params.get('x'))
+    """
+    rules = _defect_rules(tmp_path, src)
+    assert "WLN-ENGINE-PARSE-ERROR" not in rules
+    assert ("PY-WL-108" in rules) is should_fire
+
+
+def test_cross_module_request_alias_is_recognized(tmp_path: Path) -> None:
+    reqtypes = tmp_path / "reqtypes.py"
+    reqtypes.write_text(
+        "from fastapi import Request\nPublicRequest = Request\n",
+        encoding="utf-8",
+    )
+    api = tmp_path / "api.py"
+    api.write_text(
+        textwrap.dedent(
+            """
+            import os
+            from reqtypes import PublicRequest
+            from wardline.decorators import trusted
+
+            @trusted(level='ASSURED')
+            def h(req: PublicRequest):
+                os.system(req.query_params.get('x'))
+            """
+        ),
+        encoding="utf-8",
+    )
+    findings = WardlineAnalyzer().analyze([reqtypes, api], WardlineConfig(), root=tmp_path)
+    rules = {finding.rule_id for finding in findings if finding.kind is Kind.DEFECT}
+    assert "WLN-ENGINE-PARSE-ERROR" not in rules
+    assert "PY-WL-108" in rules
+
+
+def test_conditional_cross_module_request_alias_is_recognized(tmp_path: Path) -> None:
+    reqtypes = tmp_path / "reqtypes.py"
+    reqtypes.write_text(
+        textwrap.dedent(
+            """
+            try:
+                from fastapi import Request
+            except ImportError:
+                from starlette.requests import Request
+            PublicRequest = Request
+            """
+        ),
+        encoding="utf-8",
+    )
+    api = tmp_path / "api.py"
+    api.write_text(
+        textwrap.dedent(
+            """
+            import os
+            from reqtypes import PublicRequest
+            from wardline.decorators import trusted
+
+            @trusted(level='ASSURED')
+            def h(req: PublicRequest):
+                os.system(req.query_params.get('x'))
+            """
+        ),
+        encoding="utf-8",
+    )
+
+    findings = WardlineAnalyzer().analyze([reqtypes, api], WardlineConfig(), root=tmp_path)
+    rules = {finding.rule_id for finding in findings if finding.kind is Kind.DEFECT}
+
+    assert "WLN-ENGINE-PARSE-ERROR" not in rules
+    assert "PY-WL-108" in rules
+
+
+def test_conditional_request_reexport_preserves_both_type_candidates() -> None:
+    tree = ast.parse(
+        """
+try:
+    from fastapi import Request
+except ImportError:
+    from starlette.requests import Request
+PublicRequest = Request
+"""
+    )
+    discover = getattr(fastapi_sources, "discover_exported_type_candidates", None)
+
+    assert callable(discover), "candidate-preserving exported type discovery is not implemented"
+    assert discover(tree, module="reqtypes")["reqtypes.PublicRequest"] == frozenset(
+        {"fastapi.Request", "starlette.requests.Request"}
+    )
+
+
+def test_explicit_shadow_clears_conditional_request_reexport_candidates() -> None:
+    tree = ast.parse(
+        """
+try:
+    from fastapi import Request
+except ImportError:
+    from starlette.requests import Request
+class Local: ...
+PublicRequest = Local
+"""
+    )
+    discover = getattr(fastapi_sources, "discover_exported_type_candidates", None)
+
+    assert callable(discover), "candidate-preserving exported type discovery is not implemented"
+    assert discover(tree, module="reqtypes")["reqtypes.PublicRequest"] == frozenset({"reqtypes.Local"})
+
+
+@pytest.mark.parametrize(
+    ("later_binding", "should_fire"),
+    [
+        ("from fastapi import Request", True),
+        ("class Request: ...", False),
+    ],
+)
+def test_postponed_request_annotation_uses_final_module_binding(
+    tmp_path: Path,
+    later_binding: str,
+    should_fire: bool,
+) -> None:
+    src = f"""
+        from __future__ import annotations
+        import os
+        from wardline.decorators import trusted
+
+        @trusted(level='ASSURED')
+        def h(req: Request):
+            os.system(req.query_params.get('x'))
+
+        {later_binding}
+    """
+    rules = _defect_rules(tmp_path, src)
+    assert "WLN-ENGINE-PARSE-ERROR" not in rules
+    assert ("PY-WL-108" in rules) is should_fire
+
+
+def test_try_branches_preserve_all_genuine_request_candidates(tmp_path: Path) -> None:
+    src = """
+        import os
+        from wardline.decorators import trusted
+
+        try:
+            from fastapi import Request
+        except ImportError:
+            from starlette.requests import Request
+
+        @trusted(level='ASSURED')
+        def h(req: Request):
+            os.system(req.query_params.get('x'))
+    """
+    rules = _defect_rules(tmp_path, src)
+    assert "WLN-ENGINE-PARSE-ERROR" not in rules
+    assert "WLN-ENGINE-FILE-FAILED" not in rules
+    assert "PY-WL-108" in rules
+
+
+def test_with_body_import_is_normal_continuation_binding(tmp_path: Path) -> None:
+    src = """
+        import os
+        from contextlib import nullcontext
+        from wardline.decorators import trusted
+
+        with nullcontext():
+            from fastapi import Request
+
+        @trusted(level='ASSURED')
+        def h(req: Request):
+            os.system(req.query_params.get('x'))
+    """
+    rules = _defect_rules(tmp_path, src)
+    assert "WLN-ENGINE-PARSE-ERROR" not in rules
+    assert "WLN-ENGINE-FILE-FAILED" not in rules
+    assert "PY-WL-108" in rules
+
+
+def test_compound_binding_discovery_scales_linearly() -> None:
+    branches = "\n".join(f"if flag_{index}:\n    alias_{index} = Request" for index in range(2000))
+    tree = ast.parse(f"from fastapi import Request\n{branches}\ndef h(req: Request): pass\n")
+
+    started = time.perf_counter()
+    discovered = discover_parameter_types(tree, module="m")
+    elapsed = time.perf_counter() - started
+
+    function = tree.body[-1]
+    assert isinstance(function, ast.FunctionDef)
+    assert discovered[id(function)]["req"] == ("fastapi.Request",)
+    assert elapsed < 1.5
+
+
+def test_try_handler_sees_request_binding_from_completed_try_prefix(tmp_path: Path) -> None:
+    src = """
+        import os
+        from wardline.decorators import trusted
+
+        try:
+            from fastapi import Request
+            raise RuntimeError
+        except RuntimeError:
+            @trusted(level='ASSURED')
+            def h(req: Request):
+                os.system(req.query_params.get('x'))
+    """
+    rules = _defect_rules(tmp_path, src)
+    assert "WLN-ENGINE-PARSE-ERROR" not in rules
+    assert "WLN-ENGINE-FILE-FAILED" not in rules
+    assert "PY-WL-108" in rules
+
+
+def test_try_handler_ignores_request_binding_after_unconditional_raise(tmp_path: Path) -> None:
+    src = """
+        import os
+        from wardline.decorators import trusted
+
+        class Request: ...
+        try:
+            raise RuntimeError
+            from fastapi import Request
+        except RuntimeError:
+            @trusted(level='ASSURED')
+            def h(req: Request):
+                os.system(req.query_params.get('x'))
+    """
+    rules = _defect_rules(tmp_path, src)
+    assert "WLN-ENGINE-PARSE-ERROR" not in rules
+    assert "WLN-ENGINE-FILE-FAILED" not in rules
+    assert "PY-WL-108" not in rules

@@ -83,6 +83,7 @@ def test_scan_job_start_threads_request_to_core(tmp_path: Path, monkeypatch) -> 
                 "output": None,
                 "fail_on": "ERROR",
                 "fail_on_unanalyzed": True,
+                "fail_on_inert": False,
                 "cache_dir": None,
                 "filigree_url": "http://filigree.local/api/weft/scan-results",
                 "local_only": False,

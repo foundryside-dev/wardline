@@ -2,12 +2,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from wardline.core.baseline import write_baseline
 from wardline.core.decorator_coverage import build_decorator_coverage, decorator_coverage_from_scan
 from wardline.core.dossier import TicketRef, WorkSection
 from wardline.core.identity import ContentStatus, EntityBinding, IdentityStatus
 from wardline.core.paths import baseline_path
 from wardline.core.run import run_scan
+from wardline.loomweave.dossier_sources import BindingResolution, binding_unavailable_reason
 
 _SRC = (
     "from wardline.decorators import external_boundary, trusted\n"
@@ -29,14 +32,46 @@ def _project(tmp_path: Path) -> Path:
 
 
 class _Bindings:
+    def binding_for(self, qualname: str) -> BindingResolution:
+        return BindingResolution(
+            binding=EntityBinding(
+                locator=f"python:function:{qualname}",
+                sei=f"loomweave:eid:{qualname}",
+                identity=IdentityStatus.ALIVE,
+                content=ContentStatus.FRESH,
+                content_hash=f"hash:{qualname}",
+            ),
+            unavailable_reason=None,
+            auth_status=None,
+        )
+
+
+class _UnavailableBindings:
+    def __init__(self, reason: str, status: int) -> None:
+        self._resolution = BindingResolution(None, reason, status)
+
+    def binding_for(self, qualname: str) -> BindingResolution:
+        return self._resolution
+
+
+class _LegacyBinding:
     def binding_for(self, qualname: str) -> EntityBinding:
         return EntityBinding(
             locator=f"python:function:{qualname}",
             sei=f"loomweave:eid:{qualname}",
             identity=IdentityStatus.ALIVE,
             content=ContentStatus.FRESH,
-            content_hash=f"hash:{qualname}",
         )
+
+
+class _LegacyNoBinding:
+    def binding_for(self, qualname: str) -> None:
+        return None
+
+
+class _InvalidBinding:
+    def binding_for(self, qualname: str) -> object:
+        return object()
 
 
 class _Work:
@@ -100,6 +135,46 @@ def test_decorator_coverage_reports_unavailable_integrations_explicitly(tmp_path
     }
     assert row["work"]["available"] is False
     assert row["work"]["reason"] == "filigree not configured"
+
+
+def test_decorator_coverage_accepts_legacy_entity_binding_provider(tmp_path: Path) -> None:
+    row = build_decorator_coverage(_project(tmp_path), binding_provider=_LegacyBinding()).to_dict()["rows"][0]
+
+    assert row["identity"]["available"] is True
+    assert row["identity"]["sei"] == f"loomweave:eid:{row['qualname']}"
+
+
+def test_decorator_coverage_accepts_legacy_none_provider_fail_soft(tmp_path: Path) -> None:
+    row = build_decorator_coverage(
+        _project(tmp_path), binding_provider=_LegacyNoBinding(), work_provider=_Work()
+    ).to_dict()["rows"][0]
+
+    assert row["identity"]["reason"] == "loomweave returned no identity"
+    assert row["work"]["reason"] == "loomweave returned no identity"
+
+
+def test_decorator_coverage_invalid_provider_result_fails_soft(tmp_path: Path) -> None:
+    row = build_decorator_coverage(
+        _project(tmp_path), binding_provider=_InvalidBinding(), work_provider=_Work()
+    ).to_dict()["rows"][0]
+
+    reason = "loomweave binding provider returned unsupported result: object"
+    assert row["identity"]["reason"] == reason
+    assert row["work"]["reason"] == reason
+
+
+@pytest.mark.parametrize("status", [401, 403])
+def test_decorator_coverage_surfaces_auth_reason_for_identity_and_work(tmp_path: Path, status: int) -> None:
+    reason = binding_unavailable_reason("svc.clean", status)
+    report = build_decorator_coverage(
+        _project(tmp_path),
+        binding_provider=_UnavailableBindings(reason, status),
+        work_provider=_Work(),
+    )
+
+    row = next(row for row in report.to_dict()["rows"] if row["qualname"] == "svc.clean")
+    assert row["identity"]["reason"] == reason
+    assert row["work"]["reason"] == reason
 
 
 def test_decorator_coverage_surfaces_suppressed_defects(tmp_path: Path) -> None:

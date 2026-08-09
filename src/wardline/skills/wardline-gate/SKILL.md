@@ -19,7 +19,9 @@ receive validated data). When untrusted data reaches a trusted producer it raise
 
 1. **Scan.** Run `wardline scan . --fail-on ERROR` (or call the `scan` MCP tool).
    Read the gate verdict and the active (non-suppressed) findings — `active` is
-   the population the gate enforces on.
+   the population the gate enforces on. Pack projects need `--trust-pack
+   <name>` (+ `--allow-custom-packs` if local) or exit 2; `--fail-on-inert`
+   rejects an inert scan.
 2. **Explain.** For each active defect, call `explain_taint` (MCP) or run
    `wardline explain-taint <fingerprint> [PATH]` (CLI) with the finding's
    `fingerprint`, and its `qualname` as `sink_qualname`. Do this
@@ -29,6 +31,14 @@ receive validated data). When untrusted data reaches a trusted producer it raise
 3. **Fix at the BOUNDARY, not the sink.** Add validation or rejection at the hop
    where untrusted data should have been checked — not a band-aid at the sink.
 4. **Re-scan.** Confirm the finding is gone.
+
+## MCP-safe scans
+
+Before any MCP scan on a large or unfamiliar checkout, read
+`references/mcp-safe-scans.md` next to this file: the `strict_defaults` trap
+(`true` DISCARDS the repo's `weft.toml` scope, policy, and packs — it is not
+"strictest"), the asynchronous `scan_job_start`/`scan_job_status`/
+`scan_job_cancel` surface, response bounding, and pack loading.
 
 ## Exit codes (CLI path)
 
@@ -62,7 +72,8 @@ non-issue, always with a reason:
   `--where`), `wardline judge`, `wardline baseline create/update`.
   Branch on the exit code; read the findings file it writes.
 - **MCP:** `wardline mcp` exposes `scan`, `explain_taint`, `fix`, `judge`
-  (network), `baseline`, `waiver_add`; resources
+  (network), `baseline`, `waiver_add`, and the asynchronous
+  `scan_job_start` / `scan_job_status` / `scan_job_cancel` surface; resources
   `wardline://vocab|rules|config|config-schema`; and the `wardline:loop` prompt.
-  The server is stateless — the read-only tools are pure functions of your code
-  on disk and your config.
+  Treat scans as potentially side-effecting: they write local cache/artifact
+  state, and configured integrations can perform network writes.

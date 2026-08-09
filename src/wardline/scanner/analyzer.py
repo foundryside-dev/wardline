@@ -16,6 +16,8 @@ import hashlib
 from collections.abc import Iterator
 from typing import TYPE_CHECKING
 
+from wardline.core.config import WardlineConfig
+from wardline.core.confinement import SourceRootConfinement
 from wardline.core.finding import ENGINE_PATH, Finding, Kind, Location, Severity
 from wardline.core.taints import _PROVENANCE_CLASH, RAW_ZONE, TaintState, combine
 from wardline.scanner.context import AnalysisContext, RuleRegistry
@@ -35,16 +37,22 @@ from wardline.scanner.taint.decorator_provider import (
     DecoratorTaintSourceProvider,
     vocabulary_star_exports,
 )
+from wardline.scanner.taint.fastapi_sources import (
+    discover_callable_aliases,
+    discover_exported_type_candidates,
+    discover_fastapi_route_receivers,
+    discover_parameter_types,
+)
 from wardline.scanner.taint.module_summariser import collect_module_global_raw_seeds, own_scope_global_names
 from wardline.scanner.taint.project_resolver import resolve_project_taints
 from wardline.scanner.taint.provider import TaintSourceProvider
+from wardline.scanner.taint.pydantic_discovery import discover_project_pydantic_models
 from wardline.scanner.taint.variable_level import L2BudgetExceeded, attribute_write_recording, project_attribute_writes
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
     from pathlib import Path
 
-    from wardline.core.config import WardlineConfig
     from wardline.scanner.taint.summary_cache import SummaryCache
 
 
@@ -54,7 +62,18 @@ def _fp(*parts: str) -> str:
     return digest.hexdigest()
 
 
-_L2Record = tuple[Entity, TaintState, dict[str, TaintState], str, dict[str, str], str, bool]
+_L2Record = tuple[
+    Entity,
+    TaintState,
+    dict[str, TaintState],
+    str,
+    dict[str, str],
+    str,
+    bool,
+    frozenset[str],
+    dict[str, TaintState],
+    dict[str, tuple[str, ...]] | None,
+]
 # The L2 fixed-point memo key. ``seed`` and ``method_tm`` are FIXED per entity across
 # iterations (computed once in pass 1), so the key carries only the iteration-VARYING
 # inputs: the class-attribute overlay and the parameter meets — both O(per-function).
@@ -237,14 +256,33 @@ class WardlineAnalyzer:
         self._cache = summary_cache
         self.last_context: AnalysisContext | None = None
 
-    def analyze(self, files: Sequence[Path], config: WardlineConfig, *, root: Path) -> Sequence[Finding]:
+    def analyze(
+        self,
+        files: Sequence[Path],
+        config: WardlineConfig,
+        *,
+        root: Path,
+        source_root_confinement: SourceRootConfinement = SourceRootConfinement.PROJECT_ROOT,
+    ) -> Sequence[Finding]:
         token_clash = _PROVENANCE_CLASH.set(config.provenance_clash)
         try:
-            return self._analyze_inner(files, config, root=root)
+            return self._analyze_inner(
+                files,
+                config,
+                root=root,
+                source_root_confinement=source_root_confinement,
+            )
         finally:
             _PROVENANCE_CLASH.reset(token_clash)
 
-    def _analyze_inner(self, files: Sequence[Path], config: WardlineConfig, *, root: Path) -> Sequence[Finding]:
+    def _analyze_inner(
+        self,
+        files: Sequence[Path],
+        config: WardlineConfig,
+        *,
+        root: Path,
+        source_root_confinement: SourceRootConfinement,
+    ) -> Sequence[Finding]:
         # Statically-known star-import exports (the trust vocabulary, T1.2). A REGISTRY-
         # derived constant for the whole scan — compute once and reuse at both seam points.
         star_exports = vocabulary_star_exports()
@@ -268,6 +306,7 @@ class WardlineAnalyzer:
                 config=config,
                 star_exports=star_exports,
                 summary_cache=self._cache,
+                source_root_confinement=source_root_confinement,
             )
         )
         modules = parse_stage.modules
@@ -313,6 +352,35 @@ class WardlineAnalyzer:
         # @trust_boundary validator) body != return, and using body here would
         # mis-read validated output as raw (over-taint -> PY-WL-101 false positive).
         project_return_taints = dict(result.return_taint_map)
+        project_binding_aliases: dict[str, str] = {}
+        project_type_candidates: dict[str, frozenset[str]] = {}
+        for parsed in file_meta:
+            project_binding_aliases.update(
+                discover_callable_aliases(
+                    parsed.tree,
+                    module=parsed.module,
+                    is_package=parsed.relpath.rsplit("/", 1)[-1] == "__init__.py",
+                )
+            )
+            project_type_candidates.update(
+                discover_exported_type_candidates(
+                    parsed.tree,
+                    module=parsed.module,
+                    is_package=parsed.relpath.rsplit("/", 1)[-1] == "__init__.py",
+                )
+            )
+        for _ in range(len(project_binding_aliases) + 1):
+            changed = False
+            for alias, target in tuple(project_binding_aliases.items()):
+                canonical = project_binding_aliases.get(target, target)
+                if canonical != target:
+                    project_binding_aliases[alias] = canonical
+                    changed = True
+            if not changed:
+                break
+        for alias, target in project_binding_aliases.items():
+            if target in project_return_taints:
+                project_return_taints[alias] = project_return_taints[target]
 
         # Nested-def RETURN taints, bucketed by their enclosing entity — injected
         # into the enclosing function's per-entity taint map under the helper's
@@ -473,7 +541,7 @@ class WardlineAnalyzer:
 
         def _count_parameter_cells(records: list[_L2Record]) -> int:
             total = 0
-            for ent, _seed, _tm, _enclosing_class, _alias_map, _module, _is_method in records:
+            for ent, *_rest in records:
                 args = ent.node.args
                 total += len(args.posonlyargs) + len(args.args) + len(args.kwonlyargs)
                 total += 1 if args.vararg else 0
@@ -482,7 +550,7 @@ class WardlineAnalyzer:
 
         def _count_attribute_cells(records: list[_L2Record]) -> int:
             cells: set[tuple[str, str]] = set()
-            for ent, _seed, _tm, enclosing_class, _alias_map, _module, is_method in records:
+            for ent, _seed, _tm, enclosing_class, _alias_map, _module, is_method, _body, _depends, _types in records:
                 for node in _iter_l2_body_nodes(ent.node):
                     for target in _assignment_targets(node):
                         if isinstance(target, ast.Attribute):
@@ -505,6 +573,9 @@ class WardlineAnalyzer:
             param_meets: dict[str, TaintState] | None = None,
             module_prefix: str | None = None,
             global_seeds: dict[str, TaintState] | None = None,
+            route_body_params: frozenset[str] = frozenset(),
+            route_dependency_params: dict[str, TaintState] | None = None,
+            parameter_type_fqns: dict[str, tuple[str, ...]] | None = None,
         ) -> tuple[
             dict[int, dict[str, TaintState]],
             dict[int, dict[int | str | None, TaintState]],
@@ -522,6 +593,9 @@ class WardlineAnalyzer:
                     alias_map=alias_map,
                     param_meets=param_meets,
                     module_prefix=module_prefix,
+                    route_body_params=route_body_params,
+                    route_dependency_params=route_dependency_params or {},
+                    parameter_type_fqns=parameter_type_fqns,
                 )
             )
             return (
@@ -571,6 +645,63 @@ class WardlineAnalyzer:
 
         # ── L2 pass 1 — per-method var/return taints + per-class attribute summary ──
         all_classes = frozenset(c for parsed in file_meta for c in parsed.class_qualnames)
+        model_result = discover_project_pydantic_models(file_meta)
+        pydantic_models = model_result.models
+        if model_result.degraded_reason is not None:
+            model_degraded_reason = model_result.degraded_reason
+            model_budget = model_result.budget
+            model_properties: dict[str, object] = {
+                "reason": model_degraded_reason,
+                "round": model_result.round_number,
+                "work": model_result.work_completed,
+                "budget": model_budget.work_budget,
+                "file_count": model_budget.file_count,
+                "statement_count": model_budget.statement_count,
+                "known_model_count": model_result.known_model_count,
+                "absolute_cap_applied": model_budget.absolute_cap_applied,
+            }
+            model_detail = f"work={model_result.work_completed}/{model_budget.work_budget}"
+            if model_result.next_round_cost is not None and model_result.required_total is not None:
+                model_properties["next_round_cost"] = model_result.next_round_cost
+                model_properties["required_total"] = model_result.required_total
+                model_detail = (
+                    f"work={model_result.work_completed}; next_round={model_result.next_round_cost}; "
+                    f"required={model_result.required_total}; budget={model_budget.work_budget}"
+                )
+            func_skip_findings.append(
+                Finding(
+                    rule_id="WLN-ENGINE-PYDANTIC-DISCOVERY-LIMIT",
+                    message=(
+                        "Pydantic model discovery degraded to conservative class seeding "
+                        f"({model_degraded_reason}; round={model_result.round_number}; {model_detail})"
+                    ),
+                    severity=Severity.ERROR,
+                    kind=Kind.DEFECT,
+                    location=Location(path=ENGINE_PATH, line_start=1),
+                    fingerprint=_fp("WLN-ENGINE-PYDANTIC-DISCOVERY-LIMIT", model_degraded_reason),
+                    properties=model_properties,
+                )
+            )
+        route_receivers_by_module = {
+            parsed.module: discover_fastapi_route_receivers(
+                parsed.tree,
+                parsed.alias_map,
+                module=parsed.module,
+                known_models=pydantic_models,
+                is_package=parsed.relpath.rsplit("/", 1)[-1] == "__init__.py",
+            )
+            for parsed in file_meta
+        }
+        parameter_types_by_module = {
+            parsed.module: discover_parameter_types(
+                parsed.tree,
+                module=parsed.module,
+                is_package=parsed.relpath.rsplit("/", 1)[-1] == "__init__.py",
+                exported_aliases=project_binding_aliases,
+                exported_type_candidates=project_type_candidates,
+            )
+            for parsed in file_meta
+        }
         failed_paths: set[str] = set()
         function_skip_recorded: set[str] = set()
 
@@ -686,6 +817,17 @@ class WardlineAnalyzer:
                 recorded_writes: dict[str, dict[str, TaintState]] = {}
                 writes: dict[str, dict[str, TaintState]] = {}
                 method_tm: dict[str, TaintState] = {}
+                route_snapshot = route_receivers_by_module[module].get(id(ent.node))
+                parameter_type_fqns = parameter_types_by_module[module].get(id(ent.node))
+                route_body_params = route_snapshot.body_parameters if route_snapshot is not None else frozenset()
+                dependency_bindings = route_snapshot.dependency_bindings if route_snapshot is not None else {}
+                route_dependency_params = {
+                    name: project_return_taints.get(
+                        provider if provider is not None and "." in provider else f"{module}.{provider or ''}",
+                        TaintState.UNKNOWN_RAW,
+                    )
+                    for name, provider in dependency_bindings.items()
+                }
                 try:
                     method_tm = _pruned_method_taint_map(ent.node, alias_map, module, call_tm, project_return_taints)
                     if is_method:
@@ -701,6 +843,9 @@ class WardlineAnalyzer:
                             alias_map,
                             module_prefix=module,
                             global_seeds=module_global_taints.get(module),
+                            route_body_params=route_body_params,
+                            route_dependency_params=route_dependency_params,
+                            parameter_type_fqns=parameter_type_fqns,
                         )
                     writes = project_attribute_writes(
                         recorded_writes, all_classes, enclosing_class if is_method else None
@@ -733,7 +878,20 @@ class WardlineAnalyzer:
                     _record_file_failure(parsed.relpath, ent, exc)
                 _store(ent.qualname, call_sites, call_args, var_taints, ret_taint, ret_callee)
                 project_call_site_arg_taints.update(call_args)
-                l2_records.append((ent, seed, method_tm, enclosing_class, alias_map, module, is_method))
+                l2_records.append(
+                    (
+                        ent,
+                        seed,
+                        method_tm,
+                        enclosing_class,
+                        alias_map,
+                        module,
+                        is_method,
+                        route_body_params,
+                        route_dependency_params,
+                        parameter_type_fqns,
+                    )
+                )
                 for target_class, cls_writes in writes.items():
                     summary = class_attr_taints.setdefault(target_class, {})
                     for attr_name, attr_taint in cls_writes.items():
@@ -751,7 +909,7 @@ class WardlineAnalyzer:
         # name; only RAW_ZONE writes are recorded (the channel propagates raw, it
         # never upgrades a module-level raw seed to clean), and seeds combine
         # least-trusted-wins with the import-time seeds.
-        for ent, _seed, _tm, _enclosing_class, _alias_map, module, _is_method in l2_records:
+        for ent, _seed, _tm, _enclosing_class, _alias_map, module, _is_method, _body, _depends, _types in l2_records:
             if ent.qualname in l2_failed:
                 continue
             global_names = own_scope_global_names(ent.node)
@@ -809,7 +967,18 @@ class WardlineAnalyzer:
             # Run L2 pass on all functions with current class_attr_taints and project_param_meets
             class_attr_taints = {}
             project_call_site_arg_taints = {}
-            for ent, seed, method_tm, enclosing_class, alias_map, module, is_method in l2_records:
+            for (
+                ent,
+                seed,
+                method_tm,
+                enclosing_class,
+                alias_map,
+                module,
+                is_method,
+                route_body_params,
+                route_dependency_params,
+                parameter_type_fqns,
+            ) in l2_records:
                 if ent.qualname in l2_failed:
                     continue
                 attr_summary = old_class_attr_taints.get(enclosing_class)
@@ -849,6 +1018,9 @@ class WardlineAnalyzer:
                                 param_meets=param_meets,
                                 module_prefix=module,
                                 global_seeds=module_global_taints.get(module),
+                                route_body_params=route_body_params,
+                                route_dependency_params=route_dependency_params,
+                                parameter_type_fqns=parameter_type_fqns,
                             )
                         writes = project_attribute_writes(
                             recorded_writes, all_classes, enclosing_class if is_method else None

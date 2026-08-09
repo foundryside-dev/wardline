@@ -1606,6 +1606,58 @@ def test_generator_yield_carries_yielded_taint() -> None:
     assert compute_return_taint(node, T.INTEGRAL, dict(tm), var_taints) == T.EXTERNAL_RAW
 
 
+def test_return_receiver_snapshots_keep_taint_and_callee_on_the_same_path() -> None:
+    import textwrap
+
+    from wardline.scanner.taint.variable_level import (
+        VariableTaintContext,
+        analyze_function_variables,
+    )
+
+    node = ast.parse(
+        textwrap.dedent(
+            """
+            def extract(req: Request, flag: bool):
+                if flag:
+                    return validate('clean')
+                return req.query_params.get('x')
+                req = None
+            """
+        )
+    ).body[0]
+    assert isinstance(node, ast.FunctionDef)
+
+    result = analyze_function_variables(
+        node,
+        T.ASSURED,
+        {"validate": T.ASSURED},
+        VariableTaintContext(
+            alias_map={},
+            parameter_type_fqns={"req": ("fastapi.Request",)},
+        ),
+    )
+
+    assert result.return_taint is T.EXTERNAL_RAW
+    assert result.return_callee == "req.query_params.get"
+
+
+def test_compute_return_taint_preserves_ambient_receiver_types_without_snapshots() -> None:
+    from wardline.scanner.taint.variable_level import (
+        _CURRENT_VAR_TYPES,
+        compute_return_taint,
+    )
+
+    node = ast.parse("def extract(req):\n    return req.query_params.get('x')\n").body[0]
+    assert isinstance(node, ast.FunctionDef)
+    token = _CURRENT_VAR_TYPES.set({"req": ["fastapi.Request"]})
+    try:
+        result = compute_return_taint(node, T.ASSURED, {}, {"req": T.ASSURED})
+    finally:
+        _CURRENT_VAR_TYPES.reset(token)
+
+    assert result is T.EXTERNAL_RAW
+
+
 def test_unresolved_nested_imported_call_returns_unknown_raw() -> None:
     out = _vt(
         "def f():\n    x = vendor.sub.clean()\n",

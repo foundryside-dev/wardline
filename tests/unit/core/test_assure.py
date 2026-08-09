@@ -17,7 +17,7 @@ from types import MappingProxyType
 from wardline.core.assure import _empty_posture, build_posture, posture_from_scan
 from wardline.core.finding import Finding, Kind, Location, Severity
 from wardline.core.paths import waivers_path
-from wardline.core.run import ScanResult, ScanSummary
+from wardline.core.run import GatePopulation, ScanResult, ScanSummary
 from wardline.core.taints import TaintState
 from wardline.core.waivers import add_waiver
 from wardline.scanner.context import AnalysisContext
@@ -149,6 +149,7 @@ def test_unknown_and_engine_limited_branch() -> None:
         summary=ScanSummary(total=1, active=0, baselined=0, waived=0, judged=0),
         files_scanned=1,
         context=ctx,
+        gate_population=GatePopulation.honoring((under_scan,)),
     )
 
     posture = posture_from_scan(result, ctx, waivers=(), today=date(2026, 6, 3))
@@ -202,8 +203,6 @@ def test_empty_surface_coverage_is_null(tmp_path: Path) -> None:
     # posture_from_scan pure-core path with empty declared_qualnames.
     from types import MappingProxyType
 
-    from wardline.core.run import ScanResult, ScanSummary
-
     empty_ctx = AnalysisContext(
         project_taints={},
         project_return_taints={},
@@ -219,6 +218,7 @@ def test_empty_surface_coverage_is_null(tmp_path: Path) -> None:
         summary=ScanSummary(total=0, active=0, baselined=0, waived=0, judged=0),
         files_scanned=0,
         context=empty_ctx,
+        gate_population=GatePopulation.honoring(()),
     )
     pure_posture = posture_from_scan(empty_result, empty_ctx, waivers=(), today=date(2026, 6, 3))
     assert pure_posture.coverage_pct is None

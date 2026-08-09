@@ -39,11 +39,13 @@ def write_facts_to_loomweave(result: ScanResult, root: Path, client: _WriteClien
     ``findings: []`` blobs stamped with a CURRENT content hash — a fresh-looking false
     green for every co-located / caller-closure entity. The write is therefore SKIPPED
     in delta mode, and the skip is SIGNALLED (never silent): the returned WriteResult
-    carries ``disabled_reason`` so the CLI warning line and the ``loomweave_write``
+    carries ``disabled_reason`` so the CLI status line and the ``loomweave_write``
     envelope block both name why nothing was written. ``mode == "full-fallback"``
     analyzed the full tree and writes normally. Both no-attempt skips (delta,
     zero facts) report ``reachable=False`` — consistent with 403 WRITE_DISABLED,
-    ``reachable`` means "the store was written-to", never a fabricated probe result."""
+    ``reachable`` means "the store was written-to", never a fabricated probe result.
+    Consumers distinguish the stable reason labels: delta remains a warning, while
+    zero facts is a neutral no-attempt status."""
     if result.scope is not None and result.scope.mode == "delta":
         return WriteResult(reachable=False, written=0, disabled_reason=DELTA_SKIP_REASON)
     facts = build_taint_facts(result, root)

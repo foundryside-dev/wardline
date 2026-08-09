@@ -188,6 +188,52 @@ def test_resolve_probe_url_mcp_arg_beats_published_port(tmp_path: Path, monkeypa
     assert _resolve_probe_url(tmp_path, None) == "http://127.0.0.1:8749/api/weft/scan-results"
 
 
+def _register_filigree_server(monkeypatch, cfg_home: Path, *, port: int, prefix: str, store: Path) -> None:
+    server_json = cfg_home / "server.json"
+    server_json.parent.mkdir(parents=True)
+    server_json.write_text(json.dumps({"port": port, "projects": {str(store): {"prefix": prefix}}}), encoding="utf-8")
+    monkeypatch.setattr("wardline.core.config._filigree_server_config_path", lambda: server_json)
+
+
+def test_machine_readable_doctor_rejects_unpinned_env_url_when_server_scope_exists(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("WARDLINE_FILIGREE_URL", "http://localhost:9229/api/weft/scan-results")
+    _register_filigree_server(
+        monkeypatch,
+        tmp_path / "cfg",
+        port=8749,
+        prefix="wardline",
+        store=tmp_path / ".weft" / "filigree",
+    )
+
+    payload = machine_readable_doctor(tmp_path, fix=False, transport=_ScriptedTransport({"": 400}))
+    checks = {check["id"]: check for check in payload["checks"]}
+
+    assert payload["ok"] is False
+    assert checks["filigree.url"]["status"] == "error"
+    assert "WARDLINE_FILIGREE_URL" in checks["filigree.url"]["message"]
+    assert "http://localhost:8749/api/p/wardline/weft/scan-results" in checks["filigree.url"]["message"]
+
+
+def test_filigree_auth_rejects_unpinned_mcp_url_when_server_scope_exists(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
+    _write_mcp_with_filigree_url(tmp_path, "http://127.0.0.1:9229/api/weft/scan-results")
+    _register_filigree_server(
+        monkeypatch,
+        tmp_path / "cfg",
+        port=8749,
+        prefix="wardline",
+        store=tmp_path / ".weft" / "filigree",
+    )
+    transport = _ScriptedTransport({"": 400})
+
+    check = _check_filigree_auth(tmp_path, repair=False, transport=transport)
+
+    assert check.status == "error"
+    assert "project-unpinned" in (check.message or "")
+    assert "wardline doctor --repair" in (check.message or "")
+    assert transport.calls == []
+
+
 def test_is_loopback() -> None:
     assert _is_loopback("http://127.0.0.1:8749/x") is True
     assert _is_loopback("http://127.255.255.255:8749/x") is True

@@ -23,8 +23,9 @@ from wardline.core import paths
 from wardline.core.baseline import BASELINE_VERSION
 from wardline.core.errors import ConfigError, FiligreeEmitError, WardlineError
 from wardline.core.finding import FINGERPRINT_SCHEME, Finding, Kind
-from wardline.core.fingerprint_v0 import compute_finding_fingerprint_v0
-from wardline.core.judged import JUDGED_VERSION
+from wardline.core.fingerprint_v0 import FINGERPRINT_SCHEME_V0, compute_finding_fingerprint_v0
+from wardline.core.judge_types import JudgeTransport
+from wardline.core.judged import JUDGED_VERSION, validate_judged_document
 from wardline.core.optional_deps import require_yaml
 from wardline.core.safe_paths import read_bytes_no_follow, safe_project_file, write_text_no_follow
 from wardline.core.waivers import WAIVERS_VERSION
@@ -51,12 +52,31 @@ _STORES: tuple[tuple[str, str, int], ...] = (
     ("waivers.yaml", "waivers", WAIVERS_VERSION),
 )
 
+
+def _require_rekey_store_scheme(raw: object, *, store_name: str) -> str | None:
+    """Validate the only store schemes this one-step migration can interpret.
+
+    A missing header is the explicitly supported pre-scheme case.  Any named
+    scheme other than the frozen source scheme or this build's live scheme has
+    no trustworthy remap and must fail before a verdict is carried or orphaned.
+    """
+    if raw is None:
+        return None
+    if isinstance(raw, str) and raw in {FINGERPRINT_SCHEME_V0, FINGERPRINT_SCHEME}:
+        return raw
+    raise ConfigError(
+        f"{store_name}: unsupported fingerprint scheme {raw!r}; rekey can only route "
+        f"missing/pre-scheme, {FINGERPRINT_SCHEME_V0!r}, or {FINGERPRINT_SCHEME!r} stores"
+    )
+
+
 # Mirror of scanner.rules._POLICY_CONFIG_RULE_ID (core must not import scanner — layering).
 # A drift test (test_rekey_population.py) asserts the two stay equal. POLICY-CONFIG is the
-# ONE engine rule whose fingerprint is compute_finding_fingerprint-based (line_start-sensitive
-# under wlfp1), so it is v0-reconstructed, NOT identity-mapped, unlike the other engine
-# diagnostics. Verified mechanically: no other WLN-ENGINE-*/WLN-L3-* DEFECT uses
-# compute_finding_fingerprint (they use diagnostics._fingerprint, which is scheme-independent).
+# ONE engine rule whose legacy wlfp1 fingerprint used compute_finding_fingerprint and
+# therefore included line_start. It is v0-reconstructed, NOT identity-mapped, unlike
+# the other engine diagnostics. The live wlfp2 producer excludes absolute line_start.
+# Verified mechanically: no other WLN-ENGINE-*/WLN-L3-* DEFECT uses the shared producer
+# (they use diagnostics._fingerprint, which is scheme-independent).
 _POLICY_CONFIG_RULE_ID = "WLN-ENGINE-POLICY-CONFIG"
 
 
@@ -280,14 +300,9 @@ def _refuse_preexisting_snapshot_without_journal(root: Path) -> None:
         )
 
 
-def snapshot_stores(root: Path) -> tuple[str, ...]:
-    """Copy each EXISTING YAML store into ``.rekey_snapshot/`` byte-identical. The
-    snapshot is the immutable provenance source the carry legs read — resume NEVER
-    re-reads the (already-rewritten) live store. Idempotent: an existing snapshot is
-    the pre-migration truth and is NEVER clobbered (a second invocation keeps it)."""
-    sdir = snapshot_dir(root)
+def _read_live_store_payloads(root: Path) -> dict[str, bytes]:
     state = paths.weft_state_dir(root)
-    present: list[str] = []
+    payloads: dict[str, bytes] = {}
     for name, _key, _ver in _STORES:
         live = state / name
         # Read the live store WITHOUT following a symlink: an untrusted checkout could
@@ -298,6 +313,17 @@ def snapshot_stores(root: Path) -> tuple[str, ...]:
         data = _read_project_store_bytes(root, live)
         if data is None:
             continue
+        payloads[name] = data
+    return payloads
+
+
+def _publish_snapshot_payloads(root: Path, payloads: dict[str, bytes]) -> tuple[str, ...]:
+    sdir = snapshot_dir(root)
+    present: list[str] = []
+    for name, _key, _ver in _STORES:
+        data = payloads.get(name)
+        if data is None:
+            continue
         present.append(name)
         dest = safe_project_file(root, sdir / name, label=name)
         if dest.exists():
@@ -305,6 +331,14 @@ def snapshot_stores(root: Path) -> tuple[str, ...]:
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_bytes(data)
     return tuple(present)
+
+
+def snapshot_stores(root: Path) -> tuple[str, ...]:
+    """Copy each EXISTING YAML store into ``.rekey_snapshot/`` byte-identical. The
+    snapshot is the immutable provenance source the carry legs read — resume NEVER
+    re-reads the (already-rewritten) live store. Idempotent: an existing snapshot is
+    the pre-migration truth and is NEVER clobbered (a second invocation keeps it)."""
+    return _publish_snapshot_payloads(root, _read_live_store_payloads(root))
 
 
 # --- S5: carry verdicts from the SNAPSHOT, preserving ALL provenance --------------
@@ -329,14 +363,22 @@ def _read_old_store(path: Path) -> dict[str, Any]:
     return _load_old_store_bytes(data, path.name)
 
 
-def _load_old_store_bytes(data: bytes, name: str) -> dict[str, Any]:
+def _load_old_store_bytes(
+    data: bytes,
+    name: str,
+    *,
+    preserve_falsey_types: bool = False,
+) -> dict[str, Any]:
     yaml = require_yaml("reading the rekey snapshot")
     try:
-        loaded = yaml.safe_load(data.decode("utf-8")) or {}
+        decoded = yaml.safe_load(data.decode("utf-8"))
     except UnicodeDecodeError as exc:
         raise ConfigError(f"malformed snapshot {name}: not valid UTF-8") from exc
     except yaml.YAMLError as exc:  # pragma: no cover - defensive
         raise ConfigError(f"malformed snapshot {name}: {exc}") from exc
+    loaded = decoded if preserve_falsey_types else decoded or {}
+    if loaded is None:
+        loaded = {}
     if not isinstance(loaded, dict):
         raise ConfigError(f"snapshot {name} is not a mapping")
     return loaded
@@ -344,17 +386,24 @@ def _load_old_store_bytes(data: bytes, name: str) -> dict[str, Any]:
 
 def _carry_store(snapshot_path: Path, list_key: str, version: int, old_to_new: dict[str, str]) -> CarryResult:
     loaded = _read_old_store(snapshot_path)
-    return _carry_loaded_store(loaded, list_key, version, old_to_new)
+    return _carry_loaded_store(loaded, list_key, version, old_to_new, store_name=snapshot_path.name)
 
 
 def _carry_store_bytes(
     data: bytes, snapshot_name: str, list_key: str, version: int, old_to_new: dict[str, str]
 ) -> CarryResult:
     loaded = _load_old_store_bytes(data, snapshot_name)
-    return _carry_loaded_store(loaded, list_key, version, old_to_new)
+    return _carry_loaded_store(loaded, list_key, version, old_to_new, store_name=snapshot_name)
 
 
-def _carry_loaded_store(loaded: dict[str, Any], list_key: str, version: int, old_to_new: dict[str, str]) -> CarryResult:
+def _carry_loaded_store(
+    loaded: dict[str, Any],
+    list_key: str,
+    version: int,
+    old_to_new: dict[str, str],
+    *,
+    store_name: str = "snapshot store",
+) -> CarryResult:
     """Remap one store: swap each entry's ``fingerprint`` old->new while byte-preserving
     every OTHER field (rationale/reason/expires/rule_id/path/message/...), drop entries
     whose old_fp is not in the remap (orphans), and re-stamp the wlfp2 scheme header.
@@ -363,7 +412,8 @@ def _carry_loaded_store(loaded: dict[str, Any], list_key: str, version: int, old
     # A snapshot store ALREADY at the live scheme needs no remap: its fingerprints are
     # wlfp2 keys, and pushing them through the wlfp1->wlfp2 map would orphan every one
     # (the mixed-scheme leg of A7, weft-dda1a6d8dd). Identity-carry it untouched.
-    already_current = loaded.get("fingerprint_scheme") == FINGERPRINT_SCHEME
+    scheme = _require_rekey_store_scheme(loaded.get("fingerprint_scheme"), store_name=store_name)
+    already_current = scheme == FINGERPRINT_SCHEME
     carried: list[str] = []
     orphaned: list[str] = []
     new_entries: list[dict[str, Any]] = []
@@ -386,8 +436,53 @@ def carry_baseline_forward(snapshot_path: Path, old_to_new: dict[str, str]) -> C
     return _carry_store(snapshot_path, "entries", BASELINE_VERSION, old_to_new)
 
 
+def _validate_judged_source_for_carry(loaded: dict[str, Any], *, store_name: str) -> None:
+    _require_rekey_store_scheme(loaded.get("fingerprint_scheme"), store_name=store_name)
+    validate_judged_document(
+        loaded,
+        store_name=store_name,
+        require_current_scheme=False,
+        allow_empty=False,
+    )
+
+
+def _carry_judged_loaded_store(
+    loaded: dict[str, Any],
+    old_to_new: dict[str, str],
+    *,
+    store_name: str,
+) -> CarryResult:
+    source_version = loaded.get("version")
+    _validate_judged_source_for_carry(loaded, store_name=store_name)
+    result = _carry_loaded_store(
+        loaded,
+        "findings",
+        JUDGED_VERSION,
+        old_to_new,
+        store_name=store_name,
+    )
+    if source_version == 1:
+        for entry in result.document["findings"]:
+            entry["judge_transport"] = JudgeTransport.OPENROUTER.value
+    # The source contract alone is insufficient: a resumed journal can contain a
+    # malformed or colliding target fingerprint. Validate the exact v2 document we
+    # would publish after remapping and legacy transport injection.
+    validate_judged_document(
+        result.document,
+        store_name=store_name,
+        require_current_scheme=True,
+        allow_empty=False,
+    )
+    return result
+
+
 def carry_judged_forward(snapshot_path: Path, old_to_new: dict[str, str]) -> CarryResult:
-    return _carry_store(snapshot_path, "findings", JUDGED_VERSION, old_to_new)
+    data = read_bytes_no_follow(snapshot_path)
+    return _carry_judged_loaded_store(
+        {} if data is None else _load_old_store_bytes(data, snapshot_path.name, preserve_falsey_types=True),
+        old_to_new,
+        store_name=snapshot_path.name,
+    )
 
 
 def carry_waivers_forward(snapshot_path: Path, old_to_new: dict[str, str]) -> CarryResult:
@@ -400,6 +495,7 @@ JOURNAL_SCHEMA_VERSION = 1
 # Legs in apply order: YAML first (gate-critical — baseline restores the local gate),
 # Filigree last (reconciliation debt, no remap endpoint).
 LEG_NAMES: tuple[str, ...] = ("baseline", "judged", "waivers", "filigree")
+_FINGERPRINT_HEX = frozenset("0123456789abcdef")
 # Maps a YAML leg to (snapshot filename, live-store path fn, list key, store version).
 _YAML_LEGS: dict[str, tuple[str, Any, str, int]] = {
     "baseline": ("baseline.yaml", paths.baseline_path, "entries", BASELINE_VERSION),
@@ -491,37 +587,145 @@ def write_journal(path: Path, journal: Journal, *, root: Path) -> None:
     os.replace(tmp, path)
 
 
+def _journal_string_list(raw: object, *, path: Path, field_name: str) -> list[str]:
+    if not isinstance(raw, list) or not all(isinstance(value, str) for value in raw):
+        raise ConfigError(f"malformed migration journal {path.name}: {field_name} must be a list of strings")
+    return list(raw)
+
+
+def _load_journal_legs(raw: object, *, path: Path) -> list[Leg]:
+    # Backward compatibility: journals written before per-leg progress was
+    # persisted omitted ``legs`` (or wrote an empty list). Resume them from the
+    # canonical first leg rather than rejecting a recoverable old journal.
+    if raw is None or raw == []:
+        return [Leg(name) for name in LEG_NAMES]
+    if not isinstance(raw, list):
+        raise ConfigError(f"malformed migration journal {path.name}: legs must be a list")
+
+    names: list[str] = []
+    legs: list[Leg] = []
+    for index, item in enumerate(raw):
+        if not isinstance(item, dict) or not isinstance(item.get("name"), str):
+            raise ConfigError(f"malformed migration journal {path.name}: legs[{index}] must be a named mapping")
+        name = item["name"]
+        names.append(name)
+        done = item.get("done", False)
+        debt = item.get("debt")
+        if not isinstance(done, bool):
+            raise ConfigError(f"malformed migration journal {path.name}: legs[{index}].done must be a bool")
+        if debt is not None and not isinstance(debt, str):
+            raise ConfigError(f"malformed migration journal {path.name}: legs[{index}].debt must be a string or null")
+        legs.append(
+            Leg(
+                name=name,
+                done=done,
+                carried=_journal_string_list(item.get("carried", []), path=path, field_name=f"legs[{index}].carried"),
+                orphaned=_journal_string_list(
+                    item.get("orphaned", []), path=path, field_name=f"legs[{index}].orphaned"
+                ),
+                debt=debt,
+            )
+        )
+
+    if tuple(names) != LEG_NAMES:
+        raise ConfigError(f"{path.name}: journal legs must be exactly {LEG_NAMES!r} in order; got {tuple(names)!r}")
+    return legs
+
+
+def _load_journal_collisions(raw: object, *, path: Path) -> list[RekeyCollision]:
+    if raw is None:
+        return []
+    if not isinstance(raw, list):
+        raise ConfigError(f"malformed migration journal {path.name}: collisions must be a list")
+    collisions: list[RekeyCollision] = []
+    for index, item in enumerate(raw):
+        if not isinstance(item, dict):
+            raise ConfigError(f"malformed migration journal {path.name}: collisions[{index}] must be a mapping")
+        new_fp = item.get("new_fp")
+        if new_fp is not None and not isinstance(new_fp, str):
+            raise ConfigError(
+                f"malformed migration journal {path.name}: collisions[{index}].new_fp must be a string or null"
+            )
+        collisions.append(
+            RekeyCollision(
+                new_fp=new_fp,
+                old_fps=tuple(
+                    _journal_string_list(item.get("old_fps", []), path=path, field_name=f"collisions[{index}].old_fps")
+                ),
+                new_fps=tuple(
+                    _journal_string_list(item.get("new_fps", []), path=path, field_name=f"collisions[{index}].new_fps")
+                ),
+            )
+        )
+    return collisions
+
+
+def _validate_journal_remap(raw: object, *, journal_name: str) -> dict[str, str]:
+    """Return a valid one-to-one fingerprint remap or reject it without echoing input."""
+    if not isinstance(raw, dict):
+        raise ConfigError(f"malformed migration journal {journal_name}: remap must be a mapping")
+
+    validated: dict[str, str] = {}
+    target_entries: dict[str, int] = {}
+    for index, (old_fp, new_fp) in enumerate(raw.items()):
+        if not isinstance(old_fp, str) or len(old_fp) != 64 or not set(old_fp) <= _FINGERPRINT_HEX:
+            raise ConfigError(
+                f"malformed migration journal {journal_name}: remap source fingerprint at entry {index} "
+                "must be a 64-char lowercase hex string"
+            )
+        if not isinstance(new_fp, str) or len(new_fp) != 64 or not set(new_fp) <= _FINGERPRINT_HEX:
+            raise ConfigError(
+                f"malformed migration journal {journal_name}: remap target fingerprint at entry {index} "
+                "must be a 64-char lowercase hex string"
+            )
+        first_entry = target_entries.get(new_fp)
+        if first_entry is not None:
+            raise ConfigError(
+                f"malformed migration journal {journal_name}: remap target collision between entries "
+                f"{first_entry} and {index}; target fingerprints must be injective"
+            )
+        validated[old_fp] = new_fp
+        target_entries[new_fp] = index
+    return validated
+
+
 def load_journal(path: Path) -> Journal:
     yaml = require_yaml("loading the rekey journal")
-    loaded = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    try:
+        loaded = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except (UnicodeDecodeError, yaml.YAMLError) as exc:
+        raise ConfigError(f"malformed migration journal {path.name}: {exc}") from exc
     if not isinstance(loaded, dict) or "remap" not in loaded:
         raise ConfigError(f"malformed migration journal {path.name}")
-    legs = [
-        Leg(
-            name=str(d["name"]),
-            done=bool(d.get("done", False)),
-            carried=list(d.get("carried") or []),
-            orphaned=list(d.get("orphaned") or []),
-            debt=d.get("debt"),
+    schema_version = loaded.get("schema_version", JOURNAL_SCHEMA_VERSION)
+    if type(schema_version) is not int or schema_version != JOURNAL_SCHEMA_VERSION:
+        raise ConfigError(
+            f"{path.name}: unsupported migration journal schema_version {schema_version!r}; "
+            f"expected {JOURNAL_SCHEMA_VERSION}"
         )
-        for d in loaded.get("legs") or []
-    ]
-    collisions = [
-        RekeyCollision(
-            new_fp=None if c.get("new_fp") is None else str(c["new_fp"]),
-            old_fps=tuple(c.get("old_fps") or []),
-            new_fps=tuple(c.get("new_fps") or []),
+    remap = _validate_journal_remap(loaded["remap"], journal_name=path.name)
+    legs = _load_journal_legs(loaded.get("legs"), path=path)
+    collisions = _load_journal_collisions(loaded.get("collisions"), path=path)
+    scheme_from = loaded.get("fingerprint_scheme_from", FINGERPRINT_SCHEME_V0)
+    scheme_to = loaded.get("fingerprint_scheme_to", FINGERPRINT_SCHEME)
+    if not isinstance(scheme_from, str) or not isinstance(scheme_to, str):
+        raise ConfigError(f"malformed migration journal {path.name}: fingerprint schemes must be strings")
+    if scheme_from != FINGERPRINT_SCHEME_V0 or scheme_to != FINGERPRINT_SCHEME:
+        raise ConfigError(
+            f"{path.name}: unsupported migration journal schemes from={scheme_from!r}, to={scheme_to!r}; "
+            f"this build only resumes {FINGERPRINT_SCHEME_V0!r} -> {FINGERPRINT_SCHEME!r}"
         )
-        for c in loaded.get("collisions") or []
-    ]
+    snapshot_prescheme = loaded.get("snapshot_prescheme", False)
+    if not isinstance(snapshot_prescheme, bool):
+        raise ConfigError(f"malformed migration journal {path.name}: snapshot_prescheme must be a bool")
     return Journal(
-        remap=dict(loaded["remap"]),
+        remap=remap,
         collisions=collisions,
-        legs=legs or [Leg(n) for n in LEG_NAMES],
-        schema_version=int(loaded.get("schema_version", JOURNAL_SCHEMA_VERSION)),
-        fingerprint_scheme_from=str(loaded.get("fingerprint_scheme_from", "wlfp1")),
-        fingerprint_scheme_to=str(loaded.get("fingerprint_scheme_to", FINGERPRINT_SCHEME)),
-        snapshot_prescheme=bool(loaded.get("snapshot_prescheme", False)),
+        legs=legs,
+        schema_version=schema_version,
+        fingerprint_scheme_from=scheme_from,
+        fingerprint_scheme_to=scheme_to,
+        snapshot_prescheme=snapshot_prescheme,
     )
 
 
@@ -537,6 +741,52 @@ def _write_store_doc(root: Path, live_path: Path, document: dict[str, Any]) -> N
     )
 
 
+def _validate_store_payload(data: bytes, store_name: str) -> dict[str, Any]:
+    loaded = _load_old_store_bytes(
+        data,
+        store_name,
+        preserve_falsey_types=store_name == "judged.yaml",
+    )
+    if store_name == "judged.yaml":
+        _validate_judged_source_for_carry(loaded, store_name=store_name)
+    else:
+        _require_rekey_store_scheme(loaded.get("fingerprint_scheme"), store_name=store_name)
+    return loaded
+
+
+def _preflight_store_payloads(payloads: dict[str, bytes], journal: Journal) -> None:
+    for store_name, data in payloads.items():
+        loaded = _validate_store_payload(data, store_name)
+        if store_name == "judged.yaml":
+            _carry_judged_loaded_store(loaded, journal.remap, store_name=store_name)
+
+
+def _preflight_pending_snapshot_payloads(root: Path, journal: Journal) -> dict[str, bytes | None]:
+    """Read and validate every pending YAML snapshot before any migration write.
+
+    Return the validated bytes so application consumes the exact preflighted
+    payloads. This closes both incremental validation and a preflight/use race:
+    a later snapshot cannot become unsupported after an earlier leg mutates its
+    live store and journal.
+    """
+    sdir = snapshot_dir(root)
+    payloads: dict[str, bytes | None] = {}
+    for leg in journal.legs:
+        if leg.done or leg.name == "filigree":
+            continue
+        snap_name, _live_path_fn, _list_key, _version = _YAML_LEGS[leg.name]
+        snap = sdir / snap_name
+        if not _has_path_or_symlink(snap):
+            payloads[leg.name] = None
+            continue
+        data = _read_required_snapshot_bytes(root, snap)
+        loaded = _validate_store_payload(data, snap_name)
+        if leg.name == "judged":
+            _carry_judged_loaded_store(loaded, journal.remap, store_name=snap_name)
+        payloads[leg.name] = data
+    return payloads
+
+
 def apply_pending_legs(
     root: Path, journal: Journal, *, findings: Sequence[Finding] | None = None, filigree: Any = None
 ) -> Journal:
@@ -547,7 +797,8 @@ def apply_pending_legs(
     YAML legs are idempotent; the Filigree leg soft-fails into recorded debt and never
     aborts the (already-complete) YAML migration."""
     jpath = paths.migration_journal_path(root)
-    sdir = snapshot_dir(root)
+    _validate_journal_remap(journal.remap, journal_name=jpath.name)
+    snapshot_payloads = _preflight_pending_snapshot_payloads(root, journal)
     for leg in journal.legs:
         if leg.done:
             continue
@@ -556,14 +807,20 @@ def apply_pending_legs(
             write_journal(jpath, journal, root=root)
             continue
         snap_name, live_path_fn, list_key, version = _YAML_LEGS[leg.name]
-        snap = sdir / snap_name
-        if not _has_path_or_symlink(snap):
+        snapshot_data = snapshot_payloads[leg.name]
+        if snapshot_data is None:
             # The store never existed pre-migration — nothing to carry, create nothing.
             leg.done = True
             write_journal(jpath, journal, root=root)
             continue
-        snapshot_data = _read_required_snapshot_bytes(root, snap)
-        result = _carry_store_bytes(snapshot_data, snap_name, list_key, version, journal.remap)
+        if leg.name == "judged":
+            result = _carry_judged_loaded_store(
+                _load_old_store_bytes(snapshot_data, snap_name, preserve_falsey_types=True),
+                journal.remap,
+                store_name=snap_name,
+            )
+        else:
+            result = _carry_store_bytes(snapshot_data, snap_name, list_key, version, journal.remap)
         _write_store_doc(root, live_path_fn(root), result.document)
         leg.carried = list(result.carried)
         leg.orphaned = list(result.orphaned)
@@ -637,29 +894,42 @@ def _apply_filigree_leg(leg: Leg, findings: Sequence[Finding] | None, filigree: 
 # --- S9: --probe (read-only cross-check; writes NOTHING) --------------------------
 
 
-def _store_fingerprints(root: Path) -> dict[str, tuple[str | None, set[str]]]:
-    """Per live store: its ``fingerprint_scheme`` header (None when pre-scheme) and the
-    fingerprints it records, read RAW (a pre-migration store would SCHEME_MISMATCH the
-    enforcing loaders). The scheme is load-bearing: a store ALREADY at the live scheme
-    holds wlfp2 fingerprints, and judging it against the wlfp1-reconstructed remap keys
-    misreads every healthy entry as orphaned (A7, weft-dda1a6d8dd). Read-only."""
+def _store_fingerprints_from_payloads(payloads: dict[str, bytes]) -> dict[str, tuple[str | None, set[str]]]:
     out: dict[str, tuple[str | None, set[str]]] = {}
-    state = paths.weft_state_dir(root)
     for name, key, _ver in _STORES:
-        p = state / name
-        data = _read_project_store_bytes(root, p)
+        data = payloads.get(name)
         if data is None:
             continue
-        loaded = _load_old_store_bytes(data, p.name)
-        scheme = loaded.get("fingerprint_scheme")
+        loaded = _load_old_store_bytes(data, name)
+        scheme = _require_rekey_store_scheme(loaded.get("fingerprint_scheme"), store_name=name)
         fps = {
             e["fingerprint"]
             for e in (loaded.get(key) or [])
             if isinstance(e, dict) and isinstance(e.get("fingerprint"), str)
         }
         if fps:
-            out[name] = (scheme if isinstance(scheme, str) else None, fps)
+            out[name] = (scheme, fps)
     return out
+
+
+def _store_fingerprints(root: Path) -> dict[str, tuple[str | None, set[str]]]:
+    """Per live store: its ``fingerprint_scheme`` header (None when pre-scheme) and the
+    fingerprints it records, read RAW (a pre-migration store would SCHEME_MISMATCH the
+    enforcing loaders). The scheme is load-bearing: a store ALREADY at the live scheme
+    holds wlfp2 fingerprints, and judging it against the wlfp1-reconstructed remap keys
+    misreads every healthy entry as orphaned (A7, weft-dda1a6d8dd). Read-only."""
+    return _store_fingerprints_from_payloads(_read_live_store_payloads(root))
+
+
+def _payloads_have_prescheme_store(payloads: dict[str, bytes]) -> bool:
+    for name, key, _ver in _STORES:
+        data = payloads.get(name)
+        if data is None:
+            continue
+        loaded = _load_old_store_bytes(data, name)
+        if loaded.get(key) and not loaded.get("fingerprint_scheme"):
+            return True
+    return False
 
 
 def _dir_has_prescheme_store(dir_path: Path, *, root: Path | None = None) -> bool:
@@ -754,8 +1024,8 @@ def probe(root: Path, findings: Sequence[Finding]) -> ProbeReport:
 
 
 def run_rekey(root: Path, findings: Sequence[Finding], *, filigree: Any = None) -> Journal:
-    """Fresh migration: snapshot FIRST (pre-migration provenance), plan the remap from
-    the single scan, write the journal, then apply the legs. Idempotent via the snapshot."""
+    """Fresh migration: validate then publish one exact live-store byte snapshot,
+    plan the remap from the single scan, write the journal, then apply the legs."""
     # Refuse a forward re-run over an ALREADY-COMPLETE migration. The snapshot (wlfp1) and
     # journal persist after success (only --rollback clears them), and the live stores are
     # now wlfp2; re-snapshot never clobbers, so a second forward run would re-carry from the
@@ -775,7 +1045,10 @@ def run_rekey(root: Path, findings: Sequence[Finding], *, filigree: Any = None) 
     # is nothing to migrate, and re-keying wlfp2 entries through the wlfp1 remap would
     # orphan every healthy verdict (the destructive twin of the A7 probe misread,
     # weft-dda1a6d8dd). Checked BEFORE the snapshot — a refused run writes nothing.
-    populated_schemes = [scheme for scheme, _fps in _store_fingerprints(root).values()]
+    live_payloads = _read_live_store_payloads(root)
+    journal = new_journal(compute_old_new_fingerprints(findings))
+    _preflight_store_payloads(live_payloads, journal)
+    populated_schemes = [scheme for scheme, _fps in _store_fingerprints_from_payloads(live_payloads).values()]
     if populated_schemes and all(s == FINGERPRINT_SCHEME for s in populated_schemes):
         raise WardlineError(
             f"every store is already at the {FINGERPRINT_SCHEME} fingerprint scheme — "
@@ -783,11 +1056,10 @@ def run_rekey(root: Path, findings: Sequence[Finding], *, filigree: Any = None) 
             "verdicts. Nothing to do (run `wardline rekey --probe` for the per-store view)."
         )
     _refuse_preexisting_snapshot_without_journal(root)
-    snapshot_stores(root)  # must precede any store write
-    journal = new_journal(compute_old_new_fingerprints(findings))
+    _publish_snapshot_payloads(root, live_payloads)  # exact preflighted bytes; no second live read
     # Detect from the immutable snapshot (byte-identical to the pre-migration live stores)
     # so the caution persists onto the journal for --resume display too.
-    journal.snapshot_prescheme = _dir_has_prescheme_store(snapshot_dir(root), root=root)
+    journal.snapshot_prescheme = _payloads_have_prescheme_store(live_payloads)
     write_journal(jpath, journal, root=root)
     return apply_pending_legs(root, journal, findings=findings, filigree=filigree)
 

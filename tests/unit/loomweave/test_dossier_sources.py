@@ -8,16 +8,19 @@ Loomweave, an unknown entity, or an outage yields an honest unavailable section.
 
 from __future__ import annotations
 
+import pytest
+
 from wardline.loomweave.client import LinkageResult
-from wardline.loomweave.dossier_sources import LoomweaveLinkageProvider, resolve_entity_binding
+from wardline.loomweave.dossier_sources import BindingResolution, LoomweaveLinkageProvider, resolve_entity_binding
 from wardline.loomweave.identity import ContentStatus, EntityBinding, IdentityStatus
 
 
 class _FakeClient:
-    def __init__(self, callers=None, callees=None, resolved=None):
+    def __init__(self, callers=None, callees=None, resolved=None, auth_status=None):
         self._callers = callers
         self._callees = callees
         self._resolved = resolved or {}
+        self._auth_status = auth_status
         self.caller_calls = []
 
     def get_callers(self, entity_id, *, limit=50):
@@ -32,7 +35,11 @@ class _FakeClient:
         from wardline.loomweave.client import ResolveResult
 
         resolved = {q: self._resolved[q] for q in qualnames if q in self._resolved}
-        return ResolveResult(resolved=resolved, unresolved=[q for q in qualnames if q not in resolved])
+        return ResolveResult(
+            resolved=resolved,
+            unresolved=[q for q in qualnames if q not in resolved],
+            auth_status=self._auth_status,
+        )
 
 
 _ALIVE = EntityBinding(
@@ -129,9 +136,9 @@ def test_resolve_entity_binding_resolves_qualname_then_locator() -> None:
             assert locator == "python:function:svc.leaky"
             return EntityBinding(locator=locator, sei="loomweave:eid:abc", identity=IdentityStatus.ALIVE)
 
-    binding = resolve_entity_binding(client, _Resolver(), "svc.leaky")
-    assert binding is not None
-    assert binding.sei == "loomweave:eid:abc"
+    resolution = resolve_entity_binding(client, _Resolver(), "svc.leaky")
+    assert resolution.binding is not None
+    assert resolution.binding.sei == "loomweave:eid:abc"
 
 
 def test_resolve_entity_binding_none_when_qualname_unresolvable() -> None:
@@ -141,4 +148,39 @@ def test_resolve_entity_binding_none_when_qualname_unresolvable() -> None:
         def resolve_locator(self, locator):  # pragma: no cover - must not be called
             raise AssertionError("should not resolve a locator we could not obtain")
 
-    assert resolve_entity_binding(client, _Resolver(), "svc.unknown") is None
+    assert resolve_entity_binding(client, _Resolver(), "svc.unknown") == BindingResolution(
+        binding=None,
+        unavailable_reason="Loomweave returned no identity for svc.unknown",
+        auth_status=None,
+    )
+
+
+@pytest.mark.parametrize(
+    ("status", "must_contain", "must_not_contain"),
+    [
+        (401, ("401", "federation/HMAC credential", "clock"), ("not indexed",)),
+        (403, ("403", "project", "scope", "permission"), ("set a token", "not indexed")),
+    ],
+)
+def test_resolve_entity_binding_preserves_auth_rejection(status, must_contain, must_not_contain) -> None:
+    resolution = resolve_entity_binding(_FakeClient(auth_status=status), _ResolverNever(), "svc.leaky", plugin="python")
+
+    assert resolution.binding is None
+    assert resolution.auth_status == status
+    assert resolution.unavailable_reason is not None
+    assert all(text in resolution.unavailable_reason for text in must_contain)
+    assert all(text not in resolution.unavailable_reason for text in must_not_contain)
+
+
+def test_resolve_entity_binding_genuine_unresolved_keeps_no_binding_language() -> None:
+    resolution = resolve_entity_binding(_FakeClient(resolved={}), _ResolverNever(), "svc.unknown")
+    assert resolution == BindingResolution(
+        binding=None,
+        unavailable_reason="Loomweave returned no identity for svc.unknown",
+        auth_status=None,
+    )
+
+
+class _ResolverNever:
+    def resolve_locator(self, locator):  # pragma: no cover - must not be called
+        raise AssertionError("should not resolve a locator we could not obtain")

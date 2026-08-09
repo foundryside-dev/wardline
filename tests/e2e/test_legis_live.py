@@ -88,7 +88,7 @@ def _scan_artifact(root: Path, *, key: bytes | None = None) -> tuple[dict, set[s
     # mirrors gate_decision: the gate (unsuppressed) view, not the suppressed findings.
     # Otherwise a committed baseline/waiver/judged would make this oracle assert the
     # wrong population (it is green today only because _LEAKY has no committed suppression).
-    gate_population = result.gate_findings if result.gate_findings is not None else result.findings
+    gate_population = result.gate_population.findings
     active_fps = {f.fingerprint for f in gate_population if f.kind.value == "defect" and f.suppressed.value == "active"}
     return scan, active_fps
 

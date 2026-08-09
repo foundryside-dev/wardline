@@ -34,7 +34,7 @@ from click.testing import CliRunner
 from wardline.cli.scan import scan
 from wardline.core.delta_scope import parse_affected_scope
 from wardline.core.finding import Severity, SuppressionState
-from wardline.core.run import gate_decision, run_scan
+from wardline.core.run import GateSuppressionPosture, gate_decision, run_scan
 from wardline.loomweave.identity import SeiCapability, SeiResolver
 
 # A trusted boundary returning an external-tainted value: PY-WL-101 ERROR defect. The
@@ -144,7 +144,7 @@ class _SpyClient:
 
 def test_inv1_full_scan_byte_identical_to_no_resolver(tmp_path: Path) -> None:
     """INV-1: a full scan (``affected is None``) yields the same findings, summary,
-    gate_findings, and scanned_paths whether or not a resolver is injected — and never a
+    gate population findings, and scanned_paths whether or not a resolver is injected — and never a
     scope block. Passing a resolver must not perturb the full-scan path."""
     proj = _two_file_proj(tmp_path)
     spy = _SpyClient()
@@ -157,8 +157,10 @@ def test_inv1_full_scan_byte_identical_to_no_resolver(tmp_path: Path) -> None:
     assert _frozen_finding_repr(plain.findings) == _frozen_finding_repr(with_resolver.findings)
     assert plain.summary == with_resolver.summary
     assert plain.scanned_paths == with_resolver.scanned_paths
-    assert plain.gate_findings is not None and with_resolver.gate_findings is not None
-    assert _frozen_finding_repr(plain.gate_findings) == _frozen_finding_repr(with_resolver.gate_findings)
+    assert plain.gate_population.posture is with_resolver.gate_population.posture
+    assert _frozen_finding_repr(plain.gate_population.findings) == _frozen_finding_repr(
+        with_resolver.gate_population.findings
+    )
     # The frozen full-scan expectation: both leaky entities, both files, both gate.
     assert _py101_paths(plain.findings) == {"good.py", "evil.py"}
 
@@ -247,6 +249,10 @@ def test_inv3_all_unresolvable_falls_back_to_full(tmp_path: Path) -> None:
     assert fallback.scope.files_analyzed == fallback.scope.files_discovered == 2
     # The finding set is identical to a plain full scan's (full-fallback applies NO filter).
     assert _frozen_finding_repr(fallback.findings) == _frozen_finding_repr(full.findings)
+    assert fallback.gate_population.posture is full.gate_population.posture
+    assert _frozen_finding_repr(fallback.gate_population.findings) == _frozen_finding_repr(
+        full.gate_population.findings
+    )
 
 
 # --- INV-4 (THREAT-001) ----------------------------------------------------------------
@@ -284,10 +290,10 @@ def test_inv4_surgical_exclusion_cannot_forge_a_green(tmp_path: Path) -> None:
     assert _py101_quals(delta.findings) == set() or "evil.backdoor" not in _py101_quals(delta.findings)
     assert not any(f.location.path == "evil.py" and f.qualname == "evil.backdoor" for f in _py101(delta.findings))
     # ...but it is STILL live in the gate population (the filter never narrows the gate).
-    assert delta.gate_findings is not None
+    assert delta.gate_population.posture is GateSuppressionPosture.UNSUPPRESSED
     backdoor_in_gate = [
         f
-        for f in delta.gate_findings
+        for f in delta.gate_population.findings
         if f.rule_id == "PY-WL-101"
         and f.location.path == "evil.py"
         and f.qualname == "evil.backdoor"
@@ -316,8 +322,8 @@ def test_inv4_co_located_surgical_exclusion_cannot_forge_a_green(tmp_path: Path)
 
     assert delta.scope is not None and delta.scope.mode == "delta"
     assert _py101_quals(delta.findings) == {"svc.alpha"}
-    assert delta.gate_findings is not None
-    assert _py101_quals(delta.gate_findings) == {"svc.alpha", "svc.beta"}
+    assert delta.gate_population.posture is GateSuppressionPosture.UNSUPPRESSED
+    assert _py101_quals(delta.gate_population.findings) == {"svc.alpha", "svc.beta"}
 
     assert gate_decision(full, Severity.ERROR).verdict == "FAILED"
     assert gate_decision(delta, Severity.ERROR).verdict == "FAILED"
@@ -327,12 +333,11 @@ def test_inv4_co_located_surgical_exclusion_cannot_forge_a_green(tmp_path: Path)
 def test_inv4_surgical_exclusion_cannot_forge_a_green_under_trust_suppressions(tmp_path: Path) -> None:
     """INV-4 / THREAT-001 under ``--trust-suppressions`` — the dangerous combination.
 
-    With ``trust_suppressions=True`` the gate would, on a FULL scan, fall back to the
-    suppressed ``findings`` (``gate_findings is None``). A delta scan filters ``findings``,
-    so a naive fallback would let a surgical-exclusion worklist hide an in-analyzed-file
-    ERROR from the gate and forge a PASSED. The fix MATERIALISES a concrete gate population
-    (post-suppression, pre-delta-filter), so the delta gate verdict is IDENTICAL to the
-    full scan's FAILED even though the ERROR was excluded from the DISPLAYED set."""
+    With ``trust_suppressions=True`` the mandatory gate population carries the
+    post-suppression, pre-delta-filter findings. A delta scan narrows only the display, so
+    a surgical-exclusion worklist cannot hide an in-analyzed-file ERROR from the gate. The
+    delta gate verdict is IDENTICAL to the full scan's FAILED even though the ERROR was
+    excluded from the DISPLAYED set."""
     proj = _evil_proj(tmp_path)
     # Names only the benign evil.touched; evil.py is analyzed (backdoor's ERROR is computed)
     # but the worklist surgically drops backdoor from the displayed findings.
@@ -345,11 +350,12 @@ def test_inv4_surgical_exclusion_cannot_forge_a_green_under_trust_suppressions(t
     assert delta.scope is not None and delta.scope.mode == "delta"
     # The backdoor ERROR is surgically excluded from the DISPLAYED findings...
     assert not any(f.location.path == "evil.py" and f.qualname == "evil.backdoor" for f in _py101(delta.findings))
-    # ...but the gate population is a CONCRETE list (the None sentinel was materialised) that
-    # still carries the backdoor ERROR; the posture stays trust-suppressions.
-    assert delta.gate_findings is not None
-    assert delta.honors_suppressions is True
-    assert any(f.location.path == "evil.py" and f.qualname == "evil.backdoor" for f in _py101(delta.gate_findings))
+    # ...but the tagged gate population still carries the backdoor ERROR and retains the
+    # trust-suppressions posture.
+    assert delta.gate_population.posture is GateSuppressionPosture.HONORS_SUPPRESSIONS
+    assert any(
+        f.location.path == "evil.py" and f.qualname == "evil.backdoor" for f in _py101(delta.gate_population.findings)
+    )
 
     # The surgical exclusion CANNOT forge a green: verdict/exit identical to the full scan's.
     full_decision = gate_decision(full, Severity.ERROR)

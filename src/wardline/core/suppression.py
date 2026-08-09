@@ -8,12 +8,12 @@ baseline (it carries the reason + expiry, keeping expiry observable).
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import replace
 from datetime import date
 
 from wardline.core.baseline import Baseline
-from wardline.core.finding import ENGINE_PATH, Finding, Kind, Severity, SuppressionState
+from wardline.core.finding import ENGINE_PATH, Finding, Kind, Location, Severity, SuppressionState
 from wardline.core.finding_identity import resolve_identity
 from wardline.core.judged import JudgedSet
 from wardline.core.waivers import WaiverSet
@@ -28,6 +28,61 @@ _MATCH_STATE: dict[str, SuppressionState] = {
 # and metrics never participate in the gate.
 SEVERITY_ORDER: tuple[Severity, ...] = (Severity.INFO, Severity.WARN, Severity.ERROR, Severity.CRITICAL)
 _RANK: dict[Severity, int] = {s: i for i, s in enumerate(SEVERITY_ORDER)}
+
+# Intentionally empty. Any safe family must be registered here and exercise the
+# explicit downgrade branch below with its own regression coverage.
+_LINELESS_DEFECT_FACT_ALLOWLIST: frozenset[str] = frozenset()
+
+
+def _allowlisted_lineless_defect_fact(finding: Finding) -> Finding:
+    """Downgrade a specifically allowlisted lineless defect to an observable fact."""
+    import hashlib
+
+    identity = "\x00".join(("WLN-ENGINE-LINELESS-DEFECT", finding.rule_id, finding.location.path))
+    return Finding(
+        rule_id="WLN-ENGINE-LINELESS-DEFECT",
+        message=(
+            f"DEFECT {finding.rule_id} on path {finding.location.path} has line_start=None; "
+            "skipped to avoid fingerprint collision risk"
+        ),
+        severity=Severity.NONE,
+        kind=Kind.FACT,
+        location=finding.location,
+        fingerprint=hashlib.sha256(identity.encode("utf-8")).hexdigest(),
+        properties={"rule_id": finding.rule_id, "original_kind": finding.kind.value},
+    )
+
+
+def _lineless_defect_diagnostic(finding: Finding) -> Finding:
+    import hashlib
+
+    identity = "\x00".join(
+        (
+            "WLN-ENGINE-LINELESS-DEFECT",
+            finding.rule_id,
+            finding.location.path,
+            finding.fingerprint,
+            finding.kind.value,
+        )
+    )
+    properties: Mapping[str, str] = {
+        "original_rule_id": finding.rule_id,
+        "original_path": finding.location.path,
+        "original_fingerprint": finding.fingerprint,
+        "original_kind": finding.kind.value,
+    }
+    return Finding(
+        rule_id="WLN-ENGINE-LINELESS-DEFECT",
+        message=(
+            f"DEFECT {finding.rule_id} on path {finding.location.path} has "
+            "line_start=None; replaced with a gate-eligible engine diagnostic"
+        ),
+        severity=finding.severity,
+        kind=Kind.DEFECT,
+        location=Location(path=ENGINE_PATH),
+        fingerprint=hashlib.sha256(identity.encode("utf-8")).hexdigest(),
+        properties=properties,
+    )
 
 
 def apply_suppressions(
@@ -45,25 +100,10 @@ def apply_suppressions(
             out.append(f)
             continue
         if f.location.path != ENGINE_PATH and f.location.line_start is None:
-            import hashlib
-
-            digest = hashlib.sha256()
-            digest.update(f"WLN-ENGINE-LINELESS-DEFECT\x00{f.rule_id}\x00{f.location.path}".encode())
-            warning_fp = digest.hexdigest()
-            out.append(
-                Finding(
-                    rule_id="WLN-ENGINE-LINELESS-DEFECT",
-                    message=(
-                        f"DEFECT {f.rule_id} on path {f.location.path} has line_start=None — "
-                        f"skipped to avoid fingerprint collision risk"
-                    ),
-                    severity=Severity.NONE,
-                    kind=Kind.FACT,
-                    location=f.location,
-                    fingerprint=warning_fp,
-                    properties={"rule_id": f.rule_id, "original_kind": "DEFECT"},
-                )
-            )
+            if f.rule_id in _LINELESS_DEFECT_FACT_ALLOWLIST:
+                out.append(_allowlisted_lineless_defect_fact(f))
+            else:
+                out.append(_lineless_defect_diagnostic(f))
             continue
         # Precedence (waiver > judged > baseline) lives in resolve_identity — the
         # single JOIN predicate. BASELINED carries no reason (matches the historical

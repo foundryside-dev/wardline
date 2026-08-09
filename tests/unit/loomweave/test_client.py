@@ -251,15 +251,41 @@ def test_resolve_omits_plugin_field_when_unhinted():
     assert "plugin" not in json.loads(t.calls[0][2])
 
 
-def test_resolve_hinted_4xx_downgrades_chunk_to_unresolved():
+def test_resolve_hinted_legacy_plugin_field_rejection_downgrades_chunk_to_unresolved():
     # Fail-soft: an older Loomweave whose ResolveRequest is deny_unknown_fields 400s
     # on the hint field — identity enrichment must degrade to unresolved, not crash
     # the dossier/attach path.
-    t = FakeTransport([Response(status=400, body='{"error":"unknown field `plugin`"}')])
+    t = FakeTransport(
+        [
+            Response(
+                status=400,
+                body='{"code":"INVALID_PATH","error":"unknown field `plugin`, expected `project` or `qualnames`"}',
+            )
+        ]
+    )
     result = _client(t).resolve(["m.f", "m.g"], plugin="rust")
     assert result is not None
     assert result.resolved == {}
     assert result.unresolved == ["m.f", "m.g"]
+
+
+@pytest.mark.parametrize("status", [404, 409, 422, 429])
+def test_resolve_hinted_noncompatibility_4xx_stays_loud(status: int):
+    t = FakeTransport([Response(status=status, body='{"code":"REAL_ERROR"}')])
+
+    with pytest.raises(LoomweaveError, match=str(status)):
+        _client(t).resolve(["m.f"], plugin="rust")
+
+
+def test_resolve_hinted_noncompatibility_400_stays_loud():
+    # Modern Loomweave uses the same status/code for malformed resolve requests.
+    # Only the old-server unknown-plugin-field envelope is version skew.
+    t = FakeTransport(
+        [Response(status=400, body='{"code":"INVALID_PATH","error":"plugin must not be blank when present"}')]
+    )
+
+    with pytest.raises(LoomweaveError, match="plugin must not be blank"):
+        _client(t).resolve(["m.f"], plugin="rust")
 
 
 def test_resolve_unhinted_4xx_stays_loud():
@@ -314,6 +340,22 @@ def test_resolve_hinted_auth_rejection_keeps_earlier_chunk_results():
     assert result.auth_status == 401
 
 
+def test_resolve_auth_warning_counts_current_and_later_chunks(caplog):
+    import logging
+
+    t = FakeTransport(
+        [
+            Response(status=200, body='{"resolved":{},"unresolved":["a","b"]}'),
+            Response(status=403, body='{"code":"FORBIDDEN"}'),
+        ]
+    )
+    with caplog.at_level(logging.WARNING, logger="wardline.loomweave.client"):
+        result = _client(t, batch_max=2).resolve(["a", "b", "c", "d", "e"])
+
+    assert result is not None and result.auth_status == 403
+    assert any("3 qualname(s) left unprobed" in record.message for record in caplog.records)
+
+
 def test_resolve_default_has_no_auth_rejection():
     t = FakeTransport([Response(status=200, body='{"resolved":{},"unresolved":["m.f"]}')])
     result = _client(t).resolve(["m.f"], plugin="python")
@@ -321,9 +363,17 @@ def test_resolve_default_has_no_auth_rejection():
     assert result.auth_rejected is False
 
 
-def test_unhinted_401_stays_loud():
-    # Without a hint the whole 4xx band (auth included) is a loud LoomweaveError —
-    # the pre-existing posture, re-pinned against the new hinted auth carve-out.
-    t = FakeTransport([Response(status=401, body='{"code":"AUTH"}')])
-    with pytest.raises(LoomweaveError, match="401"):
-        _client(t).resolve(["m.f"])
+@pytest.mark.parametrize("status", [401, 403])
+def test_resolve_unhinted_auth_rejection_is_fail_soft_and_distinct(status: int):
+    # Authentication and authorization failures are independent of the optional
+    # plugin hint. An unhinted consumer must receive the same actionable signal as a
+    # hinted one, never a loud exception or a fabricated unresolved identity.
+    t = FakeTransport([Response(status=status, body='{"code":"AUTH"}')])
+
+    result = _client(t).resolve(["m.f"])
+
+    assert result is not None
+    assert result.resolved == {}
+    assert result.unresolved == []
+    assert result.auth_status == status
+    assert result.auth_rejected is True

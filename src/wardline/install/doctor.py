@@ -19,12 +19,18 @@ from wardline.core import discovery, paths
 from wardline.core.baseline import inspect_baseline_store
 from wardline.core.config import ArtifactSettings, _filigree_published_url, filigree_server_scoped_url, load
 from wardline.core.errors import ConfigError, LoomweaveError, WardlineError
-from wardline.core.filigree_emit import FiligreeEmitter, Transport, UrllibTransport
+from wardline.core.filigree_emit import (
+    FiligreeEmitter,
+    Transport,
+    UrllibTransport,
+    filigree_url_project,
+    redact_url_for_diagnostics,
+)
 from wardline.core.http import WeftHttp
 from wardline.core.paths import legacy_sibling_dir, sibling_state_dir, weft_config_path, weft_state_dir
 from wardline.core.safe_paths import safe_project_path, safe_read_text_if_regular, safe_write_text
 from wardline.filigree.config import load_filigree_token
-from wardline.install.block import inject_block
+from wardline.install.block import claude_md_redirects_to_agents_md, has_own_block, inject_block_for_project
 from wardline.install.detect import (
     _detect_filigree,
     _detect_loomweave,
@@ -32,9 +38,10 @@ from wardline.install.detect import (
 )
 from wardline.install.mcp_json import (
     _codex_config_path,
-    _codex_mcp_entry,
+    _desired_codex_entry,
     _desired_local_entry,
     install_codex_mcp,
+    mcp_entry_pack_grants,
     merge_mcp_entry,
 )
 from wardline.install.skill import install_skill
@@ -250,9 +257,36 @@ def _check_gitignore(proj: Path, *, fix: bool) -> DoctorCheck:
 
 
 def _has_instruction_block(path: Path) -> bool:
-    if not path.is_file():
-        return False
-    return "wardline:instructions:" in path.read_text(encoding="utf-8", errors="replace")
+    """Whether wardline's own managed block is present in *path*.
+
+    Delegates to :func:`wardline.install.block.has_own_block` so doctor's DETECTOR is
+    the exact inverse of the installer's WRITER — same fence walker, same
+    foreign-shielding rules. This was a bare substring test, which disagreed with the
+    writers whenever a sibling's block quoted wardline's marker; see ``has_own_block``
+    for the two failure modes that produced.
+    """
+    return has_own_block(path)
+
+
+def _check_claude_md(root: Path) -> CheckResult:
+    """Health of the CLAUDE.md instruction block, respecting a C-20 redirect.
+
+    Three states, not two. When CLAUDE.md is merely an @-import of AGENTS.md the
+    block belongs in AGENTS.md alone, so its *absence* from CLAUDE.md is healthy
+    — reporting "missing" there would send `--repair` to re-inject a block the
+    project deliberately does not want. A legacy block still sitting in a
+    redirecting CLAUDE.md is the unhealthy case: duplicate guidance that drifts,
+    which `--repair` migrates out.
+
+    The row is kept (rather than dropped) under a redirect, and says why: doctor
+    output is a human checklist, and a silently absent line reads as an omission.
+    """
+    present = _has_instruction_block(root / "CLAUDE.md")
+    if claude_md_redirects_to_agents_md(root):
+        if present:
+            return CheckResult("CLAUDE.md", False, "stale block; CLAUDE.md redirects to AGENTS.md — migrate it")
+        return CheckResult("CLAUDE.md", True, "not required (redirects to AGENTS.md)")
+    return CheckResult("CLAUDE.md", present, "configured" if present else "missing")
 
 
 def _has_skill(root: Path, base: str) -> bool:
@@ -273,12 +307,17 @@ def _check_project_mcp(root: Path) -> CheckResult:
     if not isinstance(servers, dict):
         return CheckResult(".mcp.json", False, "missing mcpServers object")
     entry = servers.get("wardline")
-    # An entry carrying operator-pinned --loomweave-url/--filigree-url args is well-formed:
-    # compare against the canonical entry augmented with those preserved args (and the
-    # live server-mode filigree scope, if any), not the bare canonical entry (which would
-    # flag a configured emit target as misconfiguration).
-    if entry != _desired_local_entry(entry, root):
+    # An entry carrying operator-pinned --loomweave-url/--filigree-url args or pack
+    # grants (--trust-pack/--allow-custom-packs) is well-formed: compare against the
+    # canonical entry augmented with those preserved args (and the live server-mode
+    # filigree scope, if any), not the bare canonical entry (which would flag a
+    # configured emit target or granted pack as misconfiguration).
+    if entry is None:
         return CheckResult(".mcp.json", False, "missing wardline server")
+    if entry != _desired_local_entry(entry, root):
+        # A present-but-noncanonical entry is a different failure than an absent one;
+        # calling it "missing" sends the operator chasing the wrong problem.
+        return CheckResult(".mcp.json", False, "wardline entry differs from canonical (doctor --repair reconciles it)")
     return CheckResult(".mcp.json", True, "configured")
 
 
@@ -292,8 +331,12 @@ def _check_codex_mcp() -> CheckResult:
         return CheckResult("Codex MCP", False, "invalid TOML")
     servers = parsed.get("mcp_servers")
     entry = servers.get("wardline") if isinstance(servers, dict) else None
-    if entry != _codex_mcp_entry():
+    if entry is None:
         return CheckResult("Codex MCP", False, "missing wardline server")
+    # Compare against the canonical entry preserving the operator's pack grants,
+    # mirroring the project .mcp.json check.
+    if entry != _desired_codex_entry(entry):
+        return CheckResult("Codex MCP", False, "wardline entry differs from canonical (doctor --repair reconciles it)")
     return CheckResult("Codex MCP", True, "configured")
 
 
@@ -333,8 +376,15 @@ def _check_config(root: Path, *, fixed: bool) -> DoctorCheck:
             return DoctorCheck(
                 "wardline.config", "error", fixed=False, message="[wardline] in weft.toml must be a table"
             )
+    # Load with the pack grants recorded in .mcp.json's wardline entry — the
+    # operator's standing authorization that every server spawn already runs with.
+    # Judging a granted, working gate against a grantless re-derivation produced a
+    # FALSE "pack not trusted" error (wardline-7a76f6c5a0 follow-up). The standing
+    # record (not a live server's in-memory grants) is deliberately the source:
+    # doctor reports the health of the configuration as it will next spawn.
+    trusted_packs, trust_local_packs = mcp_entry_pack_grants(root)
     try:
-        load(cfg_path)
+        load(cfg_path, trusted_packs=trusted_packs, trust_local_packs=trust_local_packs)
     except ConfigError as exc:
         return DoctorCheck("wardline.config", "error", fixed=False, message=str(exc))
     return DoctorCheck("wardline.config", "ok", fixed=fixed)
@@ -391,15 +441,69 @@ def _check_url(
     check_id = f"{key}.url"
     if effective_url:
         source = effective_url_source or f"--{key}-url launch flag"
-        if _valid_http_url(effective_url):
-            return DoctorCheck(check_id, "ok", fixed=fixed, message=f"from {source}")
-        return DoctorCheck(check_id, "error", fixed=False, message=f"invalid URL ({source}): {effective_url!r}")
+        if not _valid_http_url(effective_url):
+            return DoctorCheck(check_id, "error", fixed=False, message=f"invalid URL ({source}): {effective_url!r}")
+        if key == "filigree":
+            scope = _check_filigree_project_scope(root, effective_url, source, check_id=check_id)
+            if scope is not None:
+                return scope
+        return DoctorCheck(check_id, "ok", fixed=fixed, message=f"from {source}")
     url = os.environ.get(env_key)
-    if not url:
-        return DoctorCheck(check_id, "ok", fixed=fixed, message="not configured (no launch flag, no env)")
-    if _valid_http_url(url):
+    if url:
+        if not _valid_http_url(url):
+            return DoctorCheck(check_id, "error", fixed=False, message=f"invalid URL: {url!r}")
+        if key == "filigree":
+            scope = _check_filigree_project_scope(root, url, f"env {env_key}", check_id=check_id)
+            if scope is not None:
+                return scope
         return DoctorCheck(check_id, "ok", fixed=fixed, message=f"from env {env_key}")
-    return DoctorCheck(check_id, "error", fixed=False, message=f"invalid URL: {url!r}")
+    if key == "filigree":
+        target = _resolve_probe_target(root, None)
+        if target is not None:
+            if not _valid_http_url(target.url):
+                return DoctorCheck(
+                    check_id,
+                    "error",
+                    fixed=False,
+                    message=f"invalid URL ({target.source}): {target.url!r}",
+                )
+            scope = _check_filigree_project_scope(root, target.url, target.source, check_id=check_id)
+            if scope is not None:
+                return scope
+            return DoctorCheck(check_id, "ok", fixed=fixed, message=f"from {target.source}")
+    return DoctorCheck(check_id, "ok", fixed=fixed, message="not configured (no launch flag, no env)")
+
+
+def _filigree_project_scope_hint(source: str, scoped_url: str) -> str:
+    if source == "mcp":
+        return f"run `wardline doctor --repair` to rewrite .mcp.json to {scoped_url}"
+    if source == "env" or source.startswith("env "):
+        return f"unset WARDLINE_FILIGREE_URL or set it to {scoped_url}"
+    if source == "flag" or "launch flag" in source:
+        return f"update the --filigree-url launch flag to {scoped_url}"
+    return f"use {scoped_url} or add ?project= to the configured URL"
+
+
+def _check_filigree_project_scope(
+    root: Path,
+    url: str,
+    source: str,
+    *,
+    check_id: str,
+) -> DoctorCheck | None:
+    scoped_url = filigree_server_scoped_url(root)
+    if scoped_url is None or filigree_url_project(url) is not None:
+        return None
+    hint = _filigree_project_scope_hint(source, scoped_url)
+    redacted = redact_url_for_diagnostics(url)
+    return DoctorCheck(
+        check_id,
+        "error",
+        message=(
+            f"project-unpinned Filigree URL from {source}: {redacted}; "
+            f"server-mode registry expects {scoped_url}. {hint}"
+        ),
+    )
 
 
 def _check_decorator_grammar() -> DoctorCheck:
@@ -733,6 +837,9 @@ def _check_filigree_auth(
             "filigree daemon — start it with `filigree server start`",
         )
     url = target.url
+    scope = _check_filigree_project_scope(root, url, target.source, check_id="filigree.auth")
+    if scope is not None:
+        return scope
     if not _is_loopback(url):
         return DoctorCheck("filigree.auth", "ok", message="non-loopback filigree; token not probed")
     if not target.token_probe_allowed:
@@ -1048,9 +1155,7 @@ def machine_readable_doctor(
 def check_install(root: Path) -> list[CheckResult]:
     """Return install health checks without mutating the project."""
     return [
-        CheckResult("CLAUDE.md", _has_instruction_block(root / "CLAUDE.md"), "configured")
-        if _has_instruction_block(root / "CLAUDE.md")
-        else CheckResult("CLAUDE.md", False, "missing"),
+        _check_claude_md(root),
         CheckResult("AGENTS.md", _has_instruction_block(root / "AGENTS.md"), "configured")
         if _has_instruction_block(root / "AGENTS.md")
         else CheckResult("AGENTS.md", False, "missing"),
@@ -1069,9 +1174,12 @@ def check_install(root: Path) -> list[CheckResult]:
 def repair_install(root: Path) -> dict[str, str]:
     """Repair agent-install artifacts and return per-check repair status."""
     statuses: dict[str, str] = {}
-    for filename in ("CLAUDE.md", "AGENTS.md"):
-        inject_block(root / filename)
-        statuses[filename] = "repaired"
+    # Redirect-aware (C-20): under a CLAUDE.md -> AGENTS.md redirect this
+    # migrates the legacy block out of CLAUDE.md rather than re-injecting it. A
+    # conservative refusal from remove_block is surfaced verbatim — reporting
+    # "repaired" for a no-op would be a false all-clear.
+    for ok, filename, message in inject_block_for_project(root):
+        statuses[filename] = "repaired" if ok else f"refused: {message}"
     install_skill(root)
     statuses[".claude skill"] = "repaired"
     statuses[".agents skill"] = "repaired"

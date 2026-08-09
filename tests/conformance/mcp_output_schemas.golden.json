@@ -375,6 +375,38 @@
             "description": "Deterministic 'sha256:<hex>' over the effective scan policy.",
             "type": "string"
           },
+          "sei_diagnostics": {
+            "description": "Per-boundary Loomweave identity-resolution diagnostics, sorted by qualname.",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "auth_status": {
+                  "enum": [
+                    401,
+                    403,
+                    null
+                  ],
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "qualname": {
+                  "type": "string"
+                },
+                "reason": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "qualname",
+                "reason",
+                "auth_status"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
           "sei_source": {
             "description": "'loomweave' iff a client was supplied AND at least one SEI resolved; else 'unavailable'.",
             "enum": [
@@ -396,7 +428,8 @@
           "ruleset_hash",
           "posture",
           "boundaries",
-          "sei_source"
+          "sei_source",
+          "sei_diagnostics"
         ],
         "type": "object"
       },
@@ -1780,6 +1813,14 @@
               "description": "Stable fingerprint of the judged finding.",
               "type": "string"
             },
+            "judge_transport": {
+              "description": "Concrete provider transport selected for this verdict.",
+              "enum": [
+                "codex-cli",
+                "openrouter"
+              ],
+              "type": "string"
+            },
             "label": {
               "description": "The judge's verdict: a real defect vs an analyzer over-approximation.",
               "enum": [
@@ -1794,6 +1835,10 @@
                 "integer",
                 "null"
               ]
+            },
+            "model_id": {
+              "description": "Provider-specific model identifier used for this verdict.",
+              "type": "string"
             },
             "path": {
               "description": "Repo-relative file path of the finding.",
@@ -1815,7 +1860,9 @@
             "line",
             "label",
             "confidence",
-            "rationale"
+            "rationale",
+            "judge_transport",
+            "model_id"
           ],
           "type": "object"
         },
@@ -2427,6 +2474,11 @@
             "description": "Absent when not configured.",
             "type": "boolean"
           },
+          "chunks_landed": {
+            "description": "Number of chunks Filigree accepted during this emit attempt; zero only when none landed.",
+            "minimum": 0,
+            "type": "integer"
+          },
           "configured": {
             "type": "boolean"
           },
@@ -2962,6 +3014,11 @@
                 "description": "True when the emit was refused with 401/403.",
                 "type": "boolean"
               },
+              "chunks_landed": {
+                "description": "Number of chunks Filigree accepted during this emit attempt; zero only when none landed.",
+                "minimum": 0,
+                "type": "integer"
+              },
               "created": {
                 "type": "integer"
               },
@@ -3017,6 +3074,7 @@
               "auth_rejected",
               "token_sent",
               "url",
+              "chunks_landed",
               "destination"
             ],
             "type": "object"
@@ -3056,8 +3114,16 @@
               null
             ]
           },
+          "fail_on_inert": {
+            "description": "Whether the inert sub-gate knob was set.",
+            "type": "boolean"
+          },
           "fail_on_unanalyzed": {
             "description": "Whether the unanalyzed sub-gate knob was set.",
+            "type": "boolean"
+          },
+          "inert_tripped": {
+            "description": "Sub-gate attribution: the inert gate tripped (zero recognized trust boundaries over non-trivial code).",
             "type": "boolean"
           },
           "migration_hint": {
@@ -3106,10 +3172,12 @@
           "tripped",
           "fail_on",
           "fail_on_unanalyzed",
+          "fail_on_inert",
           "exit_class",
           "verdict",
           "severity_tripped",
           "unanalyzed_tripped",
+          "inert_tripped",
           "would_trip_at",
           "reason",
           "evaluated",
@@ -3469,7 +3537,7 @@
       },
       "summary": {
         "additionalProperties": false,
-        "description": "Whole-project finding counts. active+baselined+waived+judged+informational == total; unanalyzed is an overlay, not a partition member.",
+        "description": "Whole-scan finding counts for the current scan result. active+baselined+waived+judged+informational == total; unanalyzed is an overlay, not a partition member.",
         "properties": {
           "active": {
             "description": "Non-suppressed defects.",
@@ -3478,15 +3546,49 @@
           "baselined": {
             "type": "integer"
           },
+          "counts_by_kind": {
+            "additionalProperties": false,
+            "description": "Whole-scan finding counts by canonical finding kind, including active and suppressed findings.",
+            "properties": {
+              "classification": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "defect": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "fact": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "metric": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "suggestion": {
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "defect",
+              "fact",
+              "classification",
+              "metric",
+              "suggestion"
+            ],
+            "type": "object"
+          },
           "informational": {
-            "description": "All non-defect findings (facts, metrics, classifications).",
+            "description": "All non-defect findings (facts, classifications, metrics, and suggestions).",
             "type": "integer"
           },
           "judged": {
             "type": "integer"
           },
           "total": {
-            "description": "Every finding (defects + facts/metrics).",
+            "description": "Every finding (defects, facts, classifications, metrics, and suggestions).",
             "type": "integer"
           },
           "unanalyzed": {
@@ -3504,7 +3606,8 @@
           "waived",
           "judged",
           "informational",
-          "unanalyzed"
+          "unanalyzed",
+          "counts_by_kind"
         ],
         "type": "object"
       }

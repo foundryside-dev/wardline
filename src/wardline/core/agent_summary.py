@@ -293,6 +293,20 @@ def _unanalyzed_trip_action(gate: GateDecision) -> dict[str, Any]:
     }
 
 
+def _inert_trip_action(gate: GateDecision) -> dict[str, Any]:
+    # An inert trip means the gate had NOTHING to enforce — no suppression, baseline, or
+    # threshold change can clear it; only declaring boundaries (or binding a pack) can.
+    return {
+        "tool": "scan",
+        "reason": (
+            f"gate FAILED because the scan is inert — {gate.reason}. Annotate trust "
+            "boundaries (@trusted / @external_boundary / @trust_boundary) or bind your "
+            "vocabulary with a wardline pack (weft.toml [wardline] packs + trust grants), "
+            "or drop fail_on_inert; suppressions cannot clear this trip."
+        ),
+    }
+
+
 def _next_actions_for(active_count: int, gate: GateDecision) -> list[dict[str, Any]]:
     if active_count > 0:
         actions = [
@@ -315,6 +329,8 @@ def _next_actions_for(active_count: int, gate: GateDecision) -> list[dict[str, A
             )
         if gate.unanalyzed_tripped:
             actions.append(_unanalyzed_trip_action(gate))
+        if gate.inert_tripped:
+            actions.append(_inert_trip_action(gate))
         return actions
     if gate.tripped:
         # 0 active defects but the gate FAILED. Attribute each tripping sub-gate — and never
@@ -322,6 +338,8 @@ def _next_actions_for(active_count: int, gate: GateDecision) -> list[dict[str, A
         actions = []
         if gate.unanalyzed_tripped:
             actions.append(_unanalyzed_trip_action(gate))
+        if gate.inert_tripped:
+            actions.append(_inert_trip_action(gate))
         if gate.severity_tripped:
             # The severity gate tripped on suppressed/baselined findings. Do NOT say
             # "rescan after edits" (which reads as passed); point at the gate verdict.

@@ -89,7 +89,8 @@ lets it scan a large untouched codebase (including its own) with zero noise.
   report trust-surface coverage, sign reproducible posture bundles, and migrate
   fingerprint-keyed stores across scheme changes.
 - **Opt-in LLM triage** — `wardline judge` labels findings TRUE/FALSE positive
-  (dependency-free; never runs automatically).
+  through an isolated Codex CLI or OpenRouter (dependency-free; never runs
+  automatically).
 - **Light-touch suppression** — baselines, time-boxed waivers, and judged
   findings with explicit gate semantics.
 - **Loomweave integration** — persist per-entity taint facts to a Loomweave store.
@@ -139,8 +140,11 @@ Prefer `weft_markers` in application code. Wardline still recognizes
 | `rust` | scanner extra, tree-sitter, tree-sitter-rust | `wardline scan --lang rust` |
 | `docs` | mkdocs, mkdocs-material | a local MkDocs render of `docs/` |
 
-The LLM triage judge (`wardline judge`) is dependency-free (stdlib `urllib` →
-OpenRouter) and needs no extra.
+The LLM triage judge (`wardline judge`) adds no runtime dependency. Its default
+`auto` transport prefers an installed, authenticated Codex CLI and otherwise
+uses OpenRouter through stdlib `urllib`. Use `codex login` for Codex, or set
+`WARDLINE_OPENROUTER_API_KEY` for OpenRouter. See the
+[judge guide](docs/guides/judge.md) for isolation and fallback semantics.
 
 ## Use Wardline with your coding agent
 
@@ -148,7 +152,9 @@ OpenRouter) and needs no extra.
 wardline install
 ```
 
-This injects a hash-fenced instruction block into `CLAUDE.md`/`AGENTS.md`,
+This injects a hash-fenced instruction block into `CLAUDE.md`/`AGENTS.md` (or
+into `AGENTS.md` alone, migrating any legacy `CLAUDE.md` block out, when
+`CLAUDE.md` is merely an `@AGENTS.md` redirect),
 installs the `wardline-gate` skill, merges a `wardline` entry into `.mcp.json`,
 writes Codex's `~/.codex/config.toml` MCP entry, detects Loomweave/Filigree
 siblings, mints an attest signing key, and adds pre-commit hook config. Agents

@@ -12,9 +12,30 @@ config. The rest mutate project files on disk or reach a sibling over the
 network; each is marked below. Launch with `--read-only` to drop the
 write-capable tools and `--no-network` to drop the network-capable ones.
 
+Projects that declare trust-grammar packs in `weft.toml [wardline]` need the
+packs *granted* or every scan-shaped call fails closed with "pack … is not
+trusted". Grant them at launch with `--trust-pack <name>` (repeatable) and —
+for packs that live inside the project checkout — `--allow-custom-packs`; the
+server unions those grants into every tool call's `trust_packs` /
+`trust_local_packs` arguments, so callers need not re-pass them. The launch
+flags belong in the launcher config (e.g. the `.mcp.json` args array), keeping
+the grant a human-controlled switch. Per-call arguments still work and only
+ever add to the launch grants. A granted repo-local pack imports relative to
+the config file's directory; no PYTHONPATH arrangement is required.
+`wardline install` / `doctor --repair` preserve the grant flags when
+canonicalising the `.mcp.json` (and Codex) entries, and doctor's
+`wardline.config` check loads the project config with the grants recorded
+there — a granted, working gate never reads as unhealthy.
+
 Every tool is rooted at the launch project path (`--root`, default cwd). Any
 `path`/`config`/`cache_dir`/`output` argument is confined under that root —
 the same containment guarantee as the CLI.
+
+Confinement is applied twice. First, MCP `path`, `config`, `cache_dir`, and output
+arguments are resolved under the server root by `resolve_under_root`. Second, after an
+allowed config is loaded, `SourceRootConfinement.PROJECT_ROOT` independently rejects
+escaping `source_roots` and skips escaping source-file symlinks during discovery. Passing
+the first check does not certify paths named inside the config.
 
 For the matching command-line surface, see the [CLI reference](cli.md).
 
@@ -54,7 +75,7 @@ write column of `doctor`/`rekey`, the explicit write opt-in.
 findings, the suppression summary, and the gate verdict.
 
 **Key params:** `path` (subdir), `fail_on` (`CRITICAL`/`ERROR`/`WARN`/`INFO`),
-`fail_on_unanalyzed`, `lang` (`python`/`rust`), `where` (conjunctive filter:
+`fail_on_unanalyzed`, `fail_on_inert`, `lang` (`python`/`rust`), `where` (conjunctive filter:
 `rule_id`, `qualname`, `severity`, `suppression`, `kind`, `path_glob`, `sink`,
 `tier`), `explain` (inline each active defect's provenance), `summary_only`,
 `full`, `max_findings`, `offset`, `include_suppressed`, `new_since`,
@@ -63,20 +84,50 @@ evaluates the **unsuppressed** population, so a repo-controlled
 baseline/waiver/judged annotates a finding but does not clear it; pass
 `trust_suppressions: true` for the trusted-local behaviour.
 
-**Returns:** `files_scanned`, a whole-project `summary`
-(`total`/`active`/`baselined`/`waived`/`judged`/`informational`/`unanalyzed`), a
-`gate` block (`tripped`, `fail_on`, `exit_class` 0/1, `verdict`
-NOT_EVALUATED/PASSED/FAILED, `would_trip_at`, sub-gate attribution), `loomweave`
-/ `filigree` raw write/emit blocks (null when unconfigured), and the stable
-`agent_summary` block (schema `wardline-agent-summary-1`): active defects first,
-suppressed debt, engine facts, integration status, a pagination `truncation`
-descriptor, and gate-aware `next_actions`. The finding bodies are **bounded by
-default** (≤25) so a first call cannot overflow context; `full: true` lifts the
-cap and `offset` pages the rest.
+**Returns:** `files_scanned`, a `summary` for the current complete scan result
+(`total`/`active`/`baselined`/`waived`/`judged`/`informational`/`unanalyzed` plus
+`counts_by_kind`), a `gate` block (`tripped`, `fail_on`, `exit_class` 0/1,
+`verdict` NOT_EVALUATED/PASSED/FAILED, `would_trip_at`, sub-gate attribution),
+`loomweave` / `filigree` raw write/emit blocks (null when unconfigured), and the
+stable `agent_summary` block (schema `wardline-agent-summary-1`): active defects
+first, suppressed debt, engine facts, integration status, a pagination
+`truncation` descriptor, and gate-aware `next_actions`. The finding bodies are
+**bounded by default** (≤25) so a first call cannot overflow context; setting
+`full: true` lifts the cap and `offset` pages the rest.
+
+`summary.counts_by_kind` is a required object with exactly five nonnegative
+integer fields, emitted in canonical order. Wardline includes zero-valued fields
+for kinds absent from the result, and the five values sum to `summary.total`.
+For example, this response excerpt shows four findings:
+
+```json
+{
+  "summary": {
+    "total": 4,
+    "counts_by_kind": {
+      "defect": 2,
+      "fact": 1,
+      "classification": 0,
+      "metric": 1,
+      "suggestion": 0
+    }
+  }
+}
+```
+
+These counts include active and suppressed findings. Body controls (`where`,
+`offset`, `max_findings`, `summary_only`, `include_suppressed`, and `explain`)
+do not change them. For an affected/delta scan, they describe that affected
+scan result; read `scope.gate_authority` to distinguish an advisory delta from
+a gate-of-record full fallback. The nested `agent_summary` remains schema
+`wardline-agent-summary-1` and does not contain `counts_by_kind`.
 
 Read-only. When a Filigree URL is configured the scan also POSTs findings to it,
 fail-soft (an unreachable sibling or rejected payload is reported in the
-`filigree` block, never fails the scan).
+`filigree` block, never fails the scan). After a transport attempt that block
+carries `chunks_landed` — how many chunks Filigree actually accepted — so a
+mid-batch failure is legible on the machine surface and never reads as
+"nothing landed".
 
 ## `scan_job_start`
 
@@ -85,7 +136,7 @@ id plus initial status. The MCP-safe surface for long scans — prefer it over
 synchronous `scan` when a project may take more than a short call.
 
 **Key params:** `path`, `config`, `format` (`jsonl`/`sarif`/`agent-summary`),
-`output`, `fail_on`, `fail_on_unanalyzed`, `cache_dir`, `local_only`,
+`output`, `fail_on`, `fail_on_unanalyzed`, `fail_on_inert`, `cache_dir`, `local_only`,
 `timeout_seconds` (default 1800; `0` disables), `lang`, `new_since`,
 `trust_suppressions`.
 
@@ -243,18 +294,27 @@ Filigree (network) under the non-dry-run paths.
 
 ## `judge`
 
-**Purpose:** NETWORK — opt-in LLM triage of active defects via OpenRouter
-(needs `WARDLINE_OPENROUTER_API_KEY`). Labels each TRUE/FALSE positive. Never
-run automatically; never folded into `scan`.
+**Purpose:** NETWORK/PROCESS — opt-in LLM triage of active defects. The default
+`auto` transport prefers an installed, authenticated Codex CLI after a bounded
+capability/auth preflight; otherwise it selects OpenRouter. Explicit
+`codex-cli` fails rather than falling back, and no provider switch occurs after
+selection. Never run automatically; never folded into `scan`.
 
-**Key params:** `model` (OpenRouter slug), `max_findings` (bound token spend),
-`write` (append above-floor false positives to `.weft/wardline/judged.yaml` —
-**without it the call is a dry run**), `context_lines`, `config`.
+**Key params:** `transport` (`auto`, `codex-cli`, or `openrouter`), `model`
+(OpenRouter slug), `codex_model` (Codex CLI model identifier), `max_findings`
+(bound token spend), `write` (append above-floor false positives to
+`.weft/wardline/judged.yaml` — **without it the call is a dry run**),
+`context_lines`, `config`, `trust_judge_config`, and `trust_judge_policy`.
+Codex uses `codex login` state and needs no OpenRouter key. OpenRouter uses
+`WARDLINE_OPENROUTER_API_KEY` from the server environment, or the scan-root
+`.env` fallback shared by CLI and MCP when that variable is unset.
 
 **Returns:** `verdicts[]` (each with `fingerprint`, `rule_id`, `path`, `line`,
 `label` — the TRUE/FALSE-positive classification — `confidence`, and
-`rationale`), plus `wrote` and `held_back` counts. Writes `judged.yaml` only
-under `write: true`. See the [LLM triage judge guide](../guides/judge.md).
+`rationale`, plus concrete `judge_transport` and provider-specific `model_id`),
+plus `wrote` and `held_back` counts. `judge_transport` is never `auto`. Writes
+version 2 `judged.yaml` only under `write: true`. See the
+[LLM triage judge guide](../guides/judge.md).
 
 ## `baseline`
 

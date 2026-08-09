@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 
 import pytest
 
+import wardline.core.judge as judge_module
 from wardline.core.errors import (
     JudgeConfigurationError,
     JudgeContractError,
@@ -24,6 +25,7 @@ from wardline.core.judge import (
     build_messages,
     call_judge,
 )
+from wardline.core.judge_types import JudgeTransport
 
 
 def _req(**kw: object) -> JudgeRequest:
@@ -70,9 +72,27 @@ def test_response_holds_audit_fields() -> None:
         prompt_tokens_total=100,
         prompt_tokens_cached=None,
         policy_hash="sha256:abc",
+        judge_transport=JudgeTransport.OPENROUTER,
     )
     assert resp.verdict is JudgeVerdict.FALSE_POSITIVE
     assert resp.prompt_tokens_cached is None  # None != 0
+    assert resp.judge_transport is JudgeTransport.OPENROUTER
+
+
+@pytest.mark.parametrize("transport", [JudgeTransport.AUTO, "codex-cli"])
+def test_judge_response_rejects_unresolved_transport(transport: object) -> None:
+    with pytest.raises(ValueError, match="transport"):
+        JudgeResponse(
+            verdict=JudgeVerdict.FALSE_POSITIVE,
+            rationale="over-taint floor",
+            confidence=0.9,
+            model_id="model",
+            recorded_at=datetime.now(UTC),
+            prompt_tokens_total=100,
+            prompt_tokens_cached=None,
+            policy_hash="sha256:abc",
+            judge_transport=transport,  # type: ignore[arg-type]
+        )
 
 
 # --- Task 2: policy block + message builder ----------------------------------
@@ -93,6 +113,11 @@ def test_policy_hash_is_sha256_of_block() -> None:
 
     expect = "sha256:" + hashlib.sha256(_STATIC_POLICY_BLOCK.encode("utf-8")).hexdigest()
     assert expect == JUDGE_POLICY_HASH
+
+
+def test_openrouter_policy_hash_remains_byte_for_byte() -> None:
+    assert JUDGE_POLICY_HASH == "sha256:2659a349456aedc3284606270ce968a811d8aa91708b2956ce366017c932a5f0"
+    assert judge_module._policy_hash(_STATIC_POLICY_BLOCK, JudgeTransport.OPENROUTER) == JUDGE_POLICY_HASH
 
 
 def test_build_messages_caches_static_block_and_wraps_untrusted_data() -> None:
@@ -232,10 +257,51 @@ def _good_verdict() -> str:
     return json.dumps({"verdict": "FALSE_POSITIVE", "rationale": "constructor over-taint floor", "confidence": 0.88})
 
 
+def test_call_judge_uses_one_strict_parser_for_injected_codex_result(monkeypatch: pytest.MonkeyPatch) -> None:
+    from wardline.core.judge import _TransportResult
+
+    parser_calls = 0
+    parse_verdict_payload = judge_module._parse_verdict_payload
+
+    def _counting_parser(raw_text: str):  # type: ignore[no-untyped-def]
+        nonlocal parser_calls
+        parser_calls += 1
+        return parse_verdict_payload(raw_text)
+
+    monkeypatch.setattr(judge_module, "_parse_verdict_payload", _counting_parser)
+
+    def _fake(_request: JudgeRequest, _model: str, _max_tokens: int) -> _TransportResult:
+        return _TransportResult(
+            raw_text=_good_verdict(),
+            served_model_id="gpt-test",
+            prompt_tokens_total=22,
+            prompt_tokens_cached=4,
+        )
+
+    response = call_judge(
+        _req(),
+        judge_transport=JudgeTransport.CODEX_CLI,
+        model_id="gpt-test",
+        transport_impl=_fake,
+    )
+
+    assert response.verdict is JudgeVerdict.FALSE_POSITIVE
+    assert response.model_id == "gpt-test"
+    assert response.prompt_tokens_total == 22
+    assert response.prompt_tokens_cached == 4
+    assert response.judge_transport is JudgeTransport.CODEX_CLI
+    assert parser_calls == 1
+
+
+def test_call_judge_rejects_auto_as_unresolved() -> None:
+    with pytest.raises(ValueError, match="resolve"):
+        call_judge(_req(), judge_transport=JudgeTransport.AUTO)
+
+
 def test_call_judge_happy_path(monkeypatch) -> None:
     monkeypatch.setenv("WARDLINE_OPENROUTER_API_KEY", "sk-or-test")
     t = _FakeTransport(Response(200, _completion(_good_verdict())))
-    resp = call_judge(_req(), transport=t)
+    resp = call_judge(_req(), openrouter_transport=t)
     assert resp.verdict is JudgeVerdict.FALSE_POSITIVE
     assert resp.confidence == 0.88
     assert resp.model_id == "anthropic/claude-opus-4-8"
@@ -248,34 +314,83 @@ def test_call_judge_happy_path(monkeypatch) -> None:
     assert sent["messages"][0]["content"][0]["cache_control"] == {"type": "ephemeral"}
 
 
+def test_call_judge_preserves_explicit_empty_model_for_openrouter(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("WARDLINE_OPENROUTER_API_KEY", "sk-or-test")
+    body = json.dumps(
+        {
+            "choices": [{"finish_reason": "stop", "message": {"content": _good_verdict()}}],
+            "usage": {"prompt_tokens": 10},
+        }
+    )
+    transport = _FakeTransport(Response(200, body))
+
+    response = call_judge(_req(), model_id="", openrouter_transport=transport)
+
+    _, request_body, _ = transport.calls[0]
+    assert json.loads(request_body)["model"] == ""
+    assert response.model_id == ""
+
+
+def test_call_judge_openrouter_uses_one_strict_parser(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("WARDLINE_OPENROUTER_API_KEY", "sk-or-test")
+    parser_calls = 0
+    parse_verdict_payload = judge_module._parse_verdict_payload
+
+    def _counting_parser(raw_text: str):  # type: ignore[no-untyped-def]
+        nonlocal parser_calls
+        parser_calls += 1
+        return parse_verdict_payload(raw_text)
+
+    monkeypatch.setattr(judge_module, "_parse_verdict_payload", _counting_parser)
+
+    response = call_judge(
+        _req(),
+        openrouter_transport=_FakeTransport(Response(200, _completion(_good_verdict()))),
+    )
+
+    assert response.verdict is JudgeVerdict.FALSE_POSITIVE
+    assert parser_calls == 1
+
+
 def test_call_judge_missing_key_is_configuration_error(monkeypatch) -> None:
     monkeypatch.delenv("WARDLINE_OPENROUTER_API_KEY", raising=False)
     with pytest.raises(JudgeConfigurationError):
-        call_judge(_req(), transport=_FakeTransport(Response(200, _completion(_good_verdict()))))
+        call_judge(_req(), openrouter_transport=_FakeTransport(Response(200, _completion(_good_verdict()))))
 
 
 def test_call_judge_cached_none_preserved(monkeypatch) -> None:
     monkeypatch.setenv("WARDLINE_OPENROUTER_API_KEY", "k")
     t = _FakeTransport(Response(200, _completion(_good_verdict(), cached=None)))
-    assert call_judge(_req(), transport=t).prompt_tokens_cached is None
+    assert call_judge(_req(), openrouter_transport=t).prompt_tokens_cached is None
 
 
 def test_call_judge_5xx_is_transport_error(monkeypatch) -> None:
     monkeypatch.setenv("WARDLINE_OPENROUTER_API_KEY", "k")
     with pytest.raises(JudgeTransportError):
-        call_judge(_req(), transport=_FakeTransport(Response(503, "upstream down")))
+        call_judge(_req(), openrouter_transport=_FakeTransport(Response(503, "upstream down")))
+
+
+def test_call_judge_openrouter_status_error_does_not_echo_provider_body(monkeypatch) -> None:
+    monkeypatch.setenv("WARDLINE_OPENROUTER_API_KEY", "k")
+    with pytest.raises(JudgeTransportError) as exc_info:
+        call_judge(
+            _req(),
+            openrouter_transport=_FakeTransport(Response(503, '{"ATTACKER_KEY":"ATTACKER_VALUE"}')),
+        )
+    assert "ATTACKER_KEY" not in str(exc_info.value)
+    assert "ATTACKER_VALUE" not in str(exc_info.value)
 
 
 def test_call_judge_4xx_is_transport_error(monkeypatch) -> None:
     monkeypatch.setenv("WARDLINE_OPENROUTER_API_KEY", "k")
     with pytest.raises(JudgeTransportError):
-        call_judge(_req(), transport=_FakeTransport(Response(401, '{"error":"bad key"}')))
+        call_judge(_req(), openrouter_transport=_FakeTransport(Response(401, '{"error":"bad key"}')))
 
 
 def test_call_judge_connection_error_is_transport_error(monkeypatch) -> None:
     monkeypatch.setenv("WARDLINE_OPENROUTER_API_KEY", "k")
     with pytest.raises(JudgeTransportError):
-        call_judge(_req(), transport=_FakeTransport(exc=ConnectionRefusedError("no")))
+        call_judge(_req(), openrouter_transport=_FakeTransport(exc=ConnectionRefusedError("no")))
 
 
 @pytest.mark.parametrize(
@@ -291,20 +406,83 @@ def test_call_judge_connection_error_is_transport_error(monkeypatch) -> None:
 def test_call_judge_malformed_2xx_crashes(monkeypatch, content: str) -> None:
     monkeypatch.setenv("WARDLINE_OPENROUTER_API_KEY", "k")
     with pytest.raises(JudgeContractError):
-        call_judge(_req(), transport=_FakeTransport(Response(200, _completion(content))))
+        call_judge(_req(), openrouter_transport=_FakeTransport(Response(200, _completion(content))))
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        '{"ATTACKER_KEY":"ATTACKER_VALUE"}',
+        "ATTACKER_VALUE",
+        '{"choices":[],"ATTACKER_KEY":"ATTACKER_VALUE"}',
+    ],
+)
+def test_openrouter_contract_diagnostics_do_not_echo_provider_keys_or_values(
+    monkeypatch: pytest.MonkeyPatch,
+    body: str,
+) -> None:
+    monkeypatch.setenv("WARDLINE_OPENROUTER_API_KEY", "k")
+    with pytest.raises(JudgeContractError) as exc_info:
+        call_judge(_req(), openrouter_transport=_FakeTransport(Response(200, body)))
+    message = str(exc_info.value)
+    assert "ATTACKER_KEY" not in message
+    assert "ATTACKER_VALUE" not in message
+
+
+def test_verdict_contract_diagnostic_does_not_echo_attacker_key_or_value(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("WARDLINE_OPENROUTER_API_KEY", "k")
+    raw = json.dumps(
+        {
+            "verdict": "ATTACKER_VALUE",
+            "rationale": "ATTACKER_VALUE",
+            "confidence": 0.5,
+            "ATTACKER_KEY": "ATTACKER_VALUE",
+        }
+    )
+    with pytest.raises(JudgeContractError) as exc_info:
+        call_judge(
+            _req(),
+            openrouter_transport=_FakeTransport(Response(200, _completion(raw))),
+        )
+    message = str(exc_info.value)
+    assert "ATTACKER_KEY" not in message
+    assert "ATTACKER_VALUE" not in message
+
+
+def test_shared_verdict_parser_rejects_huge_integer_confidence_without_overflow() -> None:
+    from wardline.core.judge import _TransportResult
+
+    huge = "9" * 400
+
+    def _fake(_request: JudgeRequest, _model: str, _max_tokens: int) -> _TransportResult:
+        return _TransportResult(
+            raw_text=(f'{{"verdict":"TRUE_POSITIVE","rationale":"safe rationale","confidence":{huge}}}'),
+            served_model_id="served-model",
+            prompt_tokens_total=1,
+            prompt_tokens_cached=None,
+        )
+
+    with pytest.raises(JudgeContractError) as exc_info:
+        call_judge(_req(), transport_impl=_fake)
+
+    message = str(exc_info.value)
+    assert "confidence" in message
+    assert huge not in message
 
 
 def test_call_judge_truncated_output_crashes(monkeypatch) -> None:
     monkeypatch.setenv("WARDLINE_OPENROUTER_API_KEY", "k")
     t = _FakeTransport(Response(200, _completion(_good_verdict(), finish="length")))
     with pytest.raises(JudgeContractError):
-        call_judge(_req(), transport=t)
+        call_judge(_req(), openrouter_transport=t)
 
 
 def test_call_judge_records_served_model_distinct_from_requested(monkeypatch) -> None:
     monkeypatch.setenv("WARDLINE_OPENROUTER_API_KEY", "k")
     t = _FakeTransport(Response(200, _completion(_good_verdict(), model="anthropic/claude-opus-4-8:fallback")))
-    resp = call_judge(_req(), transport=t, model_id="anthropic/claude-opus-4-8")
+    resp = call_judge(_req(), openrouter_transport=t, model_id="anthropic/claude-opus-4-8")
     assert resp.model_id == "anthropic/claude-opus-4-8:fallback"  # SERVED, not requested
 
 
@@ -316,20 +494,20 @@ def test_call_judge_falls_back_to_requested_when_served_absent(monkeypatch) -> N
             "usage": {"prompt_tokens": 10},
         }
     )  # no "model" key
-    resp = call_judge(_req(), transport=_FakeTransport(Response(200, body)), model_id="req/model")
+    resp = call_judge(_req(), openrouter_transport=_FakeTransport(Response(200, body)), model_id="req/model")
     assert resp.model_id == "req/model"
 
 
 def test_call_judge_cached_zero_preserved(monkeypatch) -> None:
     monkeypatch.setenv("WARDLINE_OPENROUTER_API_KEY", "k")
     t = _FakeTransport(Response(200, _completion(_good_verdict(), cached=0)))
-    assert call_judge(_req(), transport=t).prompt_tokens_cached == 0  # 0 != None
+    assert call_judge(_req(), openrouter_transport=t).prompt_tokens_cached == 0  # 0 != None
 
 
 def test_call_judge_outer_body_non_json_crashes(monkeypatch) -> None:
     monkeypatch.setenv("WARDLINE_OPENROUTER_API_KEY", "k")
     with pytest.raises(JudgeContractError):
-        call_judge(_req(), transport=_FakeTransport(Response(200, "<html>maintenance</html>")))
+        call_judge(_req(), openrouter_transport=_FakeTransport(Response(200, "<html>maintenance</html>")))
 
 
 def test_call_judge_missing_usage_degrades_not_crashes(monkeypatch) -> None:
@@ -341,7 +519,7 @@ def test_call_judge_missing_usage_degrades_not_crashes(monkeypatch) -> None:
             "choices": [{"finish_reason": "stop", "message": {"content": _good_verdict()}}],
         }
     )  # no usage
-    resp = call_judge(_req(), transport=_FakeTransport(Response(200, body)))
+    resp = call_judge(_req(), openrouter_transport=_FakeTransport(Response(200, body)))
     assert resp.verdict is JudgeVerdict.FALSE_POSITIVE
     assert resp.prompt_tokens_total == 0 and resp.prompt_tokens_cached is None
 

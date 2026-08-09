@@ -49,6 +49,12 @@ population must stay true-positive-dominant.
   severity downgrade, never a non-gating tier. Escape hatches confirmed working for preview
   findings (baseline now captures them; `--new-since` scopes CI). **UNMEASURED** so far —
   same instrumentation gap as the G1 baseline; no reading crossed.
+- **Reading 2026-08-09 (PDR-0012, S0 dispatch):** committed waiver usage is **0**;
+  rev-3 Task 14 replaces the rule-count-coupled ceiling that had silently grown from 4
+  to 26 with a reviewed constant of **5**. This is a delivery guardrail, not evidence
+  that the FP-rate target is met: the labeled FP baseline remains unmeasured. S0 cannot
+  be accepted if waiver usage exceeds 5 or if its rule population pushes measured G1
+  FP rate above **0.05**.
 
 ### G2 — Soundness / surface integrity (no false green, no policy bypass)
 Zero known fail-open taint holes (untrusted→trusted laundering) **and** zero
@@ -87,6 +93,15 @@ URL trust, fingerprint-suppression misapply).
   recurrence for any future preview rule. Shipped **v1.2.0** (PR #83, main CI green, tagged +
   PyPI-published + installed to the local uv tool, all owner-directed). G2 posture: a known
   false-green class closed; **held at 0 known false-green / fail-open holes.**
+- **Reading 2026-08-09 (PDR-0012): G2 TARGET REOPENED — 1 known false-green hole.**
+  `wardline-4928b75782` proves that an unknown keyword or positional argument on a
+  builtin `@trusted` call silently drops the seed and suppresses every tier-modulated
+  rule. The malformed-marker repro can therefore exit 0 at `--fail-on ERROR`. S0 is the
+  Now bet because this breaches the continuously-held target of **0** known holes. The
+  falsifiable recovery reading is: bug closed with the before/after repro exiting 1 on
+  `PY-WL-130`, unknown forward marker skew surfaced by
+  `WLN-ENGINE-UNKNOWN-MARKER`, and the full local receipt green without changing existing
+  valid-marker bytes. Until then G2 is **not at target**.
 
 #### G2-seam — cross-repo seam honesty (no confident-empty)
 *Extension added 2026-06-27 for the weft-seam-conformance Now bet (PDR-0002 /
@@ -127,6 +142,16 @@ self-reported status field).
   closes the **producer-artifact axis**; the seam-health **probe** (criteria 1/2 — Layer-1
   `doctor --seams` self-check + Layer-2 consumer round-trip) remains the open work toward the
   0-of-6 target. Tickets `79ba05f464` + `c0563eee74` closed.
+- **Reading 2026-08-09 (PDR-0012): core seam target reached; S0 consumer staging not
+  yet accepted.** Live tracker state for `wardline-c66f62894b` records all six core
+  seams at-bar; two P4 non-gating follow-ons remain, so residual closeout moves to Next.
+  S0 introduces no live v3 producer surface: Wardline continues to emit generic-2 and
+  attest-2, and `published_emission_ready=false`. The new consumer-first acceptance read
+  is binary and pre-registered: the isolated receipt must prove **4 of 4** exact local
+  consumer commitments (Loomweave, Wardline verifier, Warpline, Legis) before S0 closes.
+  Published emission remains NO-GO until separately released consumer artifacts and owner
+  authorization exist. No confident-empty seam trigger has fired because no v3 emission
+  exists yet.
 
 ### G3 — Zero-config activation
 `wardline scan .` runs and gates on an unconfigured repository with no required

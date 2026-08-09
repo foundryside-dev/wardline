@@ -21,6 +21,7 @@ from wardline.core.attest import build_attestation, verify_attestation
 from wardline.core.attest_key import load_attest_key
 from wardline.core.baseline import load_baseline
 from wardline.core.baseline_ops import generate_baseline
+from wardline.core.confinement import SourceRootConfinement
 from wardline.core.delta_scope import ScopeParseError, load_affected_scope, parse_affected_scope
 from wardline.core.errors import WardlineError
 from wardline.core.explain import explain_taint_result, explanation_from_context, explanation_to_dict
@@ -36,12 +37,13 @@ from wardline.core.filigree_emit import (
     filigree_destination,
     redact_url_for_diagnostics,
 )
-from wardline.core.finding import Finding, Severity
+from wardline.core.finding import Finding, Kind, Severity
 from wardline.core.finding_query import filter_findings
 from wardline.core.judge_run import run_judge
+from wardline.core.judge_types import JudgeTransport
 from wardline.core.paths import baseline_path as baseline_file
 from wardline.core.paths import project_root_for, waivers_path, weft_config_path
-from wardline.core.run import baseline_migration_hint, gate_decision, run_scan
+from wardline.core.run import ScanResult, baseline_migration_hint, gate_decision, run_scan
 from wardline.core.scan_jobs import cancel_scan_job, read_scan_job_status, start_scan_job
 from wardline.core.sei_resolution import resolve_query_filters
 from wardline.core.waivers import add_waiver, load_project_waivers
@@ -131,6 +133,7 @@ def _emit_filigree(
         "auth_rejected": er.auth_rejected,
         "token_sent": er.token_sent,
         "url": redact_url_for_diagnostics(er.url),
+        "chunks_landed": er.chunks_landed,
         # N1 / C-10(a): name where findings went so a wrong-project write is visible.
         "destination": filigree_destination(er.url),
     }
@@ -695,6 +698,7 @@ def _scan_job_request(args: dict[str, Any], root: Path, filigree_url: str | None
         "output": str(output) if output is not None else None,
         "fail_on": fail_on.value if fail_on else None,
         "fail_on_unanalyzed": _bool_arg(args, "fail_on_unanalyzed", False),
+        "fail_on_inert": _bool_arg(args, "fail_on_inert", False),
         "cache_dir": str(cache_dir) if cache_dir is not None else None,
         "filigree_url": None if local_only else filigree_url,
         "local_only": local_only,
@@ -750,6 +754,8 @@ def _scan(
     threshold = _fail_on_arg(args.get("fail_on"))
     # A4 (wardline-7fd0f3a82c): the CLI's --fail-on-unanalyzed knob, same default (off).
     fail_on_unanalyzed = _bool_arg(args, "fail_on_unanalyzed", False)
+    # wardline-2a05ff700e: the CLI's --fail-on-inert knob, same default (off).
+    fail_on_inert = _bool_arg(args, "fail_on_inert", False)
     new_since = args.get("new_since")
     # --affected delta scope: an inline worklist/entity-list object|array, or a path under
     # root to one. The inline form is the MCP-primary ergonomic and bypasses
@@ -810,7 +816,7 @@ def _scan(
         path,
         config_path=config_path,
         cache_dir=cache_dir,
-        confine_to_root=True,
+        source_root_confinement=SourceRootConfinement.PROJECT_ROOT,
         new_since=new_since,
         affected=affected,
         sei_resolver=sei_resolver,
@@ -841,7 +847,7 @@ def _scan(
             "unresolved_qualnames": list(wr.unresolved_qualnames),
             "disabled_reason": wr.disabled_reason,
         }
-    decision = gate_decision(result, threshold, fail_on_unanalyzed=fail_on_unanalyzed)
+    decision = gate_decision(result, threshold, fail_on_unanalyzed=fail_on_unanalyzed, fail_on_inert=fail_on_inert)
     migration_hint = baseline_migration_hint(result, decision, root=path, new_since=new_since)
     # INV-5: a delta scan emits the FULL discovery list as scanned_paths but a FILTERED
     # findings list, so Filigree's auto mark_unseen would read every out-of-scope finding as
@@ -871,8 +877,8 @@ def _scan(
         # An unknown filter key or SEI resolution failure is agent-actionable -> isError result.
         raise ToolError(str(exc)) from exc
 
-    # Payload-shrinking controls. The `summary`/`gate` blocks always describe the WHOLE
-    # project; these only bound the returned finding BODIES (which live solely in
+    # Payload-shrinking controls. The `summary`/`gate` blocks always describe the current
+    # complete scan result; these only bound the returned finding BODIES (which live solely in
     # agent_summary now — there is no separate top-level findings array). The DEFAULT scan is
     # BOUNDED (weft-439d09fc8d): a bare call returns at most _DEFAULT_MAX_FINDINGS bodies so
     # an agent's first natural call cannot overflow its own context. full=true lifts the cap;
@@ -945,7 +951,7 @@ def _scan(
             "baselined": result.summary.baselined,
             "waived": result.summary.waived,
             "judged": result.summary.judged,
-            # Non-defect findings (facts/metrics/classifications). active+baselined+
+            # Non-defect findings (facts, classifications, metrics, and suggestions). active+baselined+
             # waived+judged+informational == total (the buckets-sum-to-total invariant,
             # weft-f506e5f845); unanalyzed is an overlay (subset of informational), not a
             # partition member.
@@ -954,17 +960,20 @@ def _scan(
             # source root — benign no-module skips are excluded). Surfaced so the
             # silent under-scan reaches the agent, not just the human-facing stderr.
             "unanalyzed": result.summary.unanalyzed,
+            "counts_by_kind": _counts_by_kind(result.findings),
         },
         "gate": {
             "tripped": decision.tripped,
             "fail_on": decision.fail_on,
             "fail_on_unanalyzed": decision.fail_on_unanalyzed,
+            "fail_on_inert": decision.fail_on_inert,
             "exit_class": decision.exit_class,
             "verdict": decision.verdict,
             # Sub-gate attribution: which knob(s) the overall trip came from, so an agent
             # never has to parse `reason` to tell a severity trip from an unanalyzed one.
             "severity_tripped": decision.severity_tripped,
             "unanalyzed_tripped": decision.unanalyzed_tripped,
+            "inert_tripped": decision.inert_tripped,
             "would_trip_at": decision.would_trip_at,
             "reason": decision.reason,
             "evaluated": decision.evaluated,
@@ -980,17 +989,16 @@ def _scan(
     # structured payload is byte-identical to today when no scope was requested (INV-1).
     if result.scope is not None:
         response["scope"] = result.scope.to_dict()
-    _attach_legis_artifact(
-        response,
-        result,
-        path,
-        args,
-        config_path=config_path,
-        trust_local_packs=trust_local_packs,
-        trusted_packs=trusted_packs,
-        strict_defaults=strict_defaults,
-    )
+    _attach_legis_artifact(response, result, path, args)
     return response
+
+
+def _counts_by_kind(findings: list[Finding]) -> dict[str, int]:
+    """Count the complete finding population in canonical Kind order."""
+    counts = {kind.value: 0 for kind in Kind}
+    for finding in findings:
+        counts[finding.kind.value] += 1
+    return counts
 
 
 _SCAN_OUTPUT_SCHEMA: dict[str, Any] = {
@@ -1004,25 +1012,51 @@ _SCAN_OUTPUT_SCHEMA: dict[str, Any] = {
         },
         "summary": {
             "type": "object",
-            "description": "Whole-project finding counts. active+baselined+waived+judged+informational == total; "
-            "unanalyzed is an overlay, not a partition member.",
+            "description": "Whole-scan finding counts for the current scan result. "
+            "active+baselined+waived+judged+informational == total; unanalyzed is an overlay, not a partition member.",
             "properties": {
-                "total": {"type": "integer", "description": "Every finding (defects + facts/metrics)."},
+                "total": {
+                    "type": "integer",
+                    "description": "Every finding (defects, facts, classifications, metrics, and suggestions).",
+                },
                 "active": {"type": "integer", "description": "Non-suppressed defects."},
                 "baselined": {"type": "integer"},
                 "waived": {"type": "integer"},
                 "judged": {"type": "integer"},
                 "informational": {
                     "type": "integer",
-                    "description": "All non-defect findings (facts, metrics, classifications).",
+                    "description": "All non-defect findings (facts, classifications, metrics, and suggestions).",
                 },
                 "unanalyzed": {
                     "type": "integer",
                     "description": "Files discovered but never analysed (parse errors / too-deep / missing source "
                     "roots); overlay count.",
                 },
+                "counts_by_kind": {
+                    "type": "object",
+                    "description": "Whole-scan finding counts by canonical finding kind, including active and "
+                    "suppressed findings.",
+                    "properties": {
+                        "defect": {"type": "integer", "minimum": 0},
+                        "fact": {"type": "integer", "minimum": 0},
+                        "classification": {"type": "integer", "minimum": 0},
+                        "metric": {"type": "integer", "minimum": 0},
+                        "suggestion": {"type": "integer", "minimum": 0},
+                    },
+                    "required": ["defect", "fact", "classification", "metric", "suggestion"],
+                    "additionalProperties": False,
+                },
             },
-            "required": ["total", "active", "baselined", "waived", "judged", "informational", "unanalyzed"],
+            "required": [
+                "total",
+                "active",
+                "baselined",
+                "waived",
+                "judged",
+                "informational",
+                "unanalyzed",
+                "counts_by_kind",
+            ],
             "additionalProperties": False,
         },
         "gate": {
@@ -1037,6 +1071,10 @@ _SCAN_OUTPUT_SCHEMA: dict[str, Any] = {
                 "fail_on_unanalyzed": {
                     "type": "boolean",
                     "description": "Whether the unanalyzed sub-gate knob was set.",
+                },
+                "fail_on_inert": {
+                    "type": "boolean",
+                    "description": "Whether the inert sub-gate knob was set.",
                 },
                 "exit_class": {
                     "type": "integer",
@@ -1056,6 +1094,11 @@ _SCAN_OUTPUT_SCHEMA: dict[str, Any] = {
                 "unanalyzed_tripped": {
                     "type": "boolean",
                     "description": "Sub-gate attribution: the unanalyzed gate tripped.",
+                },
+                "inert_tripped": {
+                    "type": "boolean",
+                    "description": "Sub-gate attribution: the inert gate tripped (zero recognized "
+                    "trust boundaries over non-trivial code).",
                 },
                 "would_trip_at": {
                     "description": "Highest severity at which the gate WOULD trip on the evaluated population, or "
@@ -1079,10 +1122,12 @@ _SCAN_OUTPUT_SCHEMA: dict[str, Any] = {
                 "tripped",
                 "fail_on",
                 "fail_on_unanalyzed",
+                "fail_on_inert",
                 "exit_class",
                 "verdict",
                 "severity_tripped",
                 "unanalyzed_tripped",
+                "inert_tripped",
                 "would_trip_at",
                 "reason",
                 "evaluated",
@@ -1139,6 +1184,12 @@ _SCAN_OUTPUT_SCHEMA: dict[str, Any] = {
                             "rejected).",
                         },
                         "url": {"type": ["string", "null"], "description": "The endpoint attempted."},
+                        "chunks_landed": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "description": "Number of chunks Filigree accepted during this emit attempt; zero only "
+                            "when none landed.",
+                        },
                         "destination": {"$ref": "#/$defs/filigree_destination"},
                     },
                     "required": [
@@ -1152,6 +1203,7 @@ _SCAN_OUTPUT_SCHEMA: dict[str, Any] = {
                         "auth_rejected",
                         "token_sent",
                         "url",
+                        "chunks_landed",
                         "destination",
                     ],
                     "additionalProperties": False,
@@ -1851,6 +1903,14 @@ _SCAN_TOOL: dict[str, Any] = {
                 "--fail-on-unanalyzed; summary.unanalyzed always reports the count either "
                 "way, and gate.unanalyzed_tripped attributes a trip to this knob.",
             },
+            "fail_on_inert": {
+                "type": "boolean",
+                "description": "Also trip the gate when the scan recognized ZERO trust "
+                "boundaries over non-trivial code (an inert gate passes green while "
+                "checking nothing). Default false — same default as the CLI's "
+                "--fail-on-inert; agent_summary.resolution always reports the posture "
+                "either way, and gate.inert_tripped attributes a trip to this knob.",
+            },
             "config": {"type": "string"},
             "lang": {
                 "type": "string",
@@ -2022,6 +2082,10 @@ _SCAN_JOB_START_INPUT_PROPERTIES: dict[str, Any] = {
         "type": "boolean",
         "description": "Trip the gate when any file was discovered but could not be analyzed.",
     },
+    "fail_on_inert": {
+        "type": "boolean",
+        "description": "Trip the gate when the scan recognized zero trust boundaries over non-trivial code.",
+    },
     "cache_dir": {"type": "string", "description": "summary-cache directory relative to project root"},
     "local_only": {
         "type": "boolean",
@@ -2128,14 +2192,9 @@ _SCAN_JOB_CANCEL_TOOL: dict[str, Any] = {
 
 def _attach_legis_artifact(
     response: dict[str, Any],
-    result: Any,
+    result: ScanResult,
     path: Path,
     args: dict[str, Any],
-    *,
-    config_path: Path | None,
-    trust_local_packs: bool,
-    trusted_packs: tuple[str, ...],
-    strict_defaults: bool,
 ) -> None:
     """Opt-in: attach the signed, verbatim-postable legis scan-artifact.
 
@@ -2167,21 +2226,8 @@ def _attach_legis_artifact(
         # (dogfood-4 B6 blew the MCP token cap exactly this way). An explicit
         # legis_artifact:true still wins when the caller asks for both.
         return
-
-    # ``config_path`` is the SAME value ``run_scan`` received (an explicit ``config`` arg
-    # resolves against the SERVER root, per the input schema). Re-resolving the arg here
-    # against the scan sub-path would (a) load a DIFFERENT policy than the one that
-    # produced ``result`` — a signed artifact whose rule_set_version/scan_scope
-    # misattribute provenance on the legis wire — and (b) raise on a root-relative config
-    # that does not exist under (or escapes) the sub-path, turning a completed scan into
-    # isError in violation of this block's fail-soft contract.
-    cfg = config_mod.load(
-        config_path or weft_config_path(path),
-        explicit=config_path is not None,
-        trust_local_packs=trust_local_packs,
-        trusted_packs=trusted_packs,
-        strict_defaults=strict_defaults,
-    )
+    if result.effective_config is None:
+        raise ToolError("scan result did not retain its effective configuration")
     key_bytes = key_str.encode("utf-8") if key_str else None
     allow_dirty = _bool_arg(args, "allow_dirty", False)
     status: dict[str, Any] = {
@@ -2191,7 +2237,13 @@ def _attach_legis_artifact(
         "reason": None,
     }
     try:
-        artifact = build_legis_artifact(result, root=path, config=cfg, key=key_bytes, allow_dirty=allow_dirty)
+        artifact = build_legis_artifact(
+            result,
+            root=path,
+            config=result.effective_config,
+            key=key_bytes,
+            allow_dirty=allow_dirty,
+        )
     except LegisArtifactError as exc:
         status["reason"] = str(exc)
         response["legis_artifact_status"] = status
@@ -2232,7 +2284,7 @@ def _explain_taint(args: dict[str, Any], root: Path, loomweave: Any = None) -> d
         path=match_path,
         line=args.get("line"),
         config_path=_cfg(args, root),
-        confine_to_root=True,
+        source_root_confinement=SourceRootConfinement.PROJECT_ROOT,
         loomweave=loomweave,
         sink_qualname=args.get("sink_qualname"),
         chain=_bool_arg(args, "chain", False),
@@ -2513,7 +2565,7 @@ def _dossier(
         loomweave_client=loomweave,
         filigree_url=filigree_url,
         config_path=_cfg(args, root),
-        confine_to_root=True,
+        source_root_confinement=SourceRootConfinement.PROJECT_ROOT,
     )
     return dossier.to_dict()
 
@@ -2802,7 +2854,11 @@ def _assure(args: dict[str, Any], root: Path) -> dict[str, Any]:
     unknown, plus waiver-debt. Identical to the CLI `assure` JSON by construction (both
     call ``build_posture``). Path/config confined under root like every rooted tool."""
     path = _resolve_under_root(root, args["path"]) if args.get("path") else root
-    posture = build_posture(path, config_path=_cfg(args, root), confine_to_root=True)
+    posture = build_posture(
+        path,
+        config_path=_cfg(args, root),
+        source_root_confinement=SourceRootConfinement.PROJECT_ROOT,
+    )
     return posture.to_dict()
 
 
@@ -2948,7 +3004,7 @@ def _decorator_coverage(
         loomweave_client=loomweave,
         filigree_url=filigree_url,
         config_path=_cfg(args, root),
-        confine_to_root=True,
+        source_root_confinement=SourceRootConfinement.PROJECT_ROOT,
     )
     return report.to_dict()
 
@@ -3184,7 +3240,7 @@ def _attest(args: dict[str, Any], root: Path, loomweave: Any = None) -> dict[str
         key,
         config_path=_cfg(args, root),
         cache_dir=_cache_dir_arg(args, root),
-        confine_to_root=True,
+        source_root_confinement=SourceRootConfinement.PROJECT_ROOT,
         trust_local_packs=_bool_arg(args, "trust_local_packs", False),
         trusted_packs=_trusted_packs_arg(args),
         strict_defaults=_bool_arg(args, "strict_defaults", False),
@@ -3338,6 +3394,23 @@ _ATTEST_OUTPUT_SCHEMA: dict[str, Any] = {
                     "description": "'loomweave' iff a client was supplied AND at least one SEI resolved; else "
                     "'unavailable'.",
                 },
+                "sei_diagnostics": {
+                    "type": "array",
+                    "description": "Per-boundary Loomweave identity-resolution diagnostics, sorted by qualname.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "qualname": {"type": "string"},
+                            "reason": {"type": "string"},
+                            "auth_status": {
+                                "type": ["integer", "null"],
+                                "enum": [401, 403, None],
+                            },
+                        },
+                        "required": ["qualname", "reason", "auth_status"],
+                        "additionalProperties": False,
+                    },
+                },
             },
             "required": [
                 "wardline_version",
@@ -3348,6 +3421,7 @@ _ATTEST_OUTPUT_SCHEMA: dict[str, Any] = {
                 "posture",
                 "boundaries",
                 "sei_source",
+                "sei_diagnostics",
             ],
             "additionalProperties": False,
         },
@@ -3425,7 +3499,7 @@ def _verify_attestation(args: dict[str, Any], root: Path, loomweave: Any = None)
         config_path=_cfg(args, root),
         cache_dir=_cache_dir_arg(args, root),
         loomweave_client=loomweave,
-        confine_to_root=True,
+        source_root_confinement=SourceRootConfinement.PROJECT_ROOT,
         trust_local_packs=_bool_arg(args, "trust_local_packs", False),
         trusted_packs=_trusted_packs_arg(args),
         strict_defaults=_bool_arg(args, "strict_defaults", False),
@@ -3500,18 +3574,29 @@ _VERIFY_ATTESTATION_TOOL: dict[str, Any] = {
 
 
 def _judge(args: dict[str, Any], root: Path) -> dict[str, Any]:
-    # No key/.env → run_judge's default caller raises JudgeConfigurationError (a
-    # WardlineError) naming WARDLINE_OPENROUTER_API_KEY; _tools_call turns that into
-    # an isError result the agent can read. The network is touched only here, only
-    # when a finding is actually triaged.
+    # Provider selection, authentication guidance, and the network call are all owned
+    # by run_judge. This surface validates and forwards only the public overrides.
     context_lines = args.get("context_lines")
+    transport = args.get("transport")
+    if transport is not None and (
+        not isinstance(transport, str) or transport not in {item.value for item in JudgeTransport}
+    ):
+        raise ToolError("transport must be one of auto/codex-cli/openrouter")
+    model = args.get("model")
+    if model is not None and not isinstance(model, str):
+        raise ToolError("model must be a string")
+    codex_model = args.get("codex_model")
+    if codex_model is not None and not isinstance(codex_model, str):
+        raise ToolError("codex_model must be a string")
     outcome = run_judge(
         root,
         config_path=_cfg(args, root),
-        model=args.get("model"),
+        transport=transport,
+        model=model,
+        codex_model=codex_model,
         max_findings=args.get("max_findings"),
         write=_bool_arg(args, "write", False),
-        confine_to_root=True,
+        source_root_confinement=SourceRootConfinement.PROJECT_ROOT,
         trust_local_packs=_bool_arg(args, "trust_local_packs", False),
         trusted_packs=tuple(args.get("trust_packs") or []),
         trust_judge_config=_bool_arg(args, "trust_judge_config", False),
@@ -3529,6 +3614,8 @@ def _judge(args: dict[str, Any], root: Path) -> dict[str, Any]:
                 "label": v.label,
                 "confidence": v.confidence,
                 "rationale": v.rationale,
+                "judge_transport": v.judge_transport.value,
+                "model_id": v.model_id,
             }
             for v in outcome.verdicts
         ],
@@ -3566,8 +3653,27 @@ _JUDGE_OUTPUT_SCHEMA: dict[str, Any] = {
                         "description": "The model's verbatim reasoning (the audit primitive); always a non-empty "
                         "string.",
                     },
+                    "judge_transport": {
+                        "type": "string",
+                        "enum": ["codex-cli", "openrouter"],
+                        "description": "Concrete provider transport selected for this verdict.",
+                    },
+                    "model_id": {
+                        "type": "string",
+                        "description": "Provider-specific model identifier used for this verdict.",
+                    },
                 },
-                "required": ["fingerprint", "rule_id", "path", "line", "label", "confidence", "rationale"],
+                "required": [
+                    "fingerprint",
+                    "rule_id",
+                    "path",
+                    "line",
+                    "label",
+                    "confidence",
+                    "rationale",
+                    "judge_transport",
+                    "model_id",
+                ],
                 "additionalProperties": False,
             },
         },
@@ -3588,14 +3694,16 @@ _JUDGE_OUTPUT_SCHEMA: dict[str, Any] = {
 _JUDGE_TOOL: dict[str, Any] = {
     "name": "judge",
     "title": "LLM triage of findings",
-    "description": "NETWORK: opt-in LLM triage of active defects via OpenRouter "
-    "(needs WARDLINE_OPENROUTER_API_KEY). Labels each TRUE/FALSE positive. "
+    "description": "NETWORK: opt-in LLM triage of active defects. Auto prefers an installed, authenticated "
+    "Codex CLI and may use OpenRouter when Codex is unavailable. Labels each TRUE/FALSE positive. "
     "Never run automatically; never folded into scan.",
     "input_schema": {
         "type": "object",
         "properties": {
             "config": {"type": "string"},
+            "transport": {"type": "string", "enum": ["auto", "codex-cli", "openrouter"]},
             "model": {"type": "string"},
+            "codex_model": {"type": "string"},
             "max_findings": {"type": "integer"},
             "write": {"type": "boolean", "description": "append above-floor FPs to judged.yaml"},
             "trust_judge_config": {"type": "boolean"},
@@ -3628,7 +3736,7 @@ def _baseline(args: dict[str, Any], root: Path) -> dict[str, Any]:
             overwrite=overwrite,
             config_path=_cfg(args, root),
             cache_dir=_cache_dir_arg(args, root),
-            confine_to_root=True,
+            source_root_confinement=SourceRootConfinement.PROJECT_ROOT,
             trust_local_packs=_bool_arg(args, "trust_local_packs", False),
             trusted_packs=_trusted_packs_arg(args),
             strict_defaults=_bool_arg(args, "strict_defaults", False),
@@ -4220,7 +4328,7 @@ def _rekey(args: dict[str, Any], root: Path, filigree: Any = None) -> dict[str, 
             path,
             config_path=_cfg(args, root),
             cache_dir=_cache_dir_arg(args, root),
-            confine_to_root=True,
+            source_root_confinement=SourceRootConfinement.PROJECT_ROOT,
             trust_local_packs=_bool_arg(args, "trust_local_packs", False),
             trusted_packs=_trusted_packs_arg(args),
             strict_defaults=_bool_arg(args, "strict_defaults", False),
@@ -4511,7 +4619,11 @@ def _fix(args: dict[str, Any], root: Path) -> dict[str, Any]:
         from wardline.core.config import load
 
         cfg = load(cfg_path or weft_config_path(path), explicit=cfg_path is not None)
-        result = run_scan(path, config_path=cfg_path, confine_to_root=True)
+        result = run_scan(
+            path,
+            config_path=cfg_path,
+            source_root_confinement=SourceRootConfinement.PROJECT_ROOT,
+        )
     except WardlineError as exc:
         raise ToolError(str(exc)) from exc
 
@@ -4598,12 +4710,19 @@ class WardlineMCPServer:
         filigree_url_source: str | None = None,
         allow_write: bool = True,
         allow_network: bool = True,
+        trusted_packs: tuple[str, ...] = (),
+        trust_local_packs: bool = False,
     ) -> None:
         self.root = Path(root)
         self.loomweave_url = loomweave_url
         self.loomweave_url_source = loomweave_url_source
         self.filigree_url = filigree_url
         self.filigree_url_source = filigree_url_source
+        # Launch-flag pack grants (--trust-pack / --allow-custom-packs): the
+        # .mcp.json-resident, human-controlled counterpart of the CLI scan flags,
+        # unioned into every tool call's arguments (wardline-7a76f6c5a0 Gap A).
+        self._default_trusted_packs = tuple(trusted_packs)
+        self._default_trust_local_packs = bool(trust_local_packs)
         # Recorded once at construction: the doctor tool's freshness verdict compares
         # on-disk source mtimes against this to expose a stale long-lived server.
         self.started_at = time.time()
@@ -4965,6 +5084,36 @@ class WardlineMCPServer:
                 capabilities.add(ToolCapability.NETWORK)
         return frozenset(capabilities)
 
+    def _grants_merged_arguments(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        """Union the launch-flag pack grants into a tool call's arguments.
+
+        Grants only ever ADD: a caller's well-formed values are extended, never
+        replaced, and a malformed caller value (string boolean, non-list packs)
+        is left untouched so the handlers' strict guards still reject it in the
+        degraded no-jsonschema mode — injection must not launder bad input into
+        a valid-looking grant (see test_server_arg_hardening.py). Applied
+        tool-agnostically: tools that take no trust arguments ignore the extra
+        keys, matching the schemas' open additionalProperties posture.
+        """
+        if not self._default_trusted_packs and not self._default_trust_local_packs:
+            return arguments
+        merged = dict(arguments)
+        if self._default_trusted_packs:
+            caller_packs = merged.get("trust_packs")
+            if caller_packs is None or (
+                isinstance(caller_packs, list) and all(isinstance(p, str) for p in caller_packs)
+            ):
+                merged["trust_packs"] = list(
+                    dict.fromkeys([*(caller_packs or []), *self._default_trusted_packs])
+                )
+        if self._default_trust_local_packs:
+            caller_local = merged.get("trust_local_packs")
+            # Identity checks, not equality: 0 == False, and masking a caller's
+            # invalid 0 with True would defeat _bool_arg's strict rejection.
+            if caller_local is None or caller_local is False:
+                merged["trust_local_packs"] = True
+        return merged
+
     def _tools_call(self, params: dict[str, Any]) -> dict[str, Any]:
         name = params.get("name")
         if not isinstance(name, str):
@@ -4994,6 +5143,8 @@ class WardlineMCPServer:
                 print("Warning: jsonschema is missing; skipping MCP tool argument validation.", file=sys.stderr)
             except jsonschema.ValidationError as exc:
                 return self._is_error(f"invalid arguments: {exc.message}")
+
+        arguments = self._grants_merged_arguments(arguments)
 
         try:
             effective_capabilities = self._effective_tool_capabilities(tool, arguments)

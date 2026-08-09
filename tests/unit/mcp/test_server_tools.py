@@ -94,6 +94,54 @@ def test_scan_tool_returns_summary_and_gate(tmp_path: Path) -> None:
     assert any(e["rule_id"] == "PY-WL-101" for e in out["agent_summary"]["active_defects"])
 
 
+def test_scan_tool_empty_configured_root_is_not_evaluated_and_matches_advertised_schema(tmp_path: Path) -> None:
+    root = tmp_path / "proj"
+    (root / "src").mkdir(parents=True)
+    (root / "weft.toml").write_text(
+        '[wardline]\nsource_roots = ["src"]\n',
+        encoding="utf-8",
+    )
+    server = WardlineMCPServer(root=root)
+
+    response = server.rpc.dispatch(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {"name": "scan", "arguments": {"fail_on": "ERROR"}},
+        }
+    )
+
+    assert response is not None and "error" not in response, response
+    result = response["result"]
+    assert result.get("isError") is not True, result
+    structured = result["structuredContent"]
+    assert json.loads(result["content"][0]["text"]) == structured
+
+    listed = server.rpc.dispatch({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}})
+    assert listed is not None and "error" not in listed, listed
+    scan_tool = next(tool for tool in listed["result"]["tools"] if tool["name"] == "scan")
+    jsonschema.validate(structured, scan_tool["outputSchema"])
+
+    assert structured["files_scanned"] == 0
+    gate = structured["gate"]
+    assert gate["verdict"] == "NOT_EVALUATED"
+    assert gate["tripped"] is False
+    assert gate["exit_class"] == 0
+    assert gate["fail_on"] == "ERROR"
+    assert "no_files_scanned" in gate["reason"]
+    assert isinstance(gate["evaluated"], str) and "unsuppressed" in gate["evaluated"]
+
+    agent_summary = structured["agent_summary"]
+    assert agent_summary["summary"]["files_scanned"] == 0
+    assert agent_summary["gate"]["verdict"] == "NOT_EVALUATED"
+    assert agent_summary["gate"]["tripped"] is False
+    assert agent_summary["gate"]["exit_class"] == 0
+    assert agent_summary["gate"]["fail_on"] == gate["fail_on"] == "ERROR"
+    assert agent_summary["gate"]["reason"] == gate["reason"]
+    assert agent_summary["gate"]["evaluated"] == gate["evaluated"]
+
+
 def test_scan_tool_summary_includes_unanalyzed(tmp_path: Path) -> None:
     # (b) The MCP scan result must expose the unanalyzed count so a silently-skipped
     # file reaches the agent, not just stderr. An unparseable file makes it >= 1.

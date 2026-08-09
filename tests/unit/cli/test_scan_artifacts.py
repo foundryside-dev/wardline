@@ -21,7 +21,7 @@ from wardline.cli.scan import _scan_manifest_record
 from wardline.core.config import load as load_config
 from wardline.core.paths import weft_config_path
 from wardline.core.ruleset import ruleset_hash
-from wardline.core.run import ScanResult, ScanSummary
+from wardline.core.run import GatePopulation, ScanResult, ScanSummary
 from wardline.mcp.server import _scan as mcp_scan
 
 _STAMPED_JSONL_RE = re.compile(r"^\d{8}T\d{6}Z(-\d{3})?-findings\.jsonl$")
@@ -302,6 +302,7 @@ def test_scan_manifest_covered_paths_narrows_to_analyzed_set() -> None:
         summary=ScanSummary(total=0, active=0, baselined=0, waived=0, judged=0),
         files_scanned=2,
         context=None,
+        gate_population=GatePopulation.honoring(()),
         scanned_paths=("a.py", "b.py"),  # discovered
         analyzed_paths=("a.py",),  # only a.py re-analyzed (delta)
     )

@@ -14,6 +14,7 @@ from typing import Any
 
 import click
 
+from wardline.core.confinement import SourceRootConfinement
 from wardline.core.errors import WardlineError
 
 
@@ -37,7 +38,11 @@ def assure(path: Path, config_path: Path | None, output_format: str) -> None:
     from wardline.core.assure import build_posture
 
     try:
-        posture = build_posture(path, config_path=config_path, confine_to_root=True)
+        posture = build_posture(
+            path,
+            config_path=config_path,
+            source_root_confinement=SourceRootConfinement.PROJECT_ROOT,
+        )
     except WardlineError as exc:
         click.echo(f"error: {exc}", err=True)
         raise SystemExit(2) from exc

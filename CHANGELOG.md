@@ -7,6 +7,277 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Codex CLI judge transport with explicit selection and provenance.** The
+  opt-in judge now accepts `auto`, `codex-cli`, or `openrouter`; `auto` prefers
+  an installed, compatible, safely projectable ChatGPT-authenticated Codex CLI
+  and otherwise selects OpenRouter. Explicit Codex fails loudly, and Wardline
+  never switches providers after selection. Codex runs ephemerally in a sealed
+  read-only environment with a strict output schema and three bounded,
+  secret-aware repository tools. CLI/MCP verdicts and version 2 judged records
+  carry the concrete `judge_transport` and provider-specific `model_id`; legacy
+  version 1 records remain readable as OpenRouter provenance. A separately
+  opted-in authenticated live test covers Codex execution and repository reads.
+
+## [1.5.0] - 2026-07-31
+
+### Added
+
+- **MCP `scan.summary.counts_by_kind` publishes the canonical finding-kind
+  distribution.** This required additive top-level summary object always emits
+  `defect`, `fact`, `classification`, `metric`, and `suggestion`, zero-fills
+  absent kinds, includes suppressed findings, and sums to `summary.total`.
+  Display filtering, pagination, body suppression, and summary-only mode do not
+  change the counts; the nested `wardline-agent-summary-1` contract remains
+  unchanged.
+- **Redirect-aware agent-instruction installer (Weft convention C-20).**
+  `wardline install` now detects a `CLAUDE.md` that is solely an `@AGENTS.md` /
+  `@./AGENTS.md` import and maintains its managed instruction block in
+  `AGENTS.md` alone, migrating any legacy `CLAUDE.md` block out, so a project
+  with one source of agent context keeps one. Detection runs only *after* every
+  managed block — Wardline's own and any sibling's — is masked, so a marker a
+  block merely quotes is never read as project prose (an unclosed block masks to
+  EOF). The semantics are a deliberate port of the normative Legis
+  implementation and are identical across the federation, including the one
+  accepted limitation: a markdown-fenced `@AGENTS.md` example still reads as a
+  redirect. Fail-safe: a `CLAUDE.md` that is absent, unreadable, non-UTF-8,
+  non-regular, symlinked, or escaping the project root reads as **no** redirect,
+  so dual-write behaviour is unchanged — failing safe costs a redundant block,
+  failing open would silently stop maintaining the block a project actually
+  reads. Block *removal* is net-new and deliberately more conservative than
+  injection: injection can always fall back to an append (which deletes
+  nothing), so every unprovable-ownership case on the delete side is a no-op —
+  no own open fence, an own marker shielded by an unclosed sibling block, a
+  missing close, a close beyond a foreign fence, or two own blocks (split
+  brain) — and removal bounds at *any* foreign fence, not only a matched foreign
+  pair. Wardline's independent `--no-claude-md` / `--no-agents-md` flags are
+  handled so an opt-out can never erase the block without a write replacing it:
+  a migration runs only when the replacing write actually ran, and
+  `--no-claude-md` suppresses the migration outright. All four flag combinations
+  are pinned with and without a redirect. `wardline doctor` gains three
+  `CLAUDE.md` states rather than an inversion — under a redirect, absence is
+  healthy ("not required") and a surviving block is unhealthy ("migrate it");
+  without a redirect the previous two states stand — and `--repair` migrates
+  instead of re-injecting, surfacing a conservative refusal verbatim rather than
+  a false "repaired".
+- **The C-20 injection budgets are enforced by test**
+  (`tests/unit/install/test_c20_budgets.py`) rather than re-measured by hand.
+  Both character and UTF-8 byte counts must fit: the assembled instruction block
+  ≤800 (measured 519/519), the `wardline-gate` `SKILL.md` whole file ≤4,000
+  (3,354/3,376), and its frontmatter description ≤500 (270/270). No content was
+  shrunk; the failure message names C-20 and directs overflow **verbatim** into
+  `references/*.md` (shipped by `install_skill`), never deletion.
+- **Precise FastAPI request-input coverage.** A new alias-aware
+  `scanner/taint/fastapi_sources.py` discovers FastAPI route receivers, route
+  decorators, project Pydantic model classes, `Depends(...)` defaults, and
+  route-body parameter names from resolved syntax. Exact nested `Request`
+  members are now recognised as untrusted sources, and route body parameters
+  typed with a project Pydantic model are seeded precisely — without tainting
+  ordinary `BaseModel` parameters, `Depends(...)` provider results, or
+  non-route functions. `typing_extensions.Annotated` is recognised alongside
+  `typing.Annotated`.
+- **Adaptive Pydantic model-discovery budget** (`scanner/taint/pydantic_discovery.py`).
+  Cross-module model discovery is now budgeted per *whole round* against a
+  Wardline-owned budget scaled from project structure —
+  `(file_count + statement_count) * 64`, floored at 4,096 and hard-capped at
+  5,000,000 work units — instead of a fixed multiplier that stopped a healthy
+  fixed point mid-round on large projects and emitted a false
+  `WLN-ENGINE-PYDANTIC-DISCOVERY-LIMIT`. The ceiling stays Wardline-owned and is
+  deliberately **not** repository-configurable: Wardline scans untrusted
+  checkouts, so a repository must not be able to request arbitrarily expensive
+  analysis.
+- **The `attest` bundle carries per-boundary SEI diagnostics.** The signed
+  `wardline-attest-2` payload gains a required `sei_diagnostics` array
+  (`qualname`, `reason`, `auth_status`, in boundary order — i.e. sorted by qualname) alongside
+  `sei_source`, so a Loomweave identity that failed to resolve says *why* — an
+  auth rejection reads as "fix the token", never as "entity does not exist".
+  The addition is additive on the wire (consumers read named keys), but because
+  the key is inside the signed payload it affects cross-version
+  `verify-attestation --reproduce` — see UPGRADING.md.
+- **Filigree emit blocks report the landed chunk count.** `chunks_landed` is now
+  present on the MCP Filigree emit-status block after a transport attempt (and
+  required by the `scan_file_findings` emit `$def`; it stays optional in the
+  shared `$def` that also validates `configured: false` blocks, where no
+  transport attempt occurred), so a partial mid-batch emit is legible on the
+  machine surface, not only in the CLI text.
+
+### Changed
+
+- **The gate population is one mandatory tagged value.** `ScanResult` no longer
+  carries the nullable `gate_findings` sentinel beside `findings`; it carries a
+  mandatory frozen `gate_population` holding an immutable finding tuple plus a
+  closed `GateSuppressionPosture` (`UNSUPPRESSED` / `HONORS_SUPPRESSIONS`).
+  `gate_decision`,
+  the gate reasons, and the Legis artifact projection all consume that one value,
+  so there is no sentinel or parallel boolean left to drift, and the "delta
+  narrows the display, never the gate population" invariant (INV-4 / THREAT-001)
+  is structural rather than conventional. **This is a breaking change to the
+  in-process Python API** for anyone constructing or reading `ScanResult`
+  directly; the CLI, MCP, JSONL/SARIF, Legis-artifact, and Filigree/Loomweave
+  wires are unchanged.
+- **Source-root confinement is an explicit two-stage policy.** A new
+  `SourceRootConfinement` enum (`PROJECT_ROOT` default,
+  `LEGACY_ALLOW_ESCAPE` opt-in via `--allow-source-root-escape`) names the policy
+  applied to paths *named by untrusted configuration*. It is deliberately
+  separate from MCP argument confinement (`resolve_under_root`), which already
+  runs before configuration is loaded: a config file being inside the project
+  root does not make the paths its contents name safe.
+- **Loomweave binding resolution carries honest unavailability.** The nullable
+  shared identity result is replaced by a frozen `BindingResolution` carrying the
+  binding plus an unavailability reason and `auth_status`, threaded through the
+  dossier, decorator-coverage, attestation, and legacy Filigree attachment
+  surfaces. Legacy providers that still return a bare `EntityBinding` or `None`
+  are normalised rather than rejected.
+- **Legis artifacts are bound to the scan that produced them.** `ScanResult`
+  retains its effective `WardlineConfig` as in-process provenance, and both the
+  CLI and MCP artifact paths pass that same object to
+  `build_legis_artifact` instead of re-loading policy a second time (which could
+  read a different file than the scan did).
+### Fixed
+
+- **FastAPI `Request` sources retain their type at each return path.** A later
+  receiver rebind no longer erases the request type from an earlier direct
+  `return`, `yield`, or `yield from`, which previously let raw request data leave
+  a trusted producer without `PY-WL-101`. Return-path snapshots are
+  flow-sensitive, union request candidates across loop fixpoint revisits, and
+  feed both the returned taint and its contributing-callee provenance. A rebind
+  that occurs *before* the return remains quiet. Resolver caches are invalidated
+  so a stale pre-fix CLEAN summary cannot survive the upgrade.
+- **An empty `Annotated[()]` / `Optional[()]` annotation no longer aborts the
+  whole scan.** `_annotation_candidates` unwrapped the first subscript element
+  without checking there was one, so a syntactically valid empty subscript on a
+  FastAPI route parameter raised `IndexError`. Route-receiver discovery runs
+  outside the per-file `try`, so that one file took the **entire project** down
+  with it — zero findings, in violation of the per-file isolation the analyzer
+  documents. An empty subscript is now recorded as an *uninterpretable*
+  annotation, not an absent one: skipping it would have left
+  `route_body_parameters` unable to seed the parameter, i.e. fail **open** on an
+  annotation wardline could not read. Pinned by a scan-level isolation test (a
+  bad file beside a clean one; the clean file's defect still fires) and by
+  fail-closed pins for `typing.Annotated`, `typing_extensions.Annotated`, and
+  `typing.Optional`.
+- **`wardline doctor --repair` converges again, and no longer reports a block
+  that is not there.** Doctor detected its managed instruction block with a bare
+  `"wardline:instructions:"` substring test while `inject_block` / `remove_block`
+  walk fences and deliberately decline to claim a marker a *sibling's* managed
+  block merely quotes. The two disagreed in both directions: a sibling block
+  quoting the marker made doctor report a stale block the writers could not find,
+  so `--repair` no-opped, reported success, and the check stayed red on every
+  subsequent pass with no operator action that could clear it; without a redirect
+  the same input read as a false `configured` while wardline's own block was
+  genuinely missing. Detection now goes through one shared `has_own_block`
+  predicate that uses the same fence walker as the writers, so the detector is the
+  exact inverse of the writer. The `CLAUDE.md` and `AGENTS.md` rows both gain the
+  correction.
+- **A lineless source `DEFECT` can no longer leave the gate population.** The
+  generic DEFECT→FACT downgrade is replaced by an explicit (currently empty)
+  allowlist plus a deterministic `WLN-ENGINE-LINELESS-DEFECT` engine diagnostic
+  for every other case. The diagnostic keeps the original severity and `DEFECT`
+  kind (so it is gate-eligible), preserves the original rule id, path,
+  fingerprint, and kind in its properties, and derives a collision-safe
+  fingerprint. The diagnostic itself anchors at `<engine>` (it has no line to
+  anchor to), but it carries `original_path`, which `--new-since` delta
+  attribution reads so the finding is still attributed to the right source file
+  rather than to `<engine>`. The allowlist ships empty by design — this is a
+  fail-closed guard, not a fix for a rule known to emit lineless defects today.
+- **A malformed source binding fails closed in delta scans.** A reserved
+  diagnostic whose binding cannot prove which delta owns it keeps its ACTIVE
+  state instead of being treated as an unchanged `<engine>` path and clearing
+  the gate.
+- **Degraded-analysis signals survive delta filtering.**
+  `WLN-ENGINE-PYDANTIC-DISCOVERY-LIMIT` joins the incomplete-analysis rule set,
+  and incomplete-analysis diagnostics are no longer dropped by the delta display
+  scope — an under-analyzed scan cannot quietly read as a complete one.
+- **Path confinement is pinned at the read, not only at resolution.** Project
+  roots are anchored from the filesystem root, reads are anchored beneath the
+  project root, source reads are pinned to the validated file via a descriptor
+  bound to its verified inode with every directory hop verified, and validated
+  symlink targets are pinned — closing resolve-then-read (TOCTOU) substitution
+  windows. Discovery now hands downstream the **canonical** path that passed
+  confinement and deduplicates a file reachable through both its symlink and its
+  real path, so a later retarget of a mutable symlink cannot redirect analysis.
+  Note this re-keys findings on in-root symlinked source files (they now anchor
+  at the target path) — see UPGRADING.md.
+- **FastAPI `Request` binding discovery is order- and scope-correct.** Bindings
+  are tracked in source order, respect shadowing and provider taint, resolve in
+  compound scopes, are retained across branches and `try` handlers, stop at
+  terminators, and conditional `Request` re-exports are preserved.
+- **`rekey` validates before it mutates.** The migration journal's protocol is
+  validated (legs must be a list of named mappings; string lists must be string
+  lists) while still resuming a pre-`legs` journal from the canonical first leg,
+  and every pending YAML snapshot is read and scheme-checked in a single
+  preflight before any migration write — closing both incremental validation and
+  a preflight/use race where a later snapshot could become unsupported after an
+  earlier leg mutated its store.
+- **Fingerprint scheme ownership is enforced.** A store whose
+  `fingerprint_scheme` header names anything other than the frozen source scheme
+  or this build's live scheme is rejected up front, rather than being carried
+  into a verdict or orphaned by an untrustworthy remap.
+- **`wardline doctor` detects an unpinned Filigree emit URL.** A configured
+  Filigree URL that is not project-scoped is now reported with a
+  source-specific remedy (repair `.mcp.json`, unset/repoint the env var, or fix
+  the launch flag) instead of passing as "ok"; the check also runs against the
+  server-registry-resolved target when no flag or env var is set.
+- **Loomweave resolve is honest about auth versus nonexistence.** A 401/403 on a
+  resolve chunk stops the batch and is carried as `ResolveResult.auth_status`
+  whether or not a plugin hint was supplied; the rejected qualnames are **not**
+  reported unresolved, and the unprobed remainder is counted correctly.
+- **The Loomweave plugin-hint compatibility fallback is narrowed to its exact
+  envelope.** Only an HTTP 400 with `code: INVALID_PATH` whose `error` names the
+  unknown ``plugin`` field downgrades a hinted chunk to unresolved (the genuine
+  `deny_unknown_fields` rollout skew). Every other 4xx stays loud instead of
+  being silently swallowed as version skew.
+- **A zero-fact Loomweave write reads as neutral, not as a peer probe.** With no
+  facts to write no transport call occurs, so the CLI now prints the neutral
+  orchestration outcome without naming the destination URL — it is neither an
+  outage warning nor evidence the configured peer was reachable.
+- **Partial Filigree emit status survives to the MCP surface.**
+  `chunks_landed` is threaded into the MCP emit block and its schema, so the
+  machine envelope agrees with the CLI text about how much actually landed.
+
+### Internal
+
+- Regression pins added without behaviour change: zero-scanned-file gate
+  threshold parity and surface verdicts, every destructive MCP boolean guard
+  (including the remaining variants and waiver persistence), `rekey` MCP
+  mutation spies that assert the real mutation rather than the call, finding-kind
+  count invariance across every display control, `agent_summary` kind-count
+  compatibility, `Annotated` FQN boundaries, exact scan-config identity, and the
+  Elspeth Pydantic convergence / model-identity corpus.
+
+### Docs
+
+- `docs/reference/mcp.md`: documents the two-stage confinement contract and the
+  full `summary.counts_by_kind` contract (required, five canonical keys,
+  zero-filled, sums to `total`, unaffected by display controls) with a worked
+  response excerpt.
+- Pre-train consolidation additions (merged after the PR #124 review): the
+  wardline-gate skill's MCP-safe-scans guidance relocated verbatim to
+  `references/mcp-safe-scans.md` within the C-20 budget, and the seam-health
+  probe implementation plan (`docs/superpowers/plans/`) landed alongside its
+  design spec. The broader C-16 prototype was independently reviewed and
+  reverted before release; the approved top-level-only `counts_by_kind`
+  contract and its closed five-key schema remain.
+- `docs/guides/agents.md`: corrects the `scan` payload-control description — the
+  `where` lens filters the `agent_summary` finding arrays, and cuts are reported
+  in `agent_summary.truncation`.
+- `docs/guides/suppression.md`: corrects the line-sensitivity note. The `wlfp2`
+  core formula is line-**insensitive** (absolute `line_start` is display/SARIF
+  data and is not hashed), so moving an unchanged entity keeps the suppression
+  join; identity-bearing edits are path/qualname renames and changes to the
+  source-derived discriminator.
+- `docs/guides/configuration.md`: corrects the config-loading note — an
+  implicitly-loaded `<scan-root>/weft.toml` falls back to built-in defaults
+  (warning when it is present but unreadable/malformed), while a file named
+  explicitly with `--config` is an operator requirement and fails closed. That
+  behaviour is unchanged; only the documentation was wrong. Also documents that
+  configured `source_roots` are untrusted path values.
+- `docs/reference/cli.md`, `docs/reference/finding-lifecycle-vocabulary.md`, and
+  `docs/decisions/2026-06-05-wardline-finding-identity-frozen-contract.md`:
+  re-anchored to live source (gate population posture, confinement policy,
+  fingerprint ownership).
+
 ## [1.3.0] - 2026-07-03
 
 ### Added
@@ -1572,7 +1843,8 @@ for Python — enterprise-class trust-boundary analysis at small-team weight.
 - **Packaging** — MIT-licensed; optional extras `scanner` (config + CLI) and
   `weft` (HTTP integrations).
 
-[Unreleased]: https://github.com/foundryside-dev/wardline/compare/v1.3.0...HEAD
+[Unreleased]: https://github.com/foundryside-dev/wardline/compare/v1.5.0...HEAD
+[1.5.0]: https://github.com/foundryside-dev/wardline/compare/v1.3.0...v1.5.0
 [1.3.0]: https://github.com/foundryside-dev/wardline/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/foundryside-dev/wardline/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/foundryside-dev/wardline/compare/v1.0.7...v1.1.0

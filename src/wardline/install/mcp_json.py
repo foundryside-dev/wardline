@@ -155,12 +155,77 @@ def _desired_sibling_args(entry: object, root: Path) -> list[str]:
     return out
 
 
+# Pack-grant flags (`wardline mcp --trust-pack X --allow-custom-packs`) are the
+# operator's standing authorization for the project's trust-grammar packs
+# (wardline-7a76f6c5a0). Repair preserves them verbatim: stripping them would
+# silently return a working taint gate to inert — and preserving them grants
+# nothing the entry's own launch args did not already grant on every spawn.
+_TRUST_PACK_FLAG = "--trust-pack"
+_ALLOW_CUSTOM_PACKS_FLAG = "--allow-custom-packs"
+
+
+def _pack_grant_args(entry: object) -> list[str]:
+    """Canonicalised pack-grant args from an existing wardline entry: each distinct
+    ``--trust-pack <name>`` pair in first-seen order, then ``--allow-custom-packs``
+    if present. A dangling ``--trust-pack`` (missing or flag-shaped value) is
+    dropped, and never allowed to swallow a following flag as its value."""
+    if not isinstance(entry, dict):
+        return []
+    args = entry.get("args")
+    if not isinstance(args, list):
+        return []
+    packs: list[str] = []
+    allow_local = False
+    i = 0
+    while i < len(args):
+        arg = args[i]
+        if arg == _ALLOW_CUSTOM_PACKS_FLAG:
+            allow_local = True
+            i += 1
+            continue
+        if (
+            arg == _TRUST_PACK_FLAG
+            and i + 1 < len(args)
+            and isinstance(args[i + 1], str)
+            and not args[i + 1].startswith("-")
+        ):
+            if args[i + 1] not in packs:
+                packs.append(args[i + 1])
+            i += 2
+            continue
+        i += 1
+    out: list[str] = []
+    for name in packs:
+        out.extend((_TRUST_PACK_FLAG, name))
+    if allow_local:
+        out.append(_ALLOW_CUSTOM_PACKS_FLAG)
+    return out
+
+
+def mcp_entry_pack_grants(root: Path) -> tuple[tuple[str, ...], bool]:
+    """The pack grants recorded in *root*'s ``.mcp.json`` wardline entry:
+    ``(trusted pack names, allow local/custom packs)``. Fail-soft: a missing or
+    malformed file/entry reads as no grants, so callers stay fail-closed."""
+    try:
+        data = json.loads((root / ".mcp.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+        return (), False
+    servers = data.get("mcpServers") if isinstance(data, dict) else None
+    entry = servers.get("wardline") if isinstance(servers, dict) else None
+    grant_args = _pack_grant_args(entry)
+    # Canonical shape: (--trust-pack, <name>) pairs, then an optional bare
+    # --allow-custom-packs — so every _TRUST_PACK_FLAG has a following value.
+    packs = tuple(grant_args[i + 1] for i, flag in enumerate(grant_args) if flag == _TRUST_PACK_FLAG)
+    return packs, _ALLOW_CUSTOM_PACKS_FLAG in grant_args
+
+
 def _desired_local_entry(existing: object, root: Path) -> dict[str, object]:
     """The canonical local entry, augmented with the desired sibling-URL args (see
-    :func:`_desired_sibling_args`). Idempotent: re-running over the desired entry
+    :func:`_desired_sibling_args`) and the operator's preserved pack-grant args
+    (see :func:`_pack_grant_args`). Idempotent: re-running over the desired entry
     reproduces it."""
     entry = _local_mcp_entry()
-    extra = _desired_sibling_args(existing, root)
+    extra = [*_desired_sibling_args(existing, root), *_pack_grant_args(existing)]
     if extra:
         base_args = entry["args"]
         assert isinstance(base_args, list)
@@ -279,13 +344,25 @@ def _upsert_toml_table(content: str, table_name: str, table_block: str) -> str:
     return updated
 
 
+def _desired_codex_entry(existing: object) -> dict[str, object]:
+    """The canonical global Codex entry, preserving the operator's pack-grant args
+    from an existing entry — the same repair discipline as :func:`_desired_local_entry`
+    (stripping a grant silently returns a working taint gate to inert)."""
+    entry = _codex_mcp_entry()
+    grants = _pack_grant_args(existing)
+    if grants:
+        base_args = entry["args"]
+        assert isinstance(base_args, list)
+        entry["args"] = [*base_args, *grants]
+    return entry
+
+
 def install_codex_mcp(root: Path) -> str:
     """Add/replace Wardline's global Codex MCP entry. Returns created|updated|unchanged."""
     del root  # Global Codex config uses runtime workspace discovery.
     config_path = _codex_config_path()
     existed = config_path.exists()
     config_path.parent.mkdir(parents=True, exist_ok=True)
-    desired = _codex_mcp_entry()
 
     existing = ""
     if existed:
@@ -295,6 +372,7 @@ def install_codex_mcp(root: Path) -> str:
         except OSError as exc:
             raise WardlineError(f"cannot read {config_path}: {exc}") from exc
 
+    desired = _desired_codex_entry(None)
     if existing.strip():
         try:
             parsed = tomllib.loads(existing)
@@ -302,6 +380,7 @@ def install_codex_mcp(root: Path) -> str:
             raise WardlineError(f"malformed {config_path}: {exc}") from exc
         mcp_servers = parsed.get("mcp_servers", {})
         wardline_server = mcp_servers.get("wardline") if isinstance(mcp_servers, dict) else None
+        desired = _desired_codex_entry(wardline_server)
         if isinstance(wardline_server, dict) and wardline_server == desired:
             return "unchanged"
 

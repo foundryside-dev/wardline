@@ -1,3 +1,6 @@
+import ast
+import re
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -39,6 +42,42 @@ def test_live_judge_oracle_only_claims_schema_contract() -> None:
 
     assert "hits cache" not in live_judge
     assert "prompt_tokens_cached" not in live_judge
+
+
+def test_codex_live_oracle_is_registered_and_default_excluded() -> None:
+    with (ROOT / "pyproject.toml").open("rb") as handle:
+        pyproject = tomllib.load(handle)
+    pytest_options = pyproject["tool"]["pytest"]["ini_options"]
+    marker_names = {marker.partition(":")[0] for marker in pytest_options["markers"]}
+    workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+
+    assert "codex_live" in marker_names
+    assert re.search(r"\bnot\s+codex_live\b", pytest_options["addopts"])
+    assert "codex_live" not in workflow
+    assert "WARDLINE_CODEX_LIVE" not in workflow
+
+
+def test_codex_live_oracle_proves_tool_use_without_logging_model_output() -> None:
+    source = (ROOT / "tests" / "e2e" / "test_judge_codex_live.py").read_text(encoding="utf-8")
+    tree = ast.parse(source)
+
+    assert "codex_process_runner=" in source
+    assert "mcp_tool_call" in source
+    assert "read_file" in source
+    assert "judge_helper.py" in source
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Assert):
+            continue
+        assert not any(
+            isinstance(test_node, ast.Name) and test_node.id in {"captured_stdout", "response"}
+            for test_node in ast.walk(node.test)
+        )
+        if node.msg is not None:
+            assert not any(
+                (isinstance(message_node, ast.Attribute) and message_node.attr == "rationale")
+                or (isinstance(message_node, ast.Name) and message_node.id in {"captured_stdout", "response"})
+                for message_node in ast.walk(node.msg)
+            )
 
 
 def test_live_oracle_required_mode_forbids_live_oracle_skips(monkeypatch: pytest.MonkeyPatch) -> None:

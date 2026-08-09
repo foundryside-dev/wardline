@@ -37,6 +37,7 @@ from datetime import date
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from wardline.core.confinement import SourceRootConfinement
 from wardline.core.dossier import UNDER_SCAN_RULE_IDS, classify_entity_trust
 from wardline.core.run import run_scan
 from wardline.core.waivers import Waiver, load_project_waivers
@@ -249,7 +250,7 @@ def build_posture(
     root: Path,
     *,
     config_path: Path | None = None,
-    confine_to_root: bool = True,
+    source_root_confinement: SourceRootConfinement = SourceRootConfinement.PROJECT_ROOT,
     today: date | None = None,
 ) -> AssurancePosture:
     """Run a scan under ``root`` and return its trust-surface coverage posture — the
@@ -262,7 +263,7 @@ def build_posture(
     if today is None:
         today = date.today()
     waivers = load_project_waivers(root)
-    result = run_scan(root, config_path=config_path, confine_to_root=confine_to_root)
+    result = run_scan(root, config_path=config_path, source_root_confinement=source_root_confinement)
     if result.context is None:
         return _empty_posture(waivers, today)
     return posture_from_scan(result, result.context, waivers=waivers, today=today)

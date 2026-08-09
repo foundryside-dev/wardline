@@ -12,10 +12,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
 
+from wardline.core.confinement import SourceRootConfinement
 from wardline.core.dossier import WorkProvider, WorkSection, classify_entity_trust
 from wardline.core.finding import Kind, SuppressionState
 from wardline.core.identity import ContentStatus, EntityBinding, IdentityStatus
 from wardline.core.run import run_scan
+from wardline.loomweave.dossier_sources import BindingResolution
 
 if TYPE_CHECKING:
     from wardline.core.run import ScanResult
@@ -26,7 +28,7 @@ if TYPE_CHECKING:
 class BindingProvider(Protocol):
     """Optional identity source for one qualname."""
 
-    def binding_for(self, qualname: str) -> EntityBinding | None: ...
+    def binding_for(self, qualname: str) -> BindingResolution | EntityBinding | None: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -148,24 +150,40 @@ def _decorators_of(entity: Entity) -> list[str]:
     return decorators
 
 
-def _identity_for(provider: BindingProvider | None, qualname: str) -> tuple[IdentityCoverage, EntityBinding | None]:
+def _normalize_binding_result(result: object) -> BindingResolution:
+    if isinstance(result, BindingResolution):
+        return result
+    if isinstance(result, EntityBinding):
+        return BindingResolution(result, None, None)
+    if result is None:
+        return BindingResolution(None, "loomweave returned no identity", None)
+    reason = f"loomweave binding provider returned unsupported result: {type(result).__name__}"
+    return BindingResolution(None, reason, None)
+
+
+def _identity_for(provider: BindingProvider | None, qualname: str) -> tuple[IdentityCoverage, BindingResolution]:
     locator = _locator_for(qualname)
     if provider is None:
-        return IdentityCoverage.unavailable(locator, "loomweave not configured"), None
+        resolution = BindingResolution(None, "loomweave not configured", None)
+        return IdentityCoverage.unavailable(locator, "loomweave not configured"), resolution
     try:
-        binding = provider.binding_for(qualname)
+        resolution = _normalize_binding_result(provider.binding_for(qualname))
     except Exception as exc:
-        return IdentityCoverage.unavailable(locator, f"loomweave unreachable: {exc}"), None
-    if binding is None:
-        return IdentityCoverage.unavailable(locator, "loomweave returned no identity"), None
-    return IdentityCoverage.from_binding(binding), binding
+        reason = f"loomweave unreachable: {exc}"
+        resolution = BindingResolution(None, reason, None)
+        return IdentityCoverage.unavailable(locator, reason), resolution
+    if resolution.binding is None:
+        reason = resolution.unavailable_reason or "loomweave returned no identity"
+        return IdentityCoverage.unavailable(locator, reason), resolution
+    return IdentityCoverage.from_binding(resolution.binding), resolution
 
 
-def _work_for(provider: WorkProvider | None, binding: EntityBinding | None) -> WorkSection:
+def _work_for(provider: WorkProvider | None, resolution: BindingResolution) -> WorkSection:
     if provider is None:
         return WorkSection.unavailable("filigree not configured")
+    binding = resolution.binding
     if binding is None or binding.sei is None:
-        return WorkSection.unavailable("no entity binding: cannot resolve work")
+        return WorkSection.unavailable(resolution.unavailable_reason or "no entity binding: cannot resolve work")
     try:
         section = provider.work(binding)
     except Exception as exc:
@@ -202,8 +220,8 @@ def decorator_coverage_from_scan(
         suppressed = sorted(
             finding.fingerprint for finding in defects if finding.suppressed is not SuppressionState.ACTIVE
         )
-        identity, binding = _identity_for(binding_provider, qualname)
-        work = _work_for(work_provider, binding)
+        identity, resolution = _identity_for(binding_provider, qualname)
+        work = _work_for(work_provider, resolution)
         rows.append(
             DecoratorCoverageRow(
                 qualname=qualname,
@@ -227,11 +245,11 @@ def build_decorator_coverage(
     root: Path,
     *,
     config_path: Path | None = None,
-    confine_to_root: bool = True,
+    source_root_confinement: SourceRootConfinement = SourceRootConfinement.PROJECT_ROOT,
     binding_provider: BindingProvider | None = None,
     work_provider: WorkProvider | None = None,
 ) -> DecoratorCoverageReport:
-    result = run_scan(root, config_path=config_path, confine_to_root=confine_to_root)
+    result = run_scan(root, config_path=config_path, source_root_confinement=source_root_confinement)
     if result.context is None:
         return DecoratorCoverageReport(rows=[])
     return decorator_coverage_from_scan(

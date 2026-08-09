@@ -9,11 +9,14 @@ Wardline only ever **reads** its own `[wardline]` table and never writes it.
 With no `weft.toml` (or no `[wardline]` table), Wardline boots on built-in
 defaults: it scans `.` with all rules enabled.
 
-!!! info "Missing or malformed `weft.toml` is a silent fallback, never a hard error"
-    If `weft.toml` is **absent**, is **unreadable**, or **fails to parse as
-    TOML**, Wardline silently falls back to its built-in defaults — it never
-    hard-fails on a missing or malformed file. A `weft.toml` with no `[wardline]`
-    table behaves the same way.
+!!! info "The implicit default may fall back; an explicit `--config` fails closed"
+    When Wardline implicitly loads `<scan-root>/weft.toml`, an **absent** file
+    falls back to built-in defaults, while an **unreadable** or malformed TOML
+    file falls back with a warning that the `[wardline]` policy was not applied.
+    A `weft.toml` with no `[wardline]` table also uses defaults because it declares
+    no Wardline policy. By contrast, a file named explicitly with `--config` is an
+    operator requirement: missing, unreadable, malformed, or non-table
+    `[wardline]` input is a hard configuration error rather than a fallback.
 
 !!! warning "But unknown keys and out-of-range values in a *present* `[wardline]` table are hard errors"
     Once a `[wardline]` table parses, it is validated against a JSON Schema
@@ -74,6 +77,11 @@ exclude = ["**/migrations/**", "tests"]
 
 When `source_roots` is omitted it defaults to `["."]` (the scan path).
 
+Configured roots are untrusted path values. Wardline's secure default resolves each root
+and every discovered source-file symlink under the scan root. A config file located inside
+the project can still contain an escaping root, so config-path validation and source-root
+discovery validation are independent checks.
+
 ### `store_dir`
 
 Wardline writes its machine state — `baseline.yaml`, `judged.yaml`, and
@@ -127,7 +135,13 @@ behalf.
 packs = ["myorg.trustpack"]
 ```
 
-Then assert the pack at scan/judge time with `--trust-pack myorg.trustpack`.
+Then assert the pack at scan/judge time with `--trust-pack myorg.trustpack`,
+or grant it once for a whole MCP server with
+`wardline mcp --trust-pack myorg.trustpack` (in the `.mcp.json` args array) so
+agent tool calls need not re-pass `trust_packs`. A pack that lives inside the
+project checkout additionally needs `--allow-custom-packs` (MCP tool argument
+`trust_local_packs`); Wardline imports such a pack relative to the `weft.toml`
+that declares it — no PYTHONPATH arrangement is needed.
 
 ### `[wardline.rules]`
 
@@ -152,7 +166,9 @@ keys are optional; the defaults are shown.
 
 | Key | Type | Default | Constraint |
 |---|---|---|---|
+| `transport` | string | `auto` | One of `auto`, `codex-cli`, or `openrouter`. `auto` prefers Codex after a narrow availability/auth preflight. |
 | `model` | string | `anthropic/claude-opus-4-8` | OpenRouter model slug. |
+| `codex_model` | string | `gpt-5.6-sol` | Codex CLI model identifier. |
 | `context_lines` | integer | `30` | `>= 0`. Excerpt radius around a finding. |
 | `max_findings` | integer | unset (all) | `>= 1`. Cap findings triaged per run. |
 | `policy_file` | string | unset | Path (under the scan root) to an extra project policy appended to the built-in prompt. |
@@ -160,10 +176,17 @@ keys are optional; the defaults are shown.
 
 ```toml
 [wardline.judge]
+transport = "auto"
 model = "anthropic/claude-opus-4-8"
+codex_model = "gpt-5.6-sol"
 context_lines = 30
 write_confidence_floor = 0.5
 ```
+
+Repository-supplied judge settings do not control execution unless you pass
+`--trust-judge-config`. CLI flags remain explicit operator choices. The
+`policy_file` key has a separate `--trust-judge-policy` gate because Wardline
+passes its contents to the model only as untrusted context.
 
 Out-of-range values fail loud:
 
@@ -200,7 +223,9 @@ enable = ["PY-WL-101"]
 severity = { "PY-WL-101" = "ERROR" }
 
 [wardline.judge]
+transport = "auto"
 model = "anthropic/claude-opus-4-8"
+codex_model = "gpt-5.6-sol"
 context_lines = 30
 
 [wardline.autofix]

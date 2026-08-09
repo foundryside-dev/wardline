@@ -38,7 +38,8 @@ loomweave = ["wardline[scanner]", "blake3>=1.0"]
 # and loads rust_taint.yaml, so it pulls `wardline[scanner]` (pyyaml/click/jsonschema):
 # `pip install wardline[rust]` is then usable standalone, not merely additive to [scanner].
 rust = ["wardline[scanner]", "tree-sitter>=0.25,<0.26", "tree-sitter-rust==0.24.2"]
-# The SP5 LLM triage judge is dependency-free (stdlib urllib -> OpenRouter); no extra needed.
+# The LLM judge adds no Python dependency: it uses an installed Codex CLI or
+# stdlib urllib for the OpenRouter adapter; no Wardline extra is needed.
 
 [dependency-groups]
 # Tooling only. Runtime deps live in the extras above; `uv sync --all-extras
@@ -149,9 +150,10 @@ disable_error_code = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-m 'not network and not loomweave_e2e and not legis_e2e and not filigree_e2e and not rust_e2e and not loomweave_drift and not sei_drift and not warpline_e2e and not reason_vocab_drift and not filigree_token_drift and not worklist_drift and not legis_scan_artifact_drift'"
+addopts = "-m 'not network and not codex_live and not loomweave_e2e and not legis_e2e and not filigree_e2e and not rust_e2e and not loomweave_drift and not sei_drift and not warpline_e2e and not reason_vocab_drift and not filigree_token_drift and not worklist_drift and not legis_scan_artifact_drift'"
 markers = [
     "network: tests that need network (live OpenRouter judge e2e — SP5)",
+    "codex_live: live authenticated Codex CLI judge round-trip (manual/local opt-in)",
     "loomweave_e2e: tests that need a real `loomweave serve` binary (SP9 round-trip)",
     "legis_e2e: tests that need a real `legis` server (Track 5 intake round-trip)",
     "filigree_e2e: tests that need a real Filigree with the promote route (WS-A2 round-trip)",
@@ -248,6 +250,7 @@ forbidden_modules = [
     "wardline.core.agent_summary",
     "wardline.core.decorator_coverage",
     "wardline.core.judge",
+    "wardline.core.judge_transport",
     "wardline.core.judge_run",
     "wardline.core.triage",
     "wardline.core.rekey",
@@ -297,6 +300,7 @@ forbidden_modules = [
     "wardline.core.agent_summary",
     "wardline.core.decorator_coverage",
     "wardline.core.judge",
+    "wardline.core.judge_transport",
     "wardline.core.judge_run",
     "wardline.core.triage",
     "wardline.core.rekey",

@@ -16,7 +16,7 @@ the base CLI.
 | `decorator-coverage` | `wardline[scanner]` | Re-derives trust-decorator coverage rows from the analyzer context. |
 | `baseline create` / `baseline update` | `wardline[scanner]` | Re-derives findings from a scan, so it pulls in the full scanner stack. |
 | `vocab` | `wardline[scanner]` | Ships with the CLI (`click`), which arrives via the `scanner` extra. |
-| `judge` | no extra | The SP5 LLM triage judge talks to OpenRouter over stdlib `urllib`; no third-party dependency is needed beyond the base CLI. |
+| `judge` | no extra | The LLM triage judge uses an installed Codex CLI or OpenRouter over stdlib `urllib`; Wardline adds no LLM SDK dependency. |
 
 Install the scanner stack with:
 
@@ -99,6 +99,10 @@ Options:
   --fail-on-unanalyzed / --no-fail-on-unanalyzed
                                   Exit 1 if any file was discovered but could
                                   not be analyzed.
+  --fail-on-inert / --no-fail-on-inert
+                                  Exit 1 if the scan recognized zero trust
+                                  boundaries over non-trivial code (inert
+                                  gate).
   --cache-dir PATH                Persist L3 summary cache here for faster
                                   incremental scans.
   --filigree-url TEXT             POST findings to this Filigree Weft scan-
@@ -163,12 +167,13 @@ it at a package root, not a single file.
 | `--filigree-max-findings-per-request INTEGER` | Cap findings per Filigree scan-results POST. Precedence is explicit CLI value, then `WARDLINE_FILIGREE_MAX_FINDINGS_PER_REQUEST`, then Filigree's advertised scan-results limit from `/api/files/_schema` when reachable, then Wardline's safe default (`1000`). Wardline chunks by complete file groups when possible so Filigree reconciliation does not mark later chunks as fixed. |
 | `--loomweave-url TEXT` | Opt-in, fail-soft: persist per-entity taint facts to a Loomweave taint-store endpoint alongside local output. |
 | `--fail-on-unanalyzed` / `--no-fail-on-unanalyzed` | Exit `1` if any file was discovered but could not be analyzed (e.g. a parse failure), even when no finding trips `--fail-on`. |
+| `--fail-on-inert` / `--no-fail-on-inert` | Exit `1` if the scan recognized **zero** trust boundaries over non-trivial code — an inert gate passes green while checking nothing. Turns the always-reported `resolution.inert` posture into an enforced sub-gate, so pack consumers need no wrapper script to reject inert scans. |
 | `--new-since TEXT` | PR-scoped "new findings only" gate: gate only on findings in files/entities changed since this git ref. Mutually exclusive with `--affected`. |
 | `--affected FILENAME` | Scope analysis to the entities named in a `warpline.reverify_worklist.v1` worklist (or a bare entity list; file path, or `-` for stdin) — the inner-loop fast path. The affected set is caller-closure expanded so cross-file taint into a changed callee is still computed. **Advisory, not a gate:** only the scoped files are analyzed, so it cannot certify out-of-scope files and is **rejected together with `--fail-on`** — use `--new-since` for an authoritative change-scoped gate (full analysis, gates the changed subset) or a full scan for the gate of record (a `scope` block records the mode, gate authority, and `analyzed N of M` accounting). An empty or all-unresolvable scope falls back to a full scan. Mutually exclusive with `--new-since` and `--fail-on`. |
 | `--trust-pack TEXT` (repeatable), `--allow-custom-packs` | Allow loading trust-grammar packs declared in `weft.toml [wardline]` (`--trust-pack`) or from the local project directory (`--allow-custom-packs`). |
 | `--fix`, `-y`/`--yes` | Apply mechanical autofixes during the scan; `-y` auto-confirms every fix. |
 | `--strict-defaults` | Ignore repository-supplied custom configuration overrides in `weft.toml`. |
-| `--allow-source-root-escape` | Allow `weft.toml [wardline] source_roots` to resolve outside `PATH`. |
+| `--allow-source-root-escape` | Select the explicit `SourceRootConfinement.LEGACY_ALLOW_ESCAPE` compatibility policy, allowing `weft.toml [wardline] source_roots` to resolve outside `PATH`. The default is `PROJECT_ROOT`; automation and enforcement should not enable the legacy policy. |
 | `--trust-suppressions` | Let repository-controlled baseline/waiver/judged files clear the `--fail-on` gate (they always annotate findings regardless). Use only for trusted local checkouts; in CI prefer the unforgeable `--new-since <merge-base>` ratchet. Default off, so the gate evaluates the unsuppressed population and a PR cannot self-suppress. |
 | `--allow-dirty` | `--format legis` only: on a dirty working tree, emit an UNSIGNED, clearly-marked (`dirty: true`) dev artifact instead of refusing. Signing stays clean-tree-only. |
 
@@ -420,9 +425,11 @@ fix without prompting.
 ## `wardline judge`
 
 **Purpose:** run the opt-in LLM triage judge over the *active* DEFECT findings
-(those not already suppressed by the baseline) and classify each as a true
-positive or a false positive. Dependency-free — it reaches OpenRouter over
-stdlib `urllib`, so no extra is required.
+(those not already suppressed by the baseline, a waiver, or a prior judged
+record) and classify each as a true positive or a false positive. The default
+`auto` transport prefers an installed,
+authenticated Codex CLI and selects OpenRouter only when Codex preflight reports
+it unavailable. No extra Wardline dependency is required.
 
 ```text
 Usage: wardline judge [OPTIONS] [PATH]
@@ -431,28 +438,36 @@ Usage: wardline judge [OPTIONS] [PATH]
 
 Options:
   --config FILE
-  --model TEXT             OpenRouter model slug (overrides config).
-  --context-lines INTEGER  Excerpt radius (default 30).
-  --max-findings INTEGER   Cap findings triaged this run.
-  --write                  Append FALSE_POSITIVE verdicts to
-                           .weft/wardline/judged.yaml (default: dry-run).
-  --trust-judge-policy     Allow loading judge.policy_file from the scanned
-                           project as untrusted judge context.
-  --trust-judge-config     Allow project judge config to select model,
-                           context, cap, and write confidence floor.
-  --trust-pack TEXT        Allow importing this trust-grammar pack from
-                           weft.toml [wardline]. May be repeated.
-  --allow-custom-packs     Allow loading custom trust-grammar packs from the
-                           local project directory.
-  --strict-defaults        Ignore repository-supplied custom configuration
-                           overrides (weft.toml).
-  --help                   Show this message and exit.
+  --transport [auto|codex-cli|openrouter]
+                                  Judge transport: auto, codex-cli, or
+                                  openrouter (default auto).
+  --model TEXT                    OpenRouter model slug (overrides config).
+  --codex-model TEXT              Codex CLI model id (overrides config).
+  --context-lines INTEGER         Excerpt radius (default 30).
+  --max-findings INTEGER          Cap findings triaged this run.
+  --write                         Append FALSE_POSITIVE verdicts to
+                                  .weft/wardline/judged.yaml (default: dry-
+                                  run).
+  --trust-judge-policy            Allow loading judge.policy_file from the
+                                  scanned project as untrusted judge context.
+  --trust-judge-config            Allow project judge config to select
+                                  transport, both models, context, cap, and
+                                  write confidence floor.
+  --trust-pack TEXT               Allow importing this trust-grammar pack from
+                                  weft.toml [wardline]. May be repeated.
+  --allow-custom-packs            Allow loading custom trust-grammar packs
+                                  from the local project directory.
+  --strict-defaults               Ignore repository-supplied custom
+                                  configuration overrides (weft.toml).
+  --help                          Show this message and exit.
 ```
 
 | Option | Effect |
 | --- | --- |
-| `--config FILE` | Path to a `weft.toml` config; its `[wardline]` table supplies the default model slug and other judge settings. The API key is **never** read from config — it comes only from the `WARDLINE_OPENROUTER_API_KEY` environment variable or a `.env` in the scan root. |
-| `--model TEXT` | OpenRouter model slug, overriding whatever the config sets for this one run. |
+| `--config FILE` | Path to a `weft.toml` config. Project judge execution settings take effect only with `--trust-judge-config`; OpenRouter keys are never read from config. |
+| `--transport auto\|codex-cli\|openrouter` | Select the transport. `auto` prefers Codex after capability/auth preflight; explicit Codex fails instead of falling back. Selection occurs once per run. |
+| `--model TEXT` | OpenRouter model slug, overriding the OpenRouter config for this run. |
+| `--codex-model TEXT` | Codex CLI model identifier, overriding `judge.codex_model` for this run. |
 | `--context-lines INTEGER` | How many source lines on each side of a finding to include in the excerpt sent to the model. Default is `30`. |
 | `--max-findings INTEGER` | Hard cap on how many findings to triage this run — useful to bound token spend. |
 | `--write` | Persist `FALSE_POSITIVE` verdicts to `.weft/wardline/judged.yaml`. **Without `--write` the command is a dry run** that prints verdicts but changes nothing. |
@@ -460,10 +475,16 @@ Options:
 By default `judge` is a dry run: it prints what it *would* suppress. Add
 `--write` only once you trust the verdicts.
 
-Dry-run triage of at most 20 findings with an explicit model:
+Dry-run triage of at most 20 findings with explicit OpenRouter selection:
 
 ```text
-$ wardline judge src/ --model anthropic/claude-opus-4-8 --max-findings 20
+$ wardline judge src/ --transport openrouter --model anthropic/claude-opus-4-8 --max-findings 20
+```
+
+Require the local authenticated Codex CLI with its separate model namespace:
+
+```text
+$ wardline judge src/ --transport codex-cli --codex-model gpt-5.6-sol
 ```
 
 Commit the suppressions once satisfied:
@@ -472,7 +493,10 @@ Commit the suppressions once satisfied:
 $ wardline judge src/ --write
 ```
 
-The judge is opt-in and the safe default is dry-run; see the
+Each printed verdict includes `via <judge_transport>/<model_id>`, where the
+transport is concrete (`codex-cli` or `openrouter`, never `auto`). The MCP twin
+returns the same `judge_transport` and `model_id` provenance. The judge is
+opt-in and the safe default is dry-run; see the
 [judge guide](../guides/judge.md) for credentials, the `.weft/wardline/judged.yaml`
 format, and the false-positive workflow.
 
@@ -646,6 +670,12 @@ Options:
   --help            Show this message and exit.
 ```
 
+When `CLAUDE.md` is merely an `@AGENTS.md` redirect the instruction block is
+maintained in `AGENTS.md` alone and any legacy `CLAUDE.md` block is migrated out;
+`--no-claude-md` then also suppresses that migration (an opt-out skips work, it
+never erases it). See
+[Redirected `CLAUDE.md`](../guides/agents.md#redirected-claudemd).
+
 For what the install writes and how agents consume it, see
 [Using Wardline with your coding agent](../guides/agents.md).
 
@@ -679,7 +709,12 @@ install-and-federation health checks doctor runs.
 agent transport — it exposes the full tool surface (`scan`, `explain_taint`,
 `assure`, `dossier`, `attest`, and the rest) without scraping terminal output.
 `--read-only` and `--no-network` drop the tools that would write to disk or
-reach a sibling, for a hardened launch.
+reach a sibling, for a hardened launch. `--trust-pack` / `--allow-custom-packs`
+are the server-resident pack grants: set them in the launcher config (e.g. the
+`.mcp.json` args array) so a project whose `weft.toml [wardline]` declares
+trust-grammar packs is scannable without every caller re-passing
+`trust_packs` / `trust_local_packs` per tool call. Per-call grants still work
+and union with the launch grants.
 
 ```text
 Usage: wardline mcp [OPTIONS]
@@ -695,6 +730,12 @@ Options:
                         it.
   --read-only           Disable MCP tools that require write capability.
   --no-network          Disable MCP tools that require network capability.
+  --trust-pack TEXT     Allow importing this trust-grammar pack from weft.toml
+                        [wardline] on every tool call, without callers re-
+                        passing `trust_packs`. May be repeated.
+  --allow-custom-packs  Allow loading custom trust-grammar packs from the
+                        local project directory on every tool call, without
+                        callers re-passing `trust_local_packs`.
   --help                Show this message and exit.
 ```
 

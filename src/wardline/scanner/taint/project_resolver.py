@@ -49,7 +49,9 @@ if TYPE_CHECKING:
 # Bumped sp1e→sp1f: FastAPI/starlette request-type SOURCE seeding (Part C, wardline-bd9d1e65cb)
 # — a new taint-seeding behaviour, so warm/persisted summaries of a project's request-handler
 # modules must recompute rather than serve their stale-CLEAN pre-upgrade results.
-_RESOLVER_VERSION = "sp1f"
+# Bumped sp1f→sp1g: make return-position request receiver types flow-sensitive, invalidating
+# summaries that could be falsely CLEAN after a later receiver rebind.
+_RESOLVER_VERSION = "sp1g"
 
 
 @dataclass(frozen=True, slots=True)

@@ -22,6 +22,7 @@ from pathlib import Path
 
 from wardline.core.attest import _canonical_bytes, build_attestation
 from wardline.core.attest_key import WARDLINE_ATTEST_KEY_ENV, mint_attest_key
+from wardline.core.confinement import SourceRootConfinement
 from wardline.mcp.server import WardlineMCPServer
 
 # Real trust boundaries (mirrors test_attest.py): `src` is an @external_boundary,
@@ -100,7 +101,11 @@ def test_mcp_attest_payload_equals_core(monkeypatch, tmp_path: Path) -> None:
 
     result = _call(WardlineMCPServer(root=proj), "attest", {})
     bundle = _payload(result)
-    expected = build_attestation(proj, key, confine_to_root=True)
+    expected = build_attestation(
+        proj,
+        key,
+        source_root_confinement=SourceRootConfinement.PROJECT_ROOT,
+    )
 
     assert _canonical_bytes(bundle["payload"]) == _canonical_bytes(expected["payload"])
     # The bundle carries only the non-secret key_id, never the key itself.

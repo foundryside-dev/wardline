@@ -10,6 +10,7 @@ import urllib.parse
 from pathlib import Path
 from typing import Any, TextIO
 
+from wardline.core.confinement import SourceRootConfinement
 from wardline.core.errors import WardlineError
 from wardline.core.finding import ENGINE_PATH, UNANALYZED_RULE_IDS, Finding, Kind, Severity, SuppressionState
 
@@ -179,7 +180,7 @@ class LspServer:
     def run_and_publish(self) -> None:
         """Run project scan and publish diagnostics for all open documents."""
         try:
-            res = run_scan(self.root, confine_to_root=True)
+            res = run_scan(self.root, source_root_confinement=SourceRootConfinement.PROJECT_ROOT)
         except WardlineError as exc:
             self._publish_scan_failure(f"Wardline scan failed: {exc}", notification_method="window/showMessage")
             return

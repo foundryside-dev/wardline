@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import hashlib
 from datetime import UTC, date, datetime
 
 from wardline.core.baseline import Baseline
-from wardline.core.finding import Finding, Kind, Location, Severity, SuppressionState
+from wardline.core.finding import ENGINE_PATH, Finding, Kind, Location, Severity, SuppressionState
+from wardline.core.judge_types import JudgeTransport
 from wardline.core.judged import JudgedFP, JudgedSet
 from wardline.core.suppression import apply_suppressions, gate_trips
 from wardline.core.waivers import WaiverSet, parse_waivers
@@ -32,8 +34,7 @@ def _no_waivers() -> WaiverSet:
     return WaiverSet(())
 
 
-def test_defect_without_line_start_is_rejected() -> None:
-    # Spec §12 invariant: a DEFECT entering suppression must carry line_start.
+def test_source_defect_without_line_start_becomes_gating_engine_defect() -> None:
     bad = Finding(
         rule_id="PY-WL-101",
         message="m",
@@ -42,10 +43,25 @@ def test_defect_without_line_start_is_rejected() -> None:
         location=Location(path="src/m.py", line_start=None),
         fingerprint=_FP_A,
     )
+
     out = apply_suppressions([bad], _empty_baseline(), _no_waivers(), today=_TODAY)
+
     assert len(out) == 1
-    assert out[0].rule_id == "WLN-ENGINE-LINELESS-DEFECT"
-    assert out[0].kind == Kind.FACT
+    diagnostic = out[0]
+    assert diagnostic.rule_id == "WLN-ENGINE-LINELESS-DEFECT"
+    assert diagnostic.kind is Kind.DEFECT
+    assert diagnostic.severity is Severity.ERROR
+    assert diagnostic.location == Location(path=ENGINE_PATH)
+    assert diagnostic.suppressed is SuppressionState.ACTIVE
+    assert diagnostic.properties == {
+        "original_rule_id": "PY-WL-101",
+        "original_path": "src/m.py",
+        "original_fingerprint": _FP_A,
+        "original_kind": "defect",
+    }
+    identity = f"WLN-ENGINE-LINELESS-DEFECT\x00PY-WL-101\x00src/m.py\x00{_FP_A}\x00defect"
+    assert diagnostic.fingerprint == hashlib.sha256(identity.encode("utf-8")).hexdigest()
+    assert gate_trips(out, Severity.ERROR) is True
 
 
 def test_engine_diagnostic_defect_without_line_start_surfaces() -> None:
@@ -127,6 +143,7 @@ def _judged(fp: str) -> JudgedFP:
         message="m",
         rationale="over-taint floor",
         model_id="m",
+        judge_transport=JudgeTransport.OPENROUTER,
         confidence=0.9,
         recorded_at=datetime(2026, 5, 30, tzinfo=UTC),
         policy_hash="sha256:x",

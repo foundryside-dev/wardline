@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import errno
 import os
 import stat
 from pathlib import Path
 
+from wardline.core.confinement import SourceRootConfinement
 from wardline.core.errors import WardlineError
+
+_OPENAT_SUPPORTED = os.open in os.supports_dir_fd and os.stat in os.supports_dir_fd
 
 
 def safe_project_path(root: Path, target: Path, *, label: str | None = None) -> Path:
@@ -171,3 +175,139 @@ def read_bytes_no_follow(path: Path) -> bytes | None:
             return handle.read()
     except OSError:
         return None
+
+
+def read_source_bytes(
+    path: Path,
+    *,
+    root: Path,
+    source_root_confinement: SourceRootConfinement,
+) -> bytes:
+    """Read one regular source file from a descriptor pinned to its validated inode.
+
+    Secure scans normalize the candidate lexically beneath a strictly resolved root,
+    then traverse every component relative to pinned directory descriptors. Legacy
+    scans intentionally permit regular outside paths, but both policies reject a final
+    symlink and pathname swaps around ``open``. The source descriptor is read only after
+    the pre-open, opened, and post-open identities agree, so later path replacement
+    cannot redirect the bytes consumed by an analyzer.
+    """
+    if not source_root_confinement.confines_to_project:
+        return _read_legacy_source_bytes(path)
+    if not hasattr(os, "O_NOFOLLOW") or not hasattr(os, "O_DIRECTORY") or not _OPENAT_SUPPORTED:
+        raise OSError(errno.ENOTSUP, "secure source reads require openat/stat dir_fd and no-follow support", path)
+
+    try:
+        resolved_root = root.resolve(strict=True)
+    except RuntimeError as exc:
+        raise OSError(errno.ELOOP, f"project root resolution failed: {root}", root) from exc
+    candidate = path if path.is_absolute() else resolved_root / path
+    candidate = Path(os.path.abspath(os.fspath(candidate)))
+    try:
+        relative = candidate.relative_to(resolved_root)
+    except ValueError as exc:
+        raise OSError(errno.EPERM, f"source path is lexically outside project root: {path}", path) from exc
+    if not relative.parts:
+        raise OSError(errno.EINVAL, f"source path names the project directory: {path}", path)
+
+    directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    file_flags = os.O_RDONLY | os.O_NOFOLLOW
+    directory_fds: list[int] = []
+    try:
+        anchor = Path(resolved_root.anchor)
+        if not resolved_root.is_absolute() or not anchor.anchor:
+            raise OSError(errno.ENOTSUP, f"project root has no stable absolute anchor: {resolved_root}", root)
+        anchor_before = anchor.stat(follow_symlinks=False)
+        anchor_fd = os.open(anchor, directory_flags)
+        directory_fds.append(anchor_fd)
+        anchor_opened = os.fstat(anchor_fd)
+        anchor_after = anchor.stat(follow_symlinks=False)
+        if not (
+            stat.S_ISDIR(anchor_opened.st_mode)
+            and os.path.samestat(anchor_before, anchor_opened)
+            and os.path.samestat(anchor_opened, anchor_after)
+        ):
+            raise OSError(errno.ESTALE, f"filesystem anchor changed while opening: {anchor}", anchor)
+
+        root_fd = _open_verified_directory_components(
+            anchor_fd,
+            resolved_root.relative_to(anchor).parts,
+            flags=directory_flags,
+            opened_fds=directory_fds,
+            subject=resolved_root,
+        )
+        parent_fd = _open_verified_directory_components(
+            root_fd,
+            relative.parts[:-1],
+            flags=directory_flags,
+            opened_fds=directory_fds,
+            subject=path,
+        )
+
+        final = relative.parts[-1]
+        before = os.stat(final, dir_fd=parent_fd, follow_symlinks=False)
+        if not stat.S_ISREG(before.st_mode):
+            raise OSError(errno.EINVAL, f"source path is not a regular file: {path}", path)
+        source_fd = os.open(final, file_flags, dir_fd=parent_fd)
+        try:
+            opened = os.fstat(source_fd)
+            after = os.stat(final, dir_fd=parent_fd, follow_symlinks=False)
+            if not (
+                stat.S_ISREG(opened.st_mode) and os.path.samestat(before, opened) and os.path.samestat(opened, after)
+            ):
+                raise OSError(errno.ESTALE, f"source path changed while opening: {path}", path)
+            with os.fdopen(source_fd, "rb") as handle:
+                source_fd = -1
+                return handle.read()
+        finally:
+            if source_fd >= 0:
+                os.close(source_fd)
+    finally:
+        for directory_fd in reversed(directory_fds):
+            os.close(directory_fd)
+
+
+def _open_verified_directory_components(
+    parent_fd: int,
+    components: tuple[str, ...],
+    *,
+    flags: int,
+    opened_fds: list[int],
+    subject: Path,
+) -> int:
+    """Traverse directory components under a pinned parent and verify every hop."""
+    current_fd = parent_fd
+    for component in components:
+        before = os.stat(component, dir_fd=current_fd, follow_symlinks=False)
+        if not stat.S_ISDIR(before.st_mode):
+            raise OSError(errno.ENOTDIR, f"path component is not a directory: {component}", subject)
+        child_fd = os.open(component, flags, dir_fd=current_fd)
+        opened_fds.append(child_fd)
+        opened = os.fstat(child_fd)
+        after = os.stat(component, dir_fd=current_fd, follow_symlinks=False)
+        if not (stat.S_ISDIR(opened.st_mode) and os.path.samestat(before, opened) and os.path.samestat(opened, after)):
+            raise OSError(errno.ESTALE, f"path component changed while opening: {component}", subject)
+        current_fd = child_fd
+    return current_fd
+
+
+def _read_legacy_source_bytes(path: Path) -> bytes:
+    """Legacy outside-root read: full pathname, regular final component, no-follow when available."""
+    before = path.stat(follow_symlinks=False)
+    if not stat.S_ISREG(before.st_mode):
+        raise OSError(errno.EINVAL, f"source path is not a regular file: {path}", path)
+    flags = os.O_RDONLY
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    fd = os.open(path, flags)
+    try:
+        opened = os.fstat(fd)
+        after = path.stat(follow_symlinks=False)
+        if not (os.path.samestat(before, opened) and os.path.samestat(opened, after)):
+            raise OSError(errno.ESTALE, f"source path changed while opening: {path}", path)
+        with os.fdopen(fd, "rb") as handle:
+            fd = -1
+            return handle.read()
+    finally:
+        if fd >= 0:
+            os.close(fd)

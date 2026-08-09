@@ -7,10 +7,12 @@ import pytest
 from wardline.core.assure import build_posture
 from wardline.core.attest import build_attestation, verify_attestation
 from wardline.core.baseline_ops import generate_baseline
+from wardline.core.confinement import SourceRootConfinement
 from wardline.core.dossier import build_dossier
 from wardline.core.errors import ConfigError
 from wardline.core.judge import JudgeRequest, JudgeResponse, JudgeVerdict
 from wardline.core.judge_run import run_judge
+from wardline.core.judge_types import JudgeTransport
 
 _KEY = "0" * 64
 
@@ -43,6 +45,7 @@ def _false_positive(_req: JudgeRequest) -> JudgeResponse:
         prompt_tokens_total=1,
         prompt_tokens_cached=None,
         policy_hash="deadbeef",
+        judge_transport=JudgeTransport.OPENROUTER,
     )
 
 
@@ -58,7 +61,11 @@ def test_build_attestation_refuses_escaping_source_roots_by_default(tmp_path: Pa
 
 def test_verify_attestation_reproduce_refuses_escaping_source_roots_by_default(tmp_path: Path) -> None:
     project = _poisoned_project(tmp_path)
-    legacy_bundle = build_attestation(project, _KEY, confine_to_root=False)
+    legacy_bundle = build_attestation(
+        project,
+        _KEY,
+        source_root_confinement=SourceRootConfinement.LEGACY_ALLOW_ESCAPE,
+    )
 
     with pytest.raises(ConfigError, match="outside the project root"):
         verify_attestation(legacy_bundle, _KEY, root=project, reproduce=True)

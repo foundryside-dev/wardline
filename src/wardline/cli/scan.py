@@ -10,8 +10,9 @@ from typing import IO, TYPE_CHECKING
 import click
 
 from wardline.core.artifacts import write_scan_artifact
+from wardline.core.config import WardlineConfig, resolve_filigree_url, resolve_loomweave_url
 from wardline.core.config import load as load_config
-from wardline.core.config import resolve_filigree_url, resolve_loomweave_url
+from wardline.core.confinement import SourceRootConfinement
 from wardline.core.delta_scope import (
     _MAX_PAYLOAD_BYTES,
     AffectedScope,
@@ -90,6 +91,14 @@ def _scan_manifest_record(result: ScanResult, ruleset_id: str, *, full_coverage:
     "--fail-on-unanalyzed/--no-fail-on-unanalyzed",
     default=False,
     help="Exit 1 if any file was discovered but could not be analyzed.",
+)
+# Opt-in anti-false-green enforcement: exit 1 when the scan recognized ZERO trust
+# boundaries over non-trivial code — an inert gate passes green while checking nothing.
+# Default FALSE preserves released exit-code behaviour; the posture is ALWAYS surfaced.
+@click.option(
+    "--fail-on-inert/--no-fail-on-inert",
+    default=False,
+    help="Exit 1 if the scan recognized zero trust boundaries over non-trivial code (inert gate).",
 )
 @click.option(
     "--cache-dir",
@@ -225,6 +234,7 @@ def scan(
     output: Path | None,
     fail_on: str | None,
     fail_on_unanalyzed: bool,
+    fail_on_inert: bool,
     cache_dir: Path | None,
     filigree_url: str | None,
     local_only: bool,
@@ -324,6 +334,11 @@ def scan(
         # scope is requested and a loomweave URL resolves; any loomweave error -> None
         # (fail-soft, recorded as "loomweave unavailable" in the scope block).
         sei_resolver = _build_sei_resolver(loomweave_url, path) if affected is not None else None
+        source_root_confinement = (
+            SourceRootConfinement.LEGACY_ALLOW_ESCAPE
+            if allow_source_root_escape
+            else SourceRootConfinement.PROJECT_ROOT
+        )
         result = run_scan(
             path,
             config_path=config_path,
@@ -334,7 +349,7 @@ def scan(
             trust_local_packs=trust_local_packs,
             trusted_packs=trusted_packs,
             strict_defaults=strict_defaults,
-            confine_to_root=not allow_source_root_escape,
+            source_root_confinement=source_root_confinement,
             trust_suppressions=trust_suppressions,
             lang=lang,
         )
@@ -366,7 +381,7 @@ def scan(
                         trust_local_packs=trust_local_packs,
                         trusted_packs=trusted_packs,
                         strict_defaults=strict_defaults,
-                        confine_to_root=not allow_source_root_escape,
+                        source_root_confinement=source_root_confinement,
                         trust_suppressions=trust_suppressions,
                         lang=lang,
                     )
@@ -429,7 +444,7 @@ def scan(
             artifact = build_legis_artifact(
                 result,
                 root=path,
-                config=cfg,
+                config=_effective_legis_config(result),
                 key=legis_key.encode("utf-8") if legis_key else None,
                 allow_dirty=allow_dirty,
             )
@@ -481,7 +496,7 @@ def scan(
             from wardline.core.errors import LoomweaveError
             from wardline.loomweave.client import LoomweaveClient, WriteResult
             from wardline.loomweave.config import load_loomweave_token, resolve_project_name
-            from wardline.loomweave.write import write_facts_to_loomweave
+            from wardline.loomweave.write import NO_FACTS_REASON, write_facts_to_loomweave
 
             try:
                 client = LoomweaveClient(
@@ -607,7 +622,12 @@ def scan(
         logged_loomweave_url = _redact_url_for_log(loomweave_url)
         if not loomweave_result.reachable:
             reason = loomweave_result.disabled_reason or "unreachable"
-            if loomweave_result.written:
+            if reason == NO_FACTS_REASON:
+                # No transport call occurred, so this is neither an outage warning nor
+                # evidence that the configured peer was reachable. Report the neutral
+                # orchestration outcome without naming the destination URL.
+                click.echo(f"Loomweave taint-fact write: {reason}.")
+            elif loomweave_result.written:
                 # Mid-batch soft failure (outage/403 on a later chunk): earlier chunks
                 # ARE committed (per-entity replace; `written` counts only chunks that
                 # landed before the failure — the write_taint_facts contract), so the
@@ -648,7 +668,7 @@ def scan(
     # used by SuppressionState.ACTIVE, ScanSummary.active, the MCP summary key, the
     # agent-summary active_defects, and the wardline:loop prompt. It is NOT Filigree's
     # first-seen "new" (unseen fingerprint) nor the --fail-on gate population
-    # (ScanResult.gate_findings). See docs/reference/finding-lifecycle-vocabulary.md.
+    # (ScanResult.gate_population.findings). See docs/reference/finding-lifecycle-vocabulary.md.
     click.echo(
         f"scanned {result.files_scanned} file(s); {s.total} finding(s) — "
         f"{s.baselined + s.waived + s.judged} suppressed "
@@ -691,12 +711,13 @@ def scan(
                     "Add /// @trusted(level=ASSURED) markers to your boundary functions.",
                     err=True,
                 )
-    # Both sub-gates (severity + opt-in unanalyzed) live in the ONE shared decision —
-    # the same one the MCP scan tool serialises — so the surfaces cannot drift (A4).
+    # All sub-gates (severity + opt-in unanalyzed + opt-in inert) live in the ONE shared
+    # decision — the same one the MCP scan tool serialises — so the surfaces cannot drift (A4).
     gate_dec = gate_decision(
         result,
         Severity(fail_on) if fail_on is not None else None,
         fail_on_unanalyzed=fail_on_unanalyzed,
+        fail_on_inert=fail_on_inert,
     )
     if gate_dec.verdict == "NOT_EVALUATED":
         # A bare scan never ran the gate — say so explicitly so a clean-looking exit is not
@@ -711,6 +732,8 @@ def scan(
             knobs.append(f"--fail-on {gate_dec.fail_on}")
         if gate_dec.unanalyzed_tripped:
             knobs.append("--fail-on-unanalyzed")
+        if gate_dec.inert_tripped:
+            knobs.append("--fail-on-inert")
         click.echo(f"gate: FAILED ({', '.join(knobs)}) — {gate_dec.reason}", err=True)
         click.echo(f"gate: evaluated {gate_dec.evaluated}", err=True)
         # The secure-gate-default rollout signal: a committed baseline that used to clear
@@ -719,9 +742,14 @@ def scan(
         if hint is not None:
             click.echo(hint, err=True)
     elif gate_dec.fail_on is None:
-        # Only the unanalyzed gate ran and it passed — keep the no-vacuous-severity-green
-        # signal a NOT_EVALUATED verdict used to carry here.
-        click.echo(f"gate: PASSED (--fail-on-unanalyzed only) — {gate_dec.reason}", err=True)
+        # Only the opt-in sub-gate(s) ran and passed — keep the no-vacuous-severity-green
+        # signal a NOT_EVALUATED verdict used to carry here, naming the knob(s) that ran.
+        knobs = []
+        if gate_dec.fail_on_unanalyzed:
+            knobs.append("--fail-on-unanalyzed")
+        if gate_dec.fail_on_inert:
+            knobs.append("--fail-on-inert")
+        click.echo(f"gate: PASSED ({', '.join(knobs)} only) — {gate_dec.reason}", err=True)
     else:
         # An armed severity gate that PASSED must say so: a hook harness (pre-commit) can
         # fail this hook for reasons outside wardline — e.g. a concurrent writer tripping
@@ -731,6 +759,8 @@ def scan(
         knobs = [f"--fail-on {gate_dec.fail_on}"]
         if gate_dec.fail_on_unanalyzed:
             knobs.append("--fail-on-unanalyzed")
+        if gate_dec.fail_on_inert:
+            knobs.append("--fail-on-inert")
         click.echo(f"gate: PASSED ({', '.join(knobs)}) — {gate_dec.reason}", err=True)
         click.echo(f"gate: evaluated {gate_dec.evaluated}", err=True)
     # Inert-gate anti-false-green (Python; the counterpart of the Rust empty-trust-surface
@@ -787,3 +817,9 @@ def _loomweave_status(result: object | None) -> dict[str, object]:
 
 def _redact_url_for_log(url: str | None) -> str:
     return redact_url_for_diagnostics(url) or "<not configured>"
+
+
+def _effective_legis_config(result: ScanResult) -> WardlineConfig:
+    if result.effective_config is None:
+        raise WardlineError("scan result did not retain its effective configuration")
+    return result.effective_config

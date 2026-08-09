@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from wardline.core.taints import TaintState as T
+from wardline.scanner.taint.project_resolver import _RESOLVER_VERSION
 from wardline.scanner.taint.summary import (
     SUMMARY_SCHEMA_VERSION,
     FunctionSummary,
@@ -37,6 +38,11 @@ def test_cache_key_changes_with_each_input() -> None:
     # untrusted source (changing ruleset_hash) must not collide with the prior key, else a
     # warm cache serves a stale-CLEAN summary (wardline-9d6a81b9e7).
     assert _key(scan_policy_hash="sha256:policy-b") != base
+
+
+def test_request_return_receiver_change_invalidates_sp1f_cache() -> None:
+    assert _RESOLVER_VERSION != "sp1f"
+    assert _key(resolver_version=_RESOLVER_VERSION) != _key(resolver_version="sp1f")
 
 
 def test_cache_key_includes_module_identity() -> None:

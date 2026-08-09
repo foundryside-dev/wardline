@@ -8,7 +8,7 @@ from pathlib import Path
 import click
 
 from wardline.core.errors import WardlineError
-from wardline.install.block import inject_block
+from wardline.install.block import inject_block_for_project
 from wardline.install.detect import detect_siblings
 from wardline.install.mcp_json import install_codex_mcp, merge_mcp_entry
 from wardline.install.pack import activate_pack
@@ -49,10 +49,13 @@ def install(
     """
     lines: list[str] = []
     try:
-        if not no_claude_md:
-            lines.append(f"CLAUDE.md: {inject_block(root / 'CLAUDE.md')}")
-        if not no_agents_md:
-            lines.append(f"AGENTS.md: {inject_block(root / 'AGENTS.md')}")
+        # Redirect-aware (C-20): a CLAUDE.md that only @-imports AGENTS.md keeps
+        # one source of agent context, so the block lands in AGENTS.md alone and
+        # any legacy CLAUDE.md block is migrated out first.
+        for ok, filename, message in inject_block_for_project(
+            root, claude_md=not no_claude_md, agents_md=not no_agents_md
+        ):
+            lines.append(f"{filename}: {message}" if ok else f"{filename}: REFUSED — {message}")
         if not no_skill:
             for base, status in install_skill(root).items():
                 lines.append(f"skill {base}/skills/wardline-gate: {status}")

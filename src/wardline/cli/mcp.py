@@ -34,12 +34,29 @@ from wardline.mcp.server import WardlineMCPServer
 )
 @click.option("--read-only", is_flag=True, help="Disable MCP tools that require write capability.")
 @click.option("--no-network", is_flag=True, help="Disable MCP tools that require network capability.")
+@click.option(
+    "--trust-pack",
+    "trusted_packs",
+    multiple=True,
+    help="Allow importing this trust-grammar pack from weft.toml [wardline] on every tool call, "
+    "without callers re-passing `trust_packs`. May be repeated.",
+)
+@click.option(
+    "--allow-custom-packs",
+    "trust_local_packs",
+    is_flag=True,
+    default=False,
+    help="Allow loading custom trust-grammar packs from the local project directory on every "
+    "tool call, without callers re-passing `trust_local_packs`.",
+)
 def mcp(
     root: Path,
     loomweave_url: str | None,
     filigree_url: str | None,
     read_only: bool,
     no_network: bool,
+    trusted_packs: tuple[str, ...],
+    trust_local_packs: bool,
 ) -> None:
     """Run the Wardline MCP server over stdio (JSON-RPC 2.0)."""
     from wardline.core.config import resolve_filigree_url_with_source, resolve_loomweave_url_with_source
@@ -58,4 +75,6 @@ def mcp(
         filigree_url_source=resolved_filigree.source if resolved_filigree is not None else None,
         allow_write=not read_only,
         allow_network=not no_network,
+        trusted_packs=trusted_packs,
+        trust_local_packs=trust_local_packs,
     ).rpc.run_stdio()

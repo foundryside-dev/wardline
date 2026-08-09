@@ -27,6 +27,7 @@ from wardline.cli.scan import scan
 from wardline.cli.scan_file_findings import scan_file_findings
 from wardline.cli.scan_job import scan_job
 from wardline.core.baseline_ops import collect_and_write_baseline
+from wardline.core.confinement import SourceRootConfinement
 from wardline.core.descriptor import descriptor_to_yaml
 from wardline.core.errors import WardlineError
 from wardline.core.finding import Severity
@@ -86,7 +87,7 @@ def _generate_baseline(
             overwrite=overwrite,
             config_path=config_path,
             cache_dir=cache_dir,
-            confine_to_root=True,
+            source_root_confinement=SourceRootConfinement.PROJECT_ROOT,
             trust_local_packs=trust_local_packs,
             trusted_packs=trusted_packs,
             strict_defaults=strict_defaults,

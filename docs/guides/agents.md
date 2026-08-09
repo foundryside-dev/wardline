@@ -28,7 +28,10 @@ If you have not installed Wardline yet, start with
 `wardline install` wires wardline into a project's agent context in one step:
 
 - injects a small, hash-fenced block into `CLAUDE.md` and `AGENTS.md` pointing
-  the agent at the gate and the loop;
+  the agent at the gate and the loop — **except** when `CLAUDE.md` is merely an
+  `@AGENTS.md` redirect, in which case the block is maintained in `AGENTS.md`
+  alone and any legacy `CLAUDE.md` block is migrated out (see
+  [Redirected `CLAUDE.md`](#redirected-claudemd) below);
 - installs the `wardline-gate` skill into `.claude/skills/` and `.agents/skills/`;
 - merges a `wardline` entry into `.mcp.json` (preserving any existing servers);
 - writes a global Codex MCP entry in `~/.codex/config.toml`;
@@ -72,6 +75,24 @@ config — so the `.mcp.json` entry stays a stdio `wardline mcp --root .` comman
 with no URL in its args.
 The Codex entry is global, so it runs `wardline mcp` without `--root` and lets
 Codex launch it from the active workspace.
+
+### Redirected `CLAUDE.md`
+
+A project whose `CLAUDE.md` is *solely* an `@AGENTS.md` (or `@./AGENTS.md`)
+import keeps one source of agent context, so wardline maintains its block in
+`AGENTS.md` alone and migrates any legacy `CLAUDE.md` block out. The redirect is
+detected only after every managed block — wardline's own and any sibling's — is
+masked, so a marker a block merely quotes is never read as project prose. One
+accepted limitation, shared verbatim with the sibling Weft tools: a fenced
+markdown *example* of `@AGENTS.md` still reads as a redirect.
+
+Detection fails **safe**: a `CLAUDE.md` that is absent, unreadable, non-UTF-8,
+non-regular, symlinked, or escaping the project root reads as *no* redirect, so
+the ordinary dual-write happens. `--no-claude-md` suppresses the migration
+entirely (an opt-out skips work, it never erases it), and a migration runs only
+when the write that replaces it actually ran. `wardline doctor` reports the
+`CLAUDE.md` block as "not required" under a redirect, flags a surviving block as
+one to migrate, and `--repair` migrates rather than re-injecting.
 
 Check the wiring later with:
 
@@ -190,22 +211,39 @@ The taint engine is intentionally conservative and will sometimes over-report.
 nothing by default — `wardline scan` never calls a model, and `judge` runs only
 when you invoke it.
 
-It also fails loud rather than guessing, which keeps an agent honest: with no
-API key configured it stops with remediation guidance and exit `2`, so the agent
-never mistakes "couldn't triage" for "nothing to triage".
+The default `auto` transport prefers an installed, authenticated Codex CLI and
+uses OpenRouter only when Codex preflight reports an unavailable capability or
+authentication state. Selection happens once before triage; a provider error or
+malformed answer never causes mid-run switching.
 
 ```console
-$ wardline judge .
-error: WARDLINE_OPENROUTER_API_KEY is not set. `wardline judge` calls OpenRouter to triage findings. Export the key (`export WARDLINE_OPENROUTER_API_KEY=sk-or-...`) or place it in a .env in the scan root, then re-run.
+$ codex login status
+Logged in using ChatGPT
+$ wardline judge . --transport codex-cli
 ```
 
-With a key, `judge` triages cold and prints one line per verdict. Pass `--write`
-to append `FALSE_POSITIVE` verdicts to `.weft/wardline/judged.yaml` — but only those
-at or above the **confidence floor** (`judge.write_confidence_floor`, default
-`0.5`); a low-confidence FP is reported and held back rather than silently
-suppressed. A subsequent `wardline scan` reads `.weft/wardline/judged.yaml` and treats
-those fingerprints as suppressed, so the gate stops tripping on triaged
-false positives while still flagging anything new.
+Codex needs no OpenRouter key. To require OpenRouter instead, set
+`WARDLINE_OPENROUTER_API_KEY` in the operator environment and run:
+
+```bash
+wardline judge . --transport openrouter
+```
+
+An explicit unavailable Codex selection and a missing OpenRouter key both fail
+loud with exit `2`, so an agent cannot mistake "couldn't triage" for "nothing to
+triage". Codex runs in Wardline's empty temporary workspace; additional
+repository exploration is bounded and secret-filtered, and project instructions
+remain untrusted data. The initial finding excerpt is not secret-scrubbed, so
+inspect it before judging and review every rationale before committing
+`judged.yaml`.
+
+The command prints the concrete transport and model on every verdict. Pass
+`--write` to append `FALSE_POSITIVE` verdicts to
+`.weft/wardline/judged.yaml` — but only those at or above the **confidence
+floor** (`judge.write_confidence_floor`, default `0.5`). A low-confidence FP is
+reported and held back rather than silently suppressed. A subsequent
+`wardline scan` reads the version 2 record, including `judge_transport` and
+`model_id`, and treats its fingerprint as judged.
 
 For an agent this closes the loop: scan flags a defect, judge classifies it,
 and an above-floor false positive is recorded as an audited suppression rather
@@ -253,12 +291,13 @@ Resources expose the trust vocabulary, rule catalog, config, and config schema.
 The `wardline:loop` prompt documents the intended
 scan → explain → fix-at-the-boundary → rescan cycle.
 
-`scan` payload controls (the `summary`/`gate` blocks always describe the whole
-project — these only bound the returned finding bodies):
+The `scan` display controls below affect only the returned finding-body
+projection. The `summary`/`gate` blocks describe the current complete scan
+result:
 
 - `where` — a conjunctive read-lens (keys: `rule_id`, `qualname`, `severity`,
-  `suppression`, `kind`, `path_glob`, `sink`, `tier`) that filters **both** the
-  `findings` list and the `agent_summary` arrays.
+  `suppression`, `kind`, `path_glob`, `sink`, `tier`) that filters the
+  `agent_summary` finding arrays.
 - `summary_only: true` — counts + gate only, no finding bodies. The smallest
   "did the gate pass?" payload.
 - `include_suppressed: false` — drop suppressed (baselined/waived/judged) bodies;
@@ -267,7 +306,15 @@ project — these only bound the returned finding bodies):
 - `explain: true` — inline each active defect's provenance; capped at 10 by
   default (raise/lower with `max_findings`).
 
-Every cut is reported in the response `truncation` block (`findings_total`,
+Read `summary.counts_by_kind` for the complete kind distribution. It always has
+exactly `defect`, `fact`, `classification`, `metric`, and `suggestion` in that
+canonical order, zero-fills missing kinds, includes active and suppressed
+findings, and sums to `summary.total`. The controls above, plus `offset`, do not
+change it. For an affected scan it counts the affected scan result; use
+`scope.gate_authority` to tell an advisory delta from a gate-of-record full
+fallback.
+
+Every cut is reported in `agent_summary.truncation` (`findings_total`,
 `findings_returned`, `findings_truncated`, `explanations_truncated`) so a bounded
 payload never reads as "covered everything."
 

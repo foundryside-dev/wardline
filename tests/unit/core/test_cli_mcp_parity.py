@@ -7,7 +7,7 @@ is asserted by design today but not *guarded* — ``test_mcp_cli.py`` only
 exercises the protocol loop, not finding-parity.
 
 This pins it: the same fixture tree, run through the shared default ``run_scan``
-path and through the MCP ``_scan`` tool (which also passes ``confine_to_root=True``),
+path and through the MCP ``_scan`` tool (which also selects ``PROJECT_ROOT``),
 must yield identical findings + gate. If a future MCP-only code path leaks into
 the findings, this differential fails.
 """
@@ -25,7 +25,7 @@ _CORPUS = Path(__file__).resolve().parents[3] / "tests" / "corpus" / "fixtures"
 
 
 def test_cli_and_mcp_scan_agree_on_findings_and_gate() -> None:
-    # Shared scan default: confine_to_root=True. The finding BODIES live solely in
+    # Shared scan default: PROJECT_ROOT. The finding BODIES live solely in
     # agent_summary now (the bloat-causing top-level `findings` array was removed, W1).
     # The CLI `--format agent-summary` is uncapped; MCP defaults bounded, so parity is
     # asserted against MCP full=true (engine parity preserved; only the default page size
@@ -34,7 +34,7 @@ def test_cli_and_mcp_scan_agree_on_findings_and_gate() -> None:
     cli_gate = gate_decision(cli_result, Severity.ERROR)
     cli_ag = build_agent_summary(cli_result, cli_gate).to_dict()
 
-    # MCP parameterization: the real _scan handler (confine_to_root=True, no loomweave).
+    # MCP parameterization: the real _scan handler (PROJECT_ROOT, no loomweave).
     mcp = _scan({"fail_on": "ERROR", "full": True}, root=_CORPUS)
     mcp_ag = mcp["agent_summary"]
 
@@ -45,10 +45,12 @@ def test_cli_and_mcp_scan_agree_on_findings_and_gate() -> None:
         "tripped": cli_gate.tripped,
         "fail_on": cli_gate.fail_on,
         "fail_on_unanalyzed": cli_gate.fail_on_unanalyzed,
+        "fail_on_inert": cli_gate.fail_on_inert,
         "exit_class": cli_gate.exit_class,
         "verdict": cli_gate.verdict,
         "severity_tripped": cli_gate.severity_tripped,
         "unanalyzed_tripped": cli_gate.unanalyzed_tripped,
+        "inert_tripped": cli_gate.inert_tripped,
         "would_trip_at": cli_gate.would_trip_at,
         "reason": cli_gate.reason,
         "evaluated": cli_gate.evaluated,
