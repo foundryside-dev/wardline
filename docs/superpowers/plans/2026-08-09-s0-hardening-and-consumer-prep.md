@@ -2103,9 +2103,9 @@ def test_inert_iff_zero_recognized_at_or_above_floor() -> None:
 
 - [ ] **Step 4: Run** — `uv run pytest tests/unit/core/test_taint_invariants.py tests/unit/core/test_raw_zone_matrix.py tests/unit/core/test_resolution_posture_pins.py -v`. Expected: PASS.
 
-- [ ] **Step 5: File the two discovered engine defects** (orchestrator, filigree — discoveries of this planning pass, OUT of S0 scope because fixing them drifts the METRIC bytes in the golden / changes PY-WL-110 semantics):
-  1. Bug: "`taint_source_counts` never emits the `config`/`callgraph` buckets (`project_resolver.py:285-289`) — a config-sources-only project reads INERT and `functions_analyzed` undercounts (`resolution_posture.py:92-94`)."
-  2. Bug (minor): "PY-WL-110 counts markers off the AST irrespective of whether each seeded (`contradictory_trust.py`) — with one seeding and one shape-dropped marker its message claims a clash resolution that never occurred."
+- [ ] **Step 5: The two discovered engine defects are ALREADY FILED** (2026-08-09, plan-revision pass; OUT of S0 scope because fixing them drifts the METRIC bytes in the golden / changes PY-WL-110 semantics) — nothing to do here beyond keeping the pin-file comments pointing at them:
+  1. `wardline-7e0a3b1e3d` — `taint_source_counts` never emits the `config`/`callgraph` buckets (`project_resolver.py:285-289`); config-sources-only projects read INERT and `functions_analyzed` undercounts.
+  2. `wardline-894faaec24` — PY-WL-110 counts markers off the AST irrespective of whether each seeded; its message can claim a clash resolution that never occurred.
 
 - [ ] **Step 6: Commit** — `test(core): invariant split (NEVER_PRODUCED vs RESTORATION_ONLY), RAW_ZONE matrix, inertness denominator pins (S0 P5/P6/P12)`
 
