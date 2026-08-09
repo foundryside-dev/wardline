@@ -6,38 +6,41 @@
 > turning one bet into an implementation plan is `/axiom-planning`. Do not add
 > dates or scores here.
 
-`Updated: 2026-06-29 (PDR-0009)` — added option B (framework-boundary enforcement
-for unannotated apps) to Later as PARKED+gated; **Now is unchanged** (seam-health
-probe). Prior: `2026-06-27 (PDR-0002)` rotated Now Later→Now to
-weft-seam-conformance; the Codex hardening campaign paid off (batch 0 open, G2 at
-target) and moved to ACCEPT. Originally seeded on bootstrap (2026-06-22) from
-observed direction (git history, the dominant `codex-security` labels, the
-in-progress item, and the recorded MCP-primary / frictionless-surface programs).
+`Updated: 2026-08-09 (PDR-0012)` — rotated S0 declaration-surface hardening and
+consumer-first preparation to Now after a new P1 false green reopened G2. The
+prior seam-conformance bet moves to Next as residual closeout: live tracker state
+records all six core seams at-bar, with two non-gating P4 follow-ons remaining.
+Prior: `2026-06-29 (PDR-0009)` added framework-boundary enforcement to Later as
+PARKED+gated; `2026-06-27 (PDR-0002)` rotated weft-seam-conformance to Now.
 
 ## Now — the current bet
 
-**Close out the Wardline residency of the weft-seam-conformance program — give
-every Wardline-owned seam back its ability to say "I don't know."** The federation
-*is* the product (PDR-0023); the seams are the crown jewels. A silent join-miss
-(scheme drift, unresolved SEI, stale snapshot, dropped signature, absent artifact
-key) returns a confident, well-formed answer (`affected:[]`, `failed:[]`,
-`freshness:"unknown"`) that is **byte-indistinguishable from a true-negative** —
-and the agent commits the lie as the premise of its next decision. **Intent: every
-Wardline seam surface reports emptiness/staleness with a machine-readable
-`reason`, and every consumer read is round-trip-verified under the agreed identity
-scheme — never by trusting a self-reported status field.** Spec: PRD-0002 /
-`~/weft/pm/2026-06-15-seam-health-map.md`. Program tracker: `wardline-c66f62894b`.
+**Close S0's declaration-surface false green and prove consumer-first local
+readiness without emitting new vocabulary.** A malformed builtin trust marker can
+currently drop its seed silently and suppress every tier-modulated rule
+(`wardline-4928b75782`), violating Wardline's defining promise that uncertainty is
+made explicit rather than converted into a green gate. S0 restores that promise,
+hardens the QE evidence needed by later declaration kinds, and proves that each
+consumer can dual-read the future contracts before Wardline changes what it emits.
 
-- *Metric it moves:* **G2-seam — cross-repo seam honesty** (`metrics.md`): 0 of 6
-  Wardline-owned seam surfaces can return a true-negative-indistinguishable answer.
-
-> *Just completed (→ ACCEPT, not Now):* the **Codex security-review hardening
-> close-out** (PDR-0001 / PRD-0001). Both P1s closed + regression-pinned, the
-> `codex-security-2026-06-20` batch is 0 open, and guardrail **G2 is at target**.
-> Awaiting a formal ACCEPT pass against PRD-0001's criteria (incl. the
-> byte-identical active-finding check).
+- *Strategic trace:* primary coding-agent gate; win on deterministic, actionable
+  boundary truth without enterprise process weight.
+- *Metric it moves:* **G2** back to 0 known false-green/fail-open holes while
+  holding **G1** FP rate ≤ 0.05; **G2-seam** remains honest during consumer staging.
+- *Contract and delivery anchors:* declaration-surface-v2 spec at `ed7bfe86` plus
+  the rev-3 S0 plan at `5252e3f5` (PDR-0012).
+- *Tracker:* `wardline-4928b75782` first, then `wardline-5a795253f1`.
+- *Outcome boundary:* a complete isolated local receipt closes S0 with
+  `published_emission_ready=false`; public generic-3/attest-3 emission is a separate
+  release gate and owner decision.
 
 ## Next — proposed, not committed
+
+- **Residual weft-seam-conformance closeout.** Keep the six at-bar core seams honest
+  while closing or durably transferring the two non-gating P4 Wardline follow-ons.
+  Program tracker `wardline-c66f62894b`; product contract PRD-0002 / PDR-0002.
+  - *Metric it protects:* **G2-seam** — 0 confident-empty Wardline-owned seam
+    surfaces, held continuously.
 
 - **MCP-primary surface program.** Make MCP the first-class agent surface, at
   parity with or ahead of the CLI: structured output, where-filters +
