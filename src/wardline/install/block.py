@@ -31,6 +31,7 @@ AGENTS_MD = "AGENTS.md"
 
 _BLOCK_VERSION = "1"
 
+
 def _compose_body(grant_suffix: str = "", grant_sentence: str = "") -> str:
     return (
         "This project uses **wardline** as its trust-boundary gate. Before handing "
@@ -80,6 +81,7 @@ def _pack_guidance(project_root: Path) -> tuple[str, str]:
         "trusted), because repository config cannot self-authorise importing code."
     )
     return suffix, sentence
+
 
 _OWN_NS = "wardline"
 _END_MARKER = f"<!-- /{_OWN_NS}:instructions -->"

@@ -1,0 +1,3 @@
+## 2024-08-09 - Avoid eager materialization of AST child iterators
+**Learning:** In recursive AST traversal functions (e.g. `_assignment_callee`, `_collect_return_paths`), eagerly materializing the iterator from `ast.iter_child_nodes()` into a `list` consumes unnecessary memory and compute, particularly in deeply nested trees. Python 3.12+ type hinting allows passing `Iterable[ast.AST]` directly, avoiding this overhead while correctly satisfying static analysis.
+**Action:** When working on AST traversal performance, pass iterators directly instead of calling `list()`, provided the traversal logic supports single-pass iteration. Ensure type annotations are updated to `Iterable[ast.AST]` or `Iterator[ast.AST]`.

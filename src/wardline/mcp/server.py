@@ -5103,9 +5103,7 @@ class WardlineMCPServer:
             if caller_packs is None or (
                 isinstance(caller_packs, list) and all(isinstance(p, str) for p in caller_packs)
             ):
-                merged["trust_packs"] = list(
-                    dict.fromkeys([*(caller_packs or []), *self._default_trusted_packs])
-                )
+                merged["trust_packs"] = list(dict.fromkeys([*(caller_packs or []), *self._default_trusted_packs]))
         if self._default_trust_local_packs:
             caller_local = merged.get("trust_local_packs")
             # Identity checks, not equality: 0 == False, and masking a caller's
