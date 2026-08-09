@@ -1,4 +1,4 @@
-# S0 — Hardening + Consumer-First Cross-Product Prep — Implementation Plan (rev 3.2)
+# S0 — Hardening + Consumer-First Cross-Product Prep — Implementation Plan (rev 3.4)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 >
@@ -8,9 +8,11 @@
 >
 > **Rev 3.1 (pre-execution resolutions):** the Task 1 spec correction was pre-landed as the then-current spec rev 3 (`1244f627`); the Legis clean-target stop was resolved by committing the untracked plainweave plan on legis `main` (`a117a21`); the preflight claim uses the executing session's actor; and the shared `read_level`'s declared-sibling widening is now a named, pinned contract (Task 2). With the 1.5.0→main merge, wardline's fixed target branch is **`release/2.0.0`** (the wardline-2 program residency — this plan and its spec ARE wardline 2); loomweave remains `release/1.5.0`.
 >
-> **Rev 3.2 (spec reconciliation):** spec revision 4 is committed at `ae968b540470467258be5989d451991252f7f8dd` with blob `b43aab4bab1f93f419c189e26fd533afdcc6d387`. It owns the complete S0 engine/QE/consumer contract, corrects P11b's generic `TokenSetArg` gate to S2 with an Evidence-domain repeat in S3, and makes the per-kind clean-sentinel and low-sample receipt floors explicit. This plan now pins that revision and supplies the corresponding executable steps.
+> **Rev 3.2 (spec reconciliation):** spec revision 4 is committed at `ae968b540470467258be5989d451991252f7f8dd` with blob `b43aab4bab1f93f419c189e26fd533afdcc6d387`. It owns the complete S0 engine/QE/consumer contract, corrects P11b's generic `TokenSetArg` gate to S2 with an Evidence-domain repeat in S3, and makes the per-kind clean-sentinel and low-sample receipt floors explicit. This plan now pins that revision and supplies the corresponding executable steps. Superseded by rev 3.4: the governing spec is now **revision 5**, blob `9624f8925a006a80677c12eaa0951933d631920f`, committed together with this plan revision.
 >
 > **Rev 3.3 (bug re-scope, 2026-08-09):** the go/no-go review of rev 3.2 found that closing `wardline-4928b75782` after Task 6 would bank a half-fix: two members of the same false-green class, in the same fail-open direction, survive S0. The ticket was therefore **re-scoped to the Python builtin marker CALL SHAPE**, which Tasks 2–6 do close, and the residue was split out — `wardline-b857b50b54` (Rust: a non-canonical `/// @trusted(...)` shape silently fails to match; verified zero golden blast radius) and `wardline-2b2a6cddfa` (a statically-unreadable level VALUE such as `@trusted(level=_SVC_LEVEL)` drops the seed with no diagnostic on any channel; reproduced at exit 0). Only the Filigree discipline changes here — no task's engineering content moves.
+>
+> **Rev 3.4 (review-condition amendments, 2026-08-09):** the rev-3.2 go/no-go review's six pre-merge conditions are now folded in, and the governing spec moved to **revision 5**. Engine side (Tasks 1–6): the Task 1 tripwire covers both builtin roots as spec §4.2 requires; Task 4's shape validator drops a malformed builtin's seed and PY-WL-130 (ERROR) is the loud channel. A proposed demotion of that seed to `UNKNOWN_RAW` whenever a provable sibling exists was **evaluated and REJECTED on measurement**: `UNKNOWN_RAW` is in `RAW_ZONE`, `modulate()` returns `Severity.NONE` there, and PY-WL-101 skips a declared tier in `RAW_ZONE`, so demoting silences the very rules the change exists to preserve. Dropping the malformed marker and letting a provable sibling stand is strictly louder than today — the motivating stack (`@trusted(level='ASSURED')` over a malformed `@external_boundary(...)`) seeds `EXTERNAL_RAW` today and fires ZERO ERROR+ defects, and after the change seeds `ASSURED` and fires PY-WL-101 + PY-WL-112 on top of PY-WL-130. Task 6 Step 4.2 keeps its plain `taint_for` instruction, which Task 4 does not touch; PY-WL-130's diagnostics claim runtime-invalidity only where a `TypeError` is proved from the shipped signatures; and PY-WL-130's `examples_clean` no longer freezes the `wardline-2b2a6cddfa` silence into a shipped contract. Consumer side: Task 17 now genuinely READS a generic-3 descriptor — spec rev 5 defines schema acceptance as the obligation to parse every section the schema defines, so `facets:` is parsed and attributed rather than silently ignored. The reason vocabulary of spec §4.2 is deliberately **unchanged** (eight values); the two dual-form reasons are split by offender token instead.
 
 **Goal:** Ship stage S0 of the declaration-surface-v2 program: fix the live false green `wardline-4928b75782` (PY-WL-130 + `WLN-ENGINE-UNKNOWN-MARKER`), land the §4.2 registry-owned argument and call-form grammar, close QE prerequisites P1–P10 and P12–P14, close P11a (forward vocabulary skew), defer P11b's generic `TokenSetArg` gate to S2 and its Evidence-domain integration repeat to S3, and stage consumer-first cross-product prep — all before any new marker vocabulary exists. “Stage” means merged, commit-anchored consumer support plus an isolated local-install proof; it does not mean a public consumer release has shipped.
 
@@ -31,7 +33,7 @@
 - **Custom-pack compatibility is a hard gate.** Tasks 1–7 must keep `tests/grammar/test_thirdparty_pack_bridge.py` green and preserve its two recognised boundaries. PY-WL-130 never validates custom marker kwargs.
 - **Truthful diagnostics.** PY-WL-130 may call a shape runtime-invalid only for a proved runtime-invalid reason. `unreadable_splat` says Wardline cannot statically prove the mapping; it never promises Python raises `TypeError`.
 - **P11 is split by lifetime.** P11a (new marker on old Wardline) lands in Task 6. P11b's generic unknown-`TokenSetArg` contract is an S2 release gate proved with an unknown `Sensitivity` token; S3 repeats the integration gate with an unknown `Evidence` token. A LEVEL-token proxy satisfies neither obligation.
-- **Preview-vector source pin.** The governing spec pin is blob `b43aab4bab1f93f419c189e26fd533afdcc6d387` (spec rev 4, commit `ae968b540470467258be5989d451991252f7f8dd`). Blobs `4956ba3b33ad3c594f0ad47db98ee6d636ad3051` at `1244f627` and `0f04eeb172e4479c330a806b37ff9b2132917f20` at `ed7bfe860d836f4bbab891eddfbada90330db825` are rev-3/rev-2 review provenance only. Tasks 17, 18, and 20 verify the rev-4 blob via the execution preflight's static check; any later spec drift is STOP-and-re-review. S1's first serializer gate replaces every non-normative preview with real producer output and compares it before emission.
+- **Preview-vector source pin.** The governing spec pin is blob `9624f8925a006a80677c12eaa0951933d631920f` (spec **rev 5**), committed together with this plan revision — so there is no prior commit SHA to cite, and the check is blob-based by construction. Blob `b43aab4bab1f93f419c189e26fd533afdcc6d387` (rev 4, commit `ae968b540470467258be5989d451991252f7f8dd`) joins `4956ba3b33ad3c594f0ad47db98ee6d636ad3051` at `1244f627` and `0f04eeb172e4479c330a806b37ff9b2132917f20` at `ed7bfe860d836f4bbab891eddfbada90330db825` as review provenance only. Tasks 17, 18, and 20 verify the **rev-5** blob via the execution preflight's static check; any later spec drift is STOP-and-re-review. S1's first serializer gate replaces every non-normative preview with real producer output and compares it before emission.
 - New rule id is exactly **`PY-WL-130`**; new FACT id is exactly **`WLN-ENGINE-UNKNOWN-MARKER`** (ids reserved by the spec; next free id after this plan is 131).
 - Conventions: FACTs are `Severity.NONE` + `Kind.FACT`; PY-WL-130 is `Severity.ERROR` + `Kind.DEFECT`, `maturity=Maturity.STABLE` (default), `multi_emit=True`.
 - Test commands run from `/home/john/wardline` unless a task names another repo. Full suite = `uv run pytest -q`.
@@ -87,22 +89,22 @@ Immediately before each cross-repository commit, recheck the branch, then requir
 
 For every non-target worktree, inspect `git status --short --branch` and check the owning agent/session. If a live or dirty worktree overlaps a named file, STOP and coordinate. Clean status alone is not a liveness proof. Cross-repo tasks edit the primary targets above only, stage explicit paths only, and verify the resulting commit is an ancestor of the named target branch. (The formerly untracked Legis file `docs/superpowers/plans/2026-07-14-plainweave-preflight-v2-conformance.md` was preserved byte-for-byte and committed on legis `main` as `a117a21` — that preflight stop is resolved; the check above still guards against any NEW dirt.)
 
-Recheck the committed spec rev 4 pin before consumer work:
+Recheck the committed spec rev 5 pin before consumer work:
 
 ```bash
 test "$(git hash-object docs/superpowers/specs/2026-08-09-declaration-surface-v2-design.md)" = \
-  "b43aab4bab1f93f419c189e26fd533afdcc6d387"
+  "9624f8925a006a80677c12eaa0951933d631920f"
 ```
 
 ## Task dependency order
 
-T1 → T2 → T3 → T4 → T5 → T6 → T7; T8–T16 depend only on earlier Wardline tasks where stated (T12 needs T5+T6). Cross-repo: **T17, T18, and T20 require the committed spec rev 4 pin (preflight blob check), independent of T1; T18 precedes T19; T21 requires T18+T19 and runs after T20 so both consumer receipts exist.** Recommended execution order is numeric.
+T1 → T2 → T3 → T4 → T5 → T6 → T7; T8–T16 depend only on earlier Wardline tasks where stated (T12 needs T5+T6). Cross-repo: **T17, T18, and T20 require the committed spec rev 5 pin (preflight blob check), independent of T1; T18 precedes T19; T21 requires T18+T19 and runs after T20 so both consumer receipts exist.** Recommended execution order is numeric.
 
 ## Filigree discipline
 
 - Before T1: `work_start` on `wardline-4928b75782` (atomic claim). The S0 ticket `wardline-5a795253f1` is dependency-blocked by the bug — do NOT claim it yet.
 - After T6's final green (the bug's fix is Tasks 2–6): close `wardline-4928b75782` with commit refs and the before/after repro from Final Verification, THEN `work_start` on `wardline-5a795253f1` for the remainder. **The ticket is re-scoped (rev 3.3) to the Python builtin call SHAPE — close it as "the call-shape half is fixed", never as "the false green is fixed".** Its two open siblings are out of S0 scope and must remain open at close: `wardline-b857b50b54` (Rust shape channel) and `wardline-2b2a6cddfa` (unreadable level value). Name both in the close comment.
-- **Time-boxed against T5:** `wardline-2b2a6cddfa` records that PY-WL-130's `examples_clean` snippet `@trusted(level=cfg.LEVEL)` becomes a shipped contract the moment T5 merges, because `tests/unit/scanner/rules/test_rule_examples_meta.py` asserts a clean example fires zero defects of any rule. Decide before T5 commits whether to drop that snippet (keeping the fix open) or to accept a contract that must later be broken. T12's matrix row `("unreadable_value", …, "silent", True)` carries the same decision.
+- **Settled in rev 3.4 — do not re-open:** PY-WL-130's `examples_clean` would have frozen `wardline-2b2a6cddfa`'s silence into a shipped contract, because `tests/unit/scanner/rules/test_rule_examples_meta.py` asserts a clean example fires zero defects of any rule. The `@trusted(level=cfg.LEVEL)` snippet is therefore **already removed** from T5's `METADATA` and must not be re-added; T12's matrix comment scopes the remaining silence to **both** the lone-marker case and the stacked case, because T4 deliberately does not demote the seed (demoting would move the function into `RAW_ZONE` and silence the tier-gated rules that currently fire on it). `wardline-2b2a6cddfa` stays open for both.
 - During T13: verify the two already-filed engine ticket IDs listed there; do not file duplicates.
 
 ---
@@ -127,9 +129,14 @@ from wardline.core.registry import REGISTRY, ArgKind, MarkerCallForm, RegistryEn
 
 
 def test_registry_declares_marker_kwargs() -> None:
-    # The declared keyword set per marker — spec §4.2. These mirror the runtime
-    # signatures exactly (src/wardline/decorators/trust.py): external_boundary
-    # takes no kwargs, trust_boundary takes only to_level, trusted only level.
+    # The declared keyword set per marker — spec §4.2. This is the DECLARATION
+    # contract, not a transcription of the runtime signature
+    # (src/wardline/decorators/trust.py): trust_boundary declares only to_level and
+    # trusted only level, while external_boundary declares none because it is
+    # BARE_ONLY — call form is decided first, so kwargs are never consulted for it.
+    # (Its `fn` parameter is positional-or-keyword, so `external_boundary(fn=...)`
+    # is legal Python; it still declares nothing on the decorated function, which is
+    # exactly why the empty set is the right contract rather than `{"fn"}`.)
     assert REGISTRY["external_boundary"].kwargs == frozenset()
     assert REGISTRY["trust_boundary"].kwargs == frozenset({"to_level"})
     assert REGISTRY["trusted"].kwargs == frozenset({"level"})
@@ -188,6 +195,34 @@ def test_registry_kwargs_match_boundary_type_level_args() -> None:
         assert REGISTRY[bt.canonical_name].kwargs == frozenset(
             la.arg_name for la in bt.level_args
         ), bt.canonical_name
+
+
+def test_tripwire_covers_both_builtin_roots() -> None:
+    # Spec §4.2: the load-time tripwire covers BOTH builtin roots. Pin that the
+    # weft_markers rows are genuinely checked, not skipped, by asserting they carry
+    # exactly the registry contract the loop enforces.
+    from wardline.scanner.boundary_types import BUILTIN_BOUNDARY_TYPES
+
+    roots = {bt.module_prefix.split(".")[0] for bt in BUILTIN_BOUNDARY_TYPES}
+    assert roots == {"wardline", "weft_markers"}
+    for bt in BUILTIN_BOUNDARY_TYPES:
+        entry = REGISTRY[bt.canonical_name]
+        assert entry.group == bt.group, bt.module_prefix
+        assert entry.kwargs == frozenset(la.arg_name for la in bt.level_args), bt.module_prefix
+        assert dict(entry.arg_kinds) == {
+            la.arg_name: ArgKind.LEVEL for la in bt.level_args
+        }, bt.module_prefix
+
+
+def test_tripwire_leaves_no_module_scope_temporaries() -> None:
+    # The trailing `del` must name every leaked temporary and nothing more — a
+    # stale `del _la` would NameError at import and take the whole package down.
+    import wardline.scanner.boundary_types as bt_mod
+
+    assert not [
+        n for n in vars(bt_mod)
+        if n in {"_bt", "_entry", "_expected_kwargs", "_expected_kinds", "_la"}
+    ]
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
@@ -291,11 +326,19 @@ _ENTRIES: dict[str, RegistryEntry] = {
 - [ ] **Step 4: Extend the load-time tripwire.** In `src/wardline/scanner/boundary_types.py`, the tripwire loop at `:133-141` currently checks name + group. Replace its body check with:
 
 ```python
+# Consistency tripwire: builtin names/group/kwargs/arg-kinds must mirror the released
+# REGISTRY so the two views (REGISTRY = declaration contract; grammar = + seed
+# semantics) cannot drift. BOTH builtin roots are covered (spec §4.2): the
+# ``weft_markers`` rows share the same canonical REGISTRY rows as their
+# ``wardline.decorators`` twins — verified identical on group, level_args and seed —
+# so the loop simply revisits each canonical name once per root. The three redundant
+# lookups are intentional: they are what proves a future per-root edit cannot desync
+# one root while the other stays green.
 for _bt in BUILTIN_BOUNDARY_TYPES:
-    if _bt.module_prefix == _WEFT_MARKERS_PREFIX:
-        continue
     _entry = REGISTRY.get(_bt.canonical_name)
     if _entry is None or _entry.group != _bt.group:  # pragma: no cover
+        # Load-time tripwire: unreachable unless a future edit desyncs the builtin
+        # boundary types from the frozen REGISTRY. Fail CLOSED-LOUD at import.
         raise ValueError(f"builtin BoundaryType {_bt.canonical_name!r} drifted from REGISTRY")
     _expected_kwargs = frozenset(_la.arg_name for _la in _bt.level_args)
     _expected_kinds = {_la.arg_name: ArgKind.LEVEL for _la in _bt.level_args}
@@ -305,10 +348,10 @@ for _bt in BUILTIN_BOUNDARY_TYPES:
         raise ValueError(f"builtin BoundaryType {_bt.canonical_name!r} kwargs drifted from REGISTRY")
     if dict(_entry.arg_kinds) != _expected_kinds:  # pragma: no cover
         raise ValueError(f"builtin BoundaryType {_bt.canonical_name!r} arg kinds drifted from REGISTRY")
-del _bt, _entry
+del _bt, _entry, _expected_kwargs, _expected_kinds
 ```
 
-(Import `ArgKind` beside `REGISTRY`. Remove the current `weft_markers` skip: both builtin roots share the same canonical registry rows and both must trip on drift. Adjust the trailing `del` for the two temporary names.)
+(Import `ArgKind` beside `REGISTRY` at the top of `boundary_types.py`. The current `weft_markers` skip is **removed**: both builtin roots share the same canonical registry rows and both must trip on drift — verified 2026-08-09 that the three `weft_markers` entries carry identical `group`, `level_args` and `seed` to their `wardline.decorators` twins, so removing the skip trips nothing at import; the loop now runs six iterations with three redundant-but-passing lookups, which is the point. `_WEFT_MARKERS_PREFIX` remains referenced by the `BUILTIN_BOUNDARY_TYPES` tuple construction, so it does not become dead. The trailing `del` lists exactly the four module-scope temporaries — `_la` is a comprehension variable and never binds at module scope, so deleting it would `NameError` at import.)
 
 - [ ] **Step 5: Pin the compiled/native public import surface.** Add `"ArgKind"` and `"MarkerCallForm"` to `_NATIVE_FIRST_PARTY_IMPORTS["wardline.core.registry"]`, update `registry.py`'s public-surface docstring to list all five public names, and add a diagnostic test that imports both enums with `project_modules=frozenset()` and expects no unknown-import finding.
 
@@ -370,7 +413,7 @@ THIS; neither reaches into the other.
 """
 ```
 
-Then add immutable `KeywordExtraction`, `extract_keywords`, and the validator. The extraction contract is exact: direct keywords append; `**KW` is `unreadable_splat`; a literal dict with a non-string key is `invalid_splat_key`; nested `**` inside a dict is unreadable; repeated keys *within one literal dict* use the last value and are not duplicates (Python dict construction semantics); a direct/literal-splat collision is `duplicate_kwarg`.
+Then add immutable `KeywordExtraction`, `extract_keywords`, and the validator. The extraction contract is exact: direct keywords append; `**KW` is `unreadable_splat`; a literal dict with a non-string **constant** key is `invalid_splat_key`; a key that is not a constant at all (computed, f-string, or a `Name`) is `unreadable_splat`, because it is frequently valid at runtime and Wardline simply cannot read it; nested `**` inside a dict is unreadable; repeated keys *within one literal dict* use the last value and are not duplicates (Python dict construction semantics); a direct/literal-splat collision is `duplicate_kwarg`.
 
 ```python
 def alias_map_for_qualname(
@@ -419,7 +462,19 @@ def extract_keywords(deco: ast.expr) -> KeywordExtraction:
         order: list[str] = []
         final_values: dict[str, ast.expr] = {}
         for key, value in zip(kw.value.keys, kw.value.values, strict=True):
-            if not isinstance(key, ast.Constant) or not isinstance(key.value, str):
+            if not isinstance(key, ast.Constant):
+                # A COMPUTED key ('lev' + 'el', an f-string, a Name) is not a literal
+                # key and is frequently valid at runtime — verified 2026-08-09:
+                # trusted(**{'lev' + 'el': 'ASSURED'}) executes cleanly. Wardline
+                # simply cannot READ it, so it belongs to the analyzer-limitation
+                # channel, never the proved-runtime-invalid one. Routing it here also
+                # makes it suppress missing_kwarg for free (the guard below keys on
+                # unreadable_splat) — a computed key MAY supply the required name.
+                offences.append(("<**splat>", "unreadable_splat"))
+                continue
+            if not isinstance(key.value, str):
+                # A non-string CONSTANT key is a PROVED failure — verified 2026-08-09:
+                # trusted(**{1: 'ASSURED'}) raises TypeError: keywords must be strings.
                 offences.append(("<**splat>", "invalid_splat_key"))
                 continue
             if key.value not in final_values:
@@ -484,7 +539,15 @@ def call_shape_offences(
     Reasons are
     ``call_not_allowed`` | ``call_required`` | ``positional_args`` |
     ``undeclared_kwarg`` | ``invalid_splat_key`` | ``unreadable_splat`` |
-    ``duplicate_kwarg`` | ``missing_kwarg``. Value problems are NOT shape
+    ``duplicate_kwarg`` | ``missing_kwarg``. The vocabulary is exactly the eight
+    reasons of spec §4.2 — unchanged. Two of them cover a PROVED-invalid and an
+    UNPROVABLE form under one name, split by OFFENDER token:
+    ``positional_args`` is ``<positional>`` (a plain positional argument) or
+    ``<*args>`` (a ``*`` expansion, which may bind zero arguments), and
+    ``unreadable_splat`` covers both a dynamic/nested ``**`` and a literal dict
+    with a COMPUTED (non-``ast.Constant``) key. ``invalid_splat_key`` is
+    narrowed to a non-string ``ast.Constant`` key — the only splat-key form that
+    proves ``TypeError: keywords must be strings``. Value problems are NOT shape
     problems: a declared keyword carrying an unreadable value (``level=CFG``)
     or a readable-but-invalid token (``level='ASURED'``) returns no offence
     here — those are the reader's fail-closed ``None`` (no opinion) and
@@ -500,8 +563,17 @@ def call_shape_offences(
         # @external_boundary(**{}) are rejected for the same root reason.
         return (("<call>", "call_not_allowed"),)
     out: list[tuple[str, str]] = []
-    if deco.args:
+    # Phase 2 (positional). Split by offender so the two forms are distinguishable in
+    # properties and fingerprints while the pinned REASON vocabulary is untouched.
+    if any(not isinstance(a, ast.Starred) for a in deco.args):
         out.append(("<positional>", "positional_args"))
+    if any(isinstance(a, ast.Starred) for a in deco.args):
+        # ``*ARGS`` may bind ZERO arguments — verified 2026-08-09: trusted(*()) executes
+        # cleanly and returns the decorator. So this is NOT a proved runtime failure;
+        # the argument list is simply outside the keyword-only declaration grammar and
+        # Wardline cannot prove what it supplies. Emitted AFTER the plain-positional
+        # offence so the canonical phase order stays deterministic.
+        out.append(("<*args>", "positional_args"))
     extracted = extract_keywords(deco)
     out.extend(extracted.offences)
     supplied: set[str] = set()
@@ -515,13 +587,16 @@ def call_shape_offences(
             out.append((name, "duplicate_kwarg"))
         else:
             supplied.add(name)
+    # Suppression must cover EVERY unreadable-splat-class offence: a dynamic mapping
+    # OR a computed literal key may be exactly the required name. Both are
+    # ``unreadable_splat`` by construction (see extract_keywords) — keep it that way.
     if not any(reason == "unreadable_splat" for _name, reason in out):
         for arg in sorted(required - supplied):
             out.append((arg, "missing_kwarg"))
     return tuple(out)
 ```
 
-The implementation of `extract_keywords` must preserve AST/source order, normalize one literal dict to its final key/value pairs before appending them, and never evaluate Python. A nested dict expansion has `key is None` and therefore yields `unreadable_splat`. Its output is passed both to the validator and the level reader so `@trusted(**{"level": "ASURED"})` reaches PY-WL-114, not PY-WL-130.
+The implementation of `extract_keywords` must preserve AST/source order, normalize one literal dict to its final key/value pairs before appending them, and never evaluate Python. A nested dict expansion has `key is None` and therefore yields `unreadable_splat`. A literal dict with a computed key yields `unreadable_splat` for the same reason: `@trusted(**{'lev' + 'el': 'ASSURED'})` runs cleanly, and only `invalid_splat_key`'s non-string constant proves a `TypeError`. Its output is passed both to the validator and the level reader so `@trusted(**{"level": "ASURED"})` reaches PY-WL-114, not PY-WL-130.
 
 Add a multi-offence test that pins the complete tuple and the corresponding PY-WL-130 `offence_ordinal` fingerprint suffixes for one call containing a positional argument, an undeclared direct keyword, and an unreadable splat. This makes the canonical phase order a compatibility contract rather than an incidental loop order.
 
@@ -584,7 +659,7 @@ and `METADATA.examples_clean` — append:
 
 Check `tests/unit/scanner/rules/test_invalid_decorator_level.py` and `tests/unit/scanner/rules/test_invalid_decorator_level_recognizer.py` for pins of the OLD textual behaviour (`grep -n "TaintState" tests/unit/scanner/rules/test_invalid_decorator_level*.py`); update any case asserting a fire on a foreign `*.TaintState` receiver to assert silence, and any case asserting silence on an aliased genuine `TaintState` typo to assert a fire.
 
-- [ ] **Step 4: Unify PY-WL-110 onto the shared module.** In `src/wardline/scanner/rules/contradictory_trust.py`: delete the local `_dotted_name` (:63-70) and `_resolve_decorator_fqn` (:71-77); replace the provider-private import at `:30` with:
+- [ ] **Step 4: Unify PY-WL-110 onto the shared module.** In `src/wardline/scanner/rules/contradictory_trust.py`: delete the local `_dotted_name` (:59-65) and `_resolve_decorator_fqn` (:68-75); replace the provider-private import at `:30` with:
 
 ```python
 from wardline.scanner.marker_reader import (
@@ -666,6 +741,15 @@ SHAPE_CASES = [
     ("trusted(**{'level': 'A', 'level': 'B'})", MarkerCallForm.BARE_OR_CALL, _DECLARED, _REQUIRED_NONE, ()),
     ("trust_boundary()", MarkerCallForm.CALL_ONLY, _TB_DECLARED, _TB_REQUIRED, (("to_level", "missing_kwarg"),)),
     ("trust_boundary(to_level='ASSURED')", MarkerCallForm.CALL_ONLY, _TB_DECLARED, _TB_REQUIRED, ()),
+    ("trusted(audit_fn)", MarkerCallForm.BARE_OR_CALL, _DECLARED, _REQUIRED_NONE, (("<positional>", "positional_args"),)),
+    ("trusted(*ARGS)", MarkerCallForm.BARE_OR_CALL, _DECLARED, _REQUIRED_NONE, (("<*args>", "positional_args"),)),
+    ("trusted(x, *ARGS)", MarkerCallForm.BARE_OR_CALL, _DECLARED, _REQUIRED_NONE,
+     (("<positional>", "positional_args"), ("<*args>", "positional_args"))),
+    ("trusted(**{'lev' + 'el': 'ASSURED'})", MarkerCallForm.BARE_OR_CALL, _DECLARED, _REQUIRED_NONE,
+     (("<**splat>", "unreadable_splat"),)),
+    # A computed key may BE the required name — missing_kwarg must stay suppressed.
+    ("trust_boundary(**{'to_' + 'level': 'ASSURED'})", MarkerCallForm.CALL_ONLY, _TB_DECLARED, _TB_REQUIRED,
+     (("<**splat>", "unreadable_splat"),)),
     # Unreadable value is NOT a shape offence — the reader's None handles it.
     ("trusted(level=CFG)", MarkerCallForm.BARE_OR_CALL, _DECLARED, _REQUIRED_NONE, ()),
 ]
@@ -802,7 +886,7 @@ Expected: exactly one hit — the deliberate provider tolerance test rewritten n
 
 **Interfaces:**
 - Consumes: Task 2's `call_shape_offences`, `read_level`.
-- Produces: builtin-only registry validation. A malformed builtin call never seeds and stays silent in the provider (PY-WL-130 is the loud channel, Task 5). Custom `BoundaryType` packs do **not** pass through the builtin validator; their released `level_args` contract and `WLN-ENGINE-UNPROVABLE-BOUNDARY` channel are unchanged. `@external_boundary()` and `@external_boundary(**{})` now drop because the registry declares the marker bare-only. `_RESOLVER_VERSION="sp1h"` invalidates every cached pre-S0 seed result.
+- Produces: builtin-only registry validation. A malformed builtin call never seeds and stays silent in the provider (PY-WL-130 is the loud channel, Task 5, and it is an ERROR). The dropped seed is deliberately **not** demoted to `UNKNOWN_RAW` when a provable sibling marker exists: measured at `release/2.0.0`, `UNKNOWN_RAW` is in `RAW_ZONE`, `modulate()` returns `Severity.NONE` there and PY-WL-101 skips a declared tier in `RAW_ZONE`, so demoting would silence every tier-gated rule on the function — whereas dropping the malformed marker and letting the provable one stand seeds `ASSURED` and fires PY-WL-101 + PY-WL-112 on the very stack that fires nothing today. `_match` keeps its existing two-tuple verdict. Custom `BoundaryType` packs do **not** pass through the builtin validator; their released `level_args` contract and `WLN-ENGINE-UNPROVABLE-BOUNDARY` channel are unchanged. `@external_boundary()` and `@external_boundary(**{})` now drop because the registry declares the marker bare-only. `_RESOLVER_VERSION="sp1h"` invalidates every cached pre-S0 seed result.
 
 - [ ] **Step 1: Write the failing tests.** REWRITE `test_trusted_level_tolerates_legacy_to_level_keyword` (`tests/unit/scanner/taint/test_decorator_provider.py:164-171`) into its opposite, and add the external_boundary pin next to it:
 
@@ -844,17 +928,70 @@ def test_bare_external_boundary_still_seeds() -> None:
         "    return 1\n"
     )
     assert out["m.f"] == FunctionTaint(T.EXTERNAL_RAW, T.EXTERNAL_RAW)
+
+
+def test_malformed_sibling_never_reduces_the_error_population(tmp_path) -> None:
+    # The property that matters, and the one a seed-value assertion cannot express:
+    # dropping a malformed marker must never make a scan QUIETER than leaving it.
+    # Measured at release/2.0.0: the pre-Task-4 engine seeds this stack EXTERNAL_RAW
+    # and fires ZERO ERROR+ defects, because EXTERNAL_RAW is in RAW_ZONE and modulate()
+    # returns Severity.NONE. After Task 4 the malformed marker drops, @trusted stands
+    # alone, the tier is ASSURED, and PY-WL-101 + PY-WL-112 fire. Demoting the seed to
+    # UNKNOWN_RAW "for safety" would return it to silence — declaring trust is what
+    # SUBJECTS a function to the leak rules.
+    from wardline.core.finding import Kind, Severity
+    from wardline.core.run import run_scan
+
+    src = (
+        "import subprocess\n"
+        "from wardline.decorators import trusted, external_boundary\n"
+        "@external_boundary\n"
+        "def raw(p):\n    return p\n"
+        "@trusted(level='ASSURED')\n"
+        "@external_boundary(source='http')\n"
+        "def f(p):\n"
+        "    cmd = raw(p)\n"
+        "    subprocess.run(cmd, shell=True)\n"
+        "    return cmd\n"
+    )
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    (proj / "svc.py").write_text(src, encoding="utf-8")
+    result = run_scan(proj)
+    assert result.context is not None
+    assert result.context.project_taints["svc.f"] == T.ASSURED
+    errors = {
+        f.rule_id for f in result.findings
+        if f.kind is Kind.DEFECT and f.severity in (Severity.ERROR, Severity.CRITICAL)
+    }
+    assert {"PY-WL-101", "PY-WL-112", "PY-WL-130"} <= errors
+
+
+def test_malformed_marker_alone_still_takes_no_opinion() -> None:
+    # The contribute-only-alongside-a-candidate rule, pinned: a lone malformed
+    # marker must NOT enter declared_qualnames (posture denominator stability).
+    out = _seed(
+        "from wardline.decorators import trusted\n"
+        "@trusted(level='ASSURED', audit=True)\n"
+        "def f():\n"
+        "    return 1\n"
+    )
+    assert out["m.f"] is None
 ```
 
 The custom zero-level metadata case is implemented with the real `BoundaryType`/`build_analyzer` construction in Task 12; Task 4's bridge gate must already remain at exactly two recognised boundaries.
 
-(`_seed`, `FunctionTaint`, `T` are this file's existing helpers/imports — match the surrounding tests' exact usage.)
+(`_seed`, `FunctionTaint`, `T` are this file's existing helpers/imports — match the surrounding tests' exact usage. `test_malformed_sibling_never_reduces_the_error_population` is deliberately the exception: it is end-to-end via `run_scan`/`tmp_path`, because the property it pins — the scan must not get quieter — is not expressible as a seed value.)
 
-- [ ] **Step 2: Run to verify the rewritten test fails** — `uv run pytest tests/unit/scanner/taint/test_decorator_provider.py -v`. Expected: the two new drop tests FAIL (tolerance still seeds; external_boundary still seeds); everything else PASS.
+- [ ] **Step 2: Run to verify the rewritten test fails** — `uv run pytest tests/unit/scanner/taint/test_decorator_provider.py -v`. Expected: the two new drop tests FAIL (tolerance still seeds; external_boundary still seeds), and so does `test_malformed_sibling_never_reduces_the_error_population` — PY-WL-130 does not exist yet, and the malformed `@external_boundary(source='http')` still seeds, so the tier is `EXTERNAL_RAW` rather than `ASSURED` and none of the three expected ERRORs fire. `test_malformed_marker_alone_still_takes_no_opinion` already PASSES — it is a no-regression pin on behaviour this task must NOT change. Everything else PASS.
 
-- [ ] **Step 3: Implement.** In `_match` (:363-420): delete the `ignored = frozenset({"to_level"}) ...` comment+line block (:399-404) and insert the validator gate right after a boundary type matches (before the `levels` loop):
+- [ ] **Step 3: Implement.** In `_match` (:363-420) there are exactly TWO changes: delete the `ignored = frozenset({"to_level"}) ...` comment+line block (:399-404), and insert the validator gate right after a boundary type matches (before the `levels` loop). `_match` keeps its existing `(FunctionTaint | None, str | None)` two-tuple return and every one of its existing return sites; no new verdict channel is added.
 
 ```python
+        fqn = _resolve_decorator_fqn(deco, alias_map)
+        if fqn is None:
+            return None, None
+        ...
             if bt.builtin:
                 entry = REGISTRY[bt.canonical_name]
                 required = frozenset(
@@ -866,7 +1003,21 @@ The custom zero-level metadata case is implemented with the real `BoundaryType`/
                     declared=entry.kwargs,
                     required=required,
                 ):
-                    # Malformed builtin shape: PY-WL-130 is the loud channel.
+                    # Malformed builtin shape: the seed drops and the provider stays
+                    # SILENT. PY-WL-130 is the loud channel (Task 5), and it is an
+                    # ERROR, so a malformed marker cannot ship green.
+                    #
+                    # Deliberately NOT demoted to UNKNOWN_RAW when a provable sibling
+                    # marker exists. Measured at release/2.0.0: UNKNOWN_RAW is in
+                    # RAW_ZONE, modulate() returns Severity.NONE for it, and PY-WL-101
+                    # skips a declared tier in RAW_ZONE — so demoting SILENCES every
+                    # tier-gated rule on the function. Dropping the malformed marker and
+                    # letting the provable one stand is strictly louder: the motivating
+                    # stack (@trusted(level='ASSURED') over @external_boundary(source=…))
+                    # seeds EXTERNAL_RAW today and fires ZERO ERROR+ defects, whereas
+                    # after this change it seeds ASSURED and fires PY-WL-101 +
+                    # PY-WL-112 — because declaring trust is what SUBJECTS a function to
+                    # the leak rules.
                     return None, None
             levels: dict[str, TaintState] = {}
             unreadable = False
@@ -885,18 +1036,26 @@ The custom zero-level metadata case is implemented with the real `BoundaryType`/
                     unreadable = True
                     break
                 levels[la.arg_name] = lvl
+            if unreadable:
+                return None, (None if bt.builtin else bt.canonical_name)
+            return bt.seed(levels), None
+        return None, None
 ```
 
 Import `call_shape_offences` and `read_level as _read_level` from `marker_reader`; delete the old provider-private reader and its `ignored_args` branches. Remove the now-unused `_level_token` import too. The shared reader is now the only reader. Note the docstring of `_match` gains one line: "Shape offences (call_shape_offences) drop the seed before any level is read."
+
+`taint_for` is **not** touched by this task. The shape gate returns the plain two-`None` "no match", so a malformed builtin contributes nothing to the candidate list and the existing unprovable-CUSTOM-boundary meet is unchanged. A function whose ONLY decorator is a malformed builtin therefore keeps today's behaviour exactly — no seed, absent from `declared_qualnames`, `UNKNOWN_RAW` by the L1 fallback, PY-WL-130 as the diagnostic — so **every existing planned assertion of the form `"svc.f" not in result.context.declared_qualnames` still holds verbatim; do not weaken any of them** (Task 5's PY-WL-130 suite and Task 12's matrix depend on it). Task 6 Step 4.2 remains the sole place `taint_for` changes.
+
+There is also no new serialised state: no `SeedResult` field, no `FunctionSeed` field, no `pipeline.py` change, and therefore **no `SUMMARY_SCHEMA_VERSION` bump** — PY-WL-130 re-derives the malformed-shape verdict from the AST. The `sp1g` → `sp1h` `_RESOLVER_VERSION` bump below covers the changed seeding semantics; no additional epoch is needed.
 
 In the same implementation step bump `_RESOLVER_VERSION` from `sp1g` to `sp1h`. In `test_summary.py`, replace the old epoch pin with `assert _RESOLVER_VERSION == "sp1h"` and `assert _key(resolver_version="sp1h") != _key(resolver_version="sp1g")`. In `test_summary_cache.py`, follow `test_warm_cache_honours_untrusted_sources_policy_change`: create one source with malformed `@trusted(level='ASSURED', audit=True)`, one `SummaryCache`, and one `WardlineAnalyzer`; analyze twice. On both runs assert `last_context.project_taints["example.f"] is T.UNKNOWN_RAW` and `"example.f" not in last_context.declared_qualnames`; compare non-METRIC finding projections for equality. After the second run assert `cache.hits > 0` and the second `WLN-ENGINE-METRICS` finding has `cache_hit_rate > 0.0`. Do not bump `SUMMARY_SCHEMA_VERSION`: the serialized summary shape is unchanged.
 
 - [ ] **Step 4: Run to verify pass + hunt stragglers**
 
 Run: `uv run pytest tests/unit/scanner/taint/test_decorator_provider.py tests/grammar tests/corpus tests/golden tests/grammar/test_thirdparty_pack_bridge.py -q`
-Expected: PASS; the third-party bridge still reports exactly two recognised boundaries. Then run `rg -n 'external_boundary\(' tests src/wardline` and classify every called form; no test may expect it to seed.
+Expected: PASS **except `test_malformed_sibling_never_reduces_the_error_population`, which stays RED until Task 5** — its tier assertion (`svc.f == T.ASSURED`) is satisfied by this task's gate, but its `PY-WL-130 ∈ errors` membership cannot hold before Task 5 creates the rule. It is the one deliberately cross-task test in this suite; do not weaken it to make Task 4 green, and do not mark it xfail. Everything else PASS; the third-party bridge still reports exactly two recognised boundaries. Then run `rg -n 'external_boundary\(' tests src/wardline` and classify every called form; no test may expect it to seed.
 
-- [ ] **Step 5: Full suite** — `uv run pytest -q`. Expected: PASS.
+- [ ] **Step 5: Full suite** — `uv run pytest -q`. Expected: PASS, with the single carried-forward red above (`test_malformed_sibling_never_reduces_the_error_population`, awaiting Task 5's PY-WL-130). Task 5's final green is where it first passes; verify it there before closing Task 5.
 
 - [ ] **Step 6: Commit** — `fix(provider)!: call-shape validator gates seeding; remove the runtime-invalid to_level-on-@trusted tolerance (S0, wardline-4928b75782 seed half)`
 
@@ -916,7 +1075,7 @@ Expected: PASS; the third-party bridge still reports exactly two recognised boun
 
 **Interfaces:**
 - Consumes: `call_shape_offences`, `resolve_decorator_fqn`, `is_builtin_decorator_fqn`, `shadowed_builtin_roots` (Task 2); `BUILTIN_BOUNDARY_TYPES`; `RuleMetadata`; `compute_finding_fingerprint`.
-- Produces: rule class `MalformedMarkerCall`, `rule_id="PY-WL-130"`, `Severity.ERROR`, `Kind.DEFECT`, `Maturity.STABLE`, `multi_emit=True`. Its charter is a **malformed or statically unverifiable builtin-marker call**. Findings carry `properties={"decorator", "offender", "reason"}` with `reason ∈ {call_not_allowed, call_required, positional_args, undeclared_kwarg, invalid_splat_key, unreadable_splat, duplicate_kwarg, missing_kwarg}` and fingerprint discriminator `taint_path=f"{name}:{offender}#{deco_ordinal}.{offence_ordinal}"`.
+- Produces: rule class `MalformedMarkerCall`, `rule_id="PY-WL-130"`, `Severity.ERROR`, `Kind.DEFECT`, `Maturity.STABLE`, `multi_emit=True`. Its charter is a **malformed or statically unverifiable builtin-marker call**. Findings carry `properties={"decorator", "offender", "reason"}` with `reason ∈ {call_not_allowed, call_required, positional_args, undeclared_kwarg, invalid_splat_key, unreadable_splat, duplicate_kwarg, missing_kwarg}` and fingerprint discriminator `taint_path=f"{name}:{offender}#{deco_ordinal}.{offence_ordinal}"`. Offender tokens discriminate the two dual-form reasons: `positional_args` is `<positional>` or `<*args>`; `unreadable_splat` is `<**splat>` from either a dynamic mapping or a computed literal key.
 
 - [ ] **Step 1: Write the failing tests** — `tests/unit/scanner/rules/test_malformed_marker_call.py`:
 
@@ -934,13 +1093,17 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from wardline.core.finding import Kind, Severity
 from wardline.core.run import run_scan
 
 
 def _scan(tmp_path: Path, src: str):
+    # Accepts a directory that may not exist yet, so a parametrized case can pass
+    # `tmp_path / case` and keep each case's project tree distinct.
     proj = tmp_path / "proj"
-    proj.mkdir()
+    proj.mkdir(parents=True, exist_ok=True)
     (proj / "svc.py").write_text(src, encoding="utf-8")
     return run_scan(proj)
 
@@ -1125,6 +1288,65 @@ def test_stacked_malformed_markers_get_distinct_fingerprints(tmp_path: Path) -> 
     hits = _hits(result)
     assert len(hits) == 2
     assert len({h.fingerprint for h in hits}) == 2
+
+
+_RUNTIME_INVALID = "invalid for the shipped runtime signature"
+
+# (case id, source, expected reason, must the runtime-invalid clause appear?)
+CLAUSE_CASES = [
+    ("call_required",     "@trust_boundary\ndef f(p):\n    return p\n",                      "call_required",     True),
+    ("undeclared_kwarg",  "@trusted(level='ASSURED', audit=True)\ndef f(p):\n    return p\n","undeclared_kwarg",  True),
+    ("duplicate_kwarg",   "@trusted(level='A', **{'level': 'B'})\ndef f(p):\n    return p\n","duplicate_kwarg",   True),
+    ("missing_kwarg",     "@trust_boundary()\ndef f(p):\n    return p\n",                    "missing_kwarg",     True),
+    ("invalid_splat_key", "@trusted(**{1: 'ASSURED'})\ndef f(p):\n    return p\n",           "invalid_splat_key", True),
+    # --- the four cases that must NOT carry the claim (all REPL-verified runtime-VALID) ---
+    ("call_not_allowed_callable", "def audit(x):\n    return x\n@external_boundary(audit)\ndef f(p):\n    return p\n", "call_not_allowed", False),
+    ("positional_callable",       "def audit(x):\n    return x\n@trusted(audit)\ndef f(p):\n    return p\n",           "positional_args",  False),
+    ("star_args",                 "ARGS = ()\n@trusted(*ARGS)\ndef f(p):\n    return p\n",                             "positional_args",  False),
+    ("computed_splat_key",        "@trusted(**{'lev' + 'el': 'ASSURED'})\ndef f(p):\n    return p\n",                  "unreadable_splat", False),
+]
+
+
+@pytest.mark.parametrize(
+    ("case", "body", "reason", "claims_runtime_invalid"),
+    CLAUSE_CASES, ids=[c[0] for c in CLAUSE_CASES],
+)
+def test_message_claims_runtime_invalidity_only_when_proved(
+    tmp_path: Path, case: str, body: str, reason: str, claims_runtime_invalid: bool
+) -> None:
+    # Plan Global Constraints / spec §4.2: PY-WL-130 may call a shape
+    # runtime-invalid ONLY for a proved runtime-invalid reason. Each False row
+    # below was executed against the real decorators and did NOT raise.
+    result = _scan(
+        tmp_path / case,
+        "from wardline.decorators import external_boundary, trust_boundary, trusted\n" + body,
+    )
+    hits = [h for h in _hits(result) if h.properties["reason"] == reason]
+    assert hits, f"{case}: expected reason {reason}, got {[h.properties for h in _hits(result)]}"
+    assert all((_RUNTIME_INVALID in h.message) is claims_runtime_invalid for h in hits), case
+
+
+def test_star_args_and_computed_key_keep_the_pinned_reason_vocabulary(tmp_path: Path) -> None:
+    # No new reason strings: the eight of spec §4.2 are the whole vocabulary.
+    for body, reason, offender in (
+        ("ARGS = ()\n@trusted(*ARGS)\ndef f(p):\n    return p\n", "positional_args", "<*args>"),
+        ("@trusted(**{'lev' + 'el': 'X'})\ndef f(p):\n    return p\n", "unreadable_splat", "<**splat>"),
+    ):
+        result = _scan(tmp_path / reason, "from wardline.decorators import trusted\n" + body)
+        (hit,) = _hits(result)
+        assert hit.properties["reason"] == reason
+        assert hit.properties["offender"] == offender
+
+
+def test_computed_splat_key_suppresses_missing_kwarg(tmp_path: Path) -> None:
+    # A computed key MAY be the required name; Wardline must not claim it is missing.
+    result = _scan(
+        tmp_path,
+        "from wardline.decorators import trust_boundary\n"
+        "@trust_boundary(**{'to_' + 'level': 'ASSURED'})\ndef f(p):\n    return p\n",
+    )
+    reasons = {h.properties["reason"] for h in _hits(result)}
+    assert reasons == {"unreadable_splat"}
 ```
 
 - [ ] **Step 2: Run tests to verify they fail** — `uv run pytest tests/unit/scanner/rules/test_malformed_marker_call.py -v`. Expected: FAIL — no `PY-WL-130` findings.
@@ -1141,9 +1363,14 @@ positional argument, an undeclared or duplicated keyword, an invalid literal
 silently UN-DECLARED by the engine: ``call_shape_offences`` drops the seed, the
 function falls out of ``declared_qualnames``, and every tier-modulated rule
 goes quiet (wardline-4928b75782). This rule makes the shape a loud ERROR
-DEFECT, using the SAME validator seeding uses. Most offences prove a runtime
-``TypeError``; ``unreadable_splat`` is different and says only that Wardline
-cannot statically prove the mapping satisfies the declaration grammar.
+DEFECT, using the SAME validator seeding uses. The diagnostic is truthful per
+offence: it claims a runtime ``TypeError`` only where the shipped signatures
+prove one (``call_required``, ``undeclared_kwarg``, ``duplicate_kwarg``,
+``missing_kwarg``, ``invalid_splat_key``). ``unreadable_splat`` says only that
+Wardline cannot statically read the mapping; ``call_not_allowed`` and
+``positional_args`` state a Wardline declaration-grammar rule, because
+``@external_boundary(some_callable)`` and ``@trusted(audit_fn)`` are runtime-valid
+calls that are nonetheless not declarations Wardline will honour.
 
 Deliberately NOT silenced by the builtin-stays-quiet convention: that
 convention preserves the byte-identity oracle, and a NEW rule id appears in no
@@ -1199,9 +1426,6 @@ METADATA = RuleMetadata(
         "@trusted(level='INTEGRAL')\ndef f(p):\n    return p",
         "@trusted\ndef g(p):\n    return p",
         "@trust_boundary(to_level='ASSURED')\ndef b(p):\n    if not p: raise ValueError\n    return p",
-        # A statically-unreadable VALUE on a declared keyword is runtime-valid;
-        # it is the reader's no-opinion, never this rule's shape DEFECT.
-        "class Cfg:\n    LEVEL = 'ASSURED'\ncfg = Cfg()\n@trusted(level=cfg.LEVEL)\ndef h(p):\n    return p",
         # A foreign decorator merely spelled like a marker is not the builtin.
         "import other_pkg\n@other_pkg.trusted(level='X', extra=1)\ndef f2(p):\n    return p",
     ),
@@ -1250,28 +1474,73 @@ class MalformedMarkerCall:
                     declared=declared, required=required,
                 )
                 for offence_ordinal, (offender, reason) in enumerate(offences):
-                    detail = {
-                        "call_not_allowed": "a call form forbidden for this bare-only marker",
-                        "call_required": "a bare form forbidden for this call-only marker",
-                        "positional_args": "a positional argument",
-                        "undeclared_kwarg": f"undeclared keyword {offender!r}",
-                        "invalid_splat_key": "a non-string literal ** key",
-                        "unreadable_splat": "a ** mapping Wardline cannot statically prove",
-                        "duplicate_kwarg": f"keyword {offender!r} supplied more than once",
-                        "missing_kwarg": f"no statically-readable required {offender!r} argument",
+                    # (predicate, clause). The clause is TRUTHFUL BY CONSTRUCTION: the
+                    # runtime-invalid claim is asserted ONLY where a TypeError is proved
+                    # from the shipped signatures in src/wardline/decorators/trust.py
+                    # (each proved case verified at the REPL 2026-08-09). Plan Global
+                    # Constraints + spec §4.2: "PY-WL-130 may call a shape runtime-invalid
+                    # only for a proved runtime-invalid reason."
+                    #
+                    # NOT proved, and therefore NOT claimed:
+                    #   call_not_allowed  — external_boundary(some_callable) is a VALID
+                    #                       call (signature external_boundary(fn)); it is
+                    #                       simply not a decorator-factory form.
+                    #   positional_args   — trusted(audit_fn) is a VALID call (fn=None, /)
+                    #                       and trusted(*()) binds zero arguments.
+                    #   unreadable_splat  — trusted(**{'lev' + 'el': 'ASSURED'}) is VALID;
+                    #                       Wardline just cannot read the mapping.
+                    predicate, clause = {
+                        "call_not_allowed": (
+                            "is written as a call",
+                            "; this marker has no decorator-factory form, so either the "
+                            "call raises TypeError or the marker attaches to its argument "
+                            "and this function is left with no _wardline_* attributes — "
+                            "either way nothing is declared here. Write it bare",
+                        ),
+                        "call_required": (
+                            "is written bare",
+                            "; this call is invalid for the shipped runtime signature",
+                        ),
+                        "positional_args": (
+                            "is called with a positional argument or ``*`` expansion",
+                            "; a positional argument makes the marker attach to that "
+                            "argument instead of to this function, leaving it with no "
+                            "_wardline_* attributes (or raising TypeError if the argument "
+                            "is not callable) — either way nothing is declared here. "
+                            "Wardline's declaration grammar accepts keyword arguments "
+                            "only (spec §4.2)",
+                        ),
+                        "undeclared_kwarg": (
+                            f"is called with the undeclared keyword {offender!r}",
+                            "; this call is invalid for the shipped runtime signature",
+                        ),
+                        "invalid_splat_key": (
+                            "is called with a non-string constant ``**`` key",
+                            "; this call is invalid for the shipped runtime signature",
+                        ),
+                        "unreadable_splat": (
+                            "is called with a ``**`` mapping Wardline cannot statically read",
+                            "; Wardline cannot statically prove this mapping satisfies the "
+                            "marker grammar",
+                        ),
+                        "duplicate_kwarg": (
+                            f"is called with keyword {offender!r} more than once",
+                            "; this call is invalid for the shipped runtime signature",
+                        ),
+                        "missing_kwarg": (
+                            f"is called without a statically-readable required "
+                            f"{offender!r} argument",
+                            "; this call is invalid for the shipped runtime signature",
+                        ),
                     }[reason]
-                    runtime_clause = (
-                        "; Wardline cannot statically prove this mapping satisfies the marker grammar"
-                        if reason == "unreadable_splat"
-                        else "; this call is invalid for the shipped runtime signature"
-                    )
                     findings.append(
                         Finding(
                             rule_id=self.rule_id,
                             message=(
-                                f"{qualname}: builtin marker @{bt.canonical_name} called with {detail} — "
-                                f"the engine drops this declaration (no seed; every tier-modulated "
-                                f"rule is disabled on this function){runtime_clause}"
+                                f"{qualname}: builtin marker @{bt.canonical_name} "
+                                f"{predicate} — the engine drops this declaration "
+                                f"(no seed; every tier-modulated rule is disabled on "
+                                f"this function){clause}"
                             ),
                             severity=self.base_severity,
                             kind=Kind.DEFECT,
@@ -1292,6 +1561,8 @@ class MalformedMarkerCall:
         return findings
 ```
 
+`examples_clean` deliberately does NOT contain a statically-unreadable level value such as `@trusted(level=cfg.LEVEL)`. `tests/unit/scanner/rules/test_rule_examples_meta.py` asserts every clean example fires **zero** defects of **any** rule, which would freeze that silence into a shipped contract — and that silence is a live false green tracked as `wardline-2b2a6cddfa` (the seed drops with no diagnostic on any channel, so `@trusted(level=_SVC_LEVEL)` un-declares a function exactly as the typo'd kwarg does). Keeping it out of `examples_clean` leaves the fix open.
+
 - [ ] **Step 4: Register the rule.** In `src/wardline/scanner/rules/__init__.py`: add `from wardline.scanner.rules.malformed_marker_call import MalformedMarkerCall` alongside the sibling imports, and append `MalformedMarkerCall,` as the LAST entry of `_ALL_RULE_CLASSES` (:52-80) — registration order = emission order; appending preserves every frozen ordering.
 
 Add a structural comment beside registration: this is the only rule allowed to call the builtin shape validator directly; future declaration rules must reuse this chokepoint instead of rebuilding keyword grammar.
@@ -1302,7 +1573,7 @@ Add a structural comment beside registration: this is the only rule allowed to c
   3. `tests/unit/scanner/rules/test_default_registry.py:41-68` — add `"PY-WL-130",` to the id set.
   4. `tests/unit/scanner/rules/test_vocabulary_shape_pin.py:54-81` — add `"PY-WL-130": (Severity.ERROR, Kind.DEFECT, Maturity.STABLE),` to `_EXPECTED_RULE_SHAPE`.
 
-Update `docs/concepts/rules.md` in the same commit: Wardline has 27 Python rules, numbered `PY-WL-101` through `PY-WL-126` plus `PY-WL-130`; add the summary row, full rule section, and the declaration-rule inventory entry. Do not imply IDs 127–129 already ship.
+Update `docs/concepts/rules.md` in the same commit: Wardline has 27 Python rules, numbered `PY-WL-101` through `PY-WL-126` plus `PY-WL-130`; add the summary row, full rule section, and the declaration-rule inventory entry. Do not imply IDs 127–129 already ship. The new PY-WL-130 rule section must describe the **three** clause channels the rule emits — a proved runtime-invalid call, an analyzer limitation (`unreadable_splat`), and a Wardline declaration-grammar rule (`call_not_allowed`, `positional_args`) — rather than implying every malformed call is a runtime error.
 
 - [ ] **Step 6: Run the whole gate battery for a new rule**
 
@@ -1567,12 +1838,9 @@ def unknown_vocabulary_marker(
     unknown_markers: tuple[str, ...] = ()
 ```
 
-  2. `decorator_provider.py` `taint_for` (:306-335) — collect unknowns in the decorator loop and carry them out on BOTH return paths:
+  2. `decorator_provider.py` `taint_for` (:306-335) — add the `unknown` list, collect unknowns in the decorator loop via the `else` branch, and add `unknown_markers=tuple(unknown)` to BOTH `SeedResult(...)` constructions (:320 and :335). Import `unknown_vocabulary_marker` from `marker_reader`. Nothing else in `taint_for` changes — Task 4 does not touch this function.
 
 ```python
-    def taint_for(self, entity: Entity, ctx: SeedContext) -> SeedResult:
-        candidates: list[FunctionTaint] = []
-        unprovable: list[str] = []
         unknown: list[str] = []
         shadowed_roots = _shadowed_builtin_roots(ctx.project_modules)
         for deco in entity.node.decorator_list:
@@ -1587,7 +1855,6 @@ def unknown_vocabulary_marker(
                     unknown.append(marker)
 ```
 
-     …and add `unknown_markers=tuple(unknown)` to both `SeedResult(...)` constructions (:320 and :335). Import `unknown_vocabulary_marker` from `marker_reader`.
   3. `function_level.py` — add `unknown_markers: tuple[str, ...] = ()` to `FunctionSeed` (docstring: same sentence as SeedResult) and `unknown_markers=res.unknown_markers,` to both `FunctionSeed(...)` constructions in `seed_function_taints` (:61, :69).
   4. `pipeline.py` — FIX the configured-source override (:165-181): the wholesale reconstruction dropped `unprovable_boundaries` (voiding the UNPROVABLE FACT for config-declared sources) and would drop `unknown_markers`. Replace the `seeds[ent.qualname] = FunctionSeed(...)` block with:
 
@@ -1889,8 +2156,11 @@ def test_preview_finding_moves_numerator_and_denominator(monkeypatch, tmp_path):
 
 
 def test_per_kind_fp_rate_within_budget():
-    # P3: every declared kind has >=3 distinct clean sentinel files and >=5 TP
-    # specimens. TP fixture-file diversity is retained as an additional gate.
+    # Spec §12 "Per-kind gates" (NOT P3 — P3 is the reconciliation-ordering
+    # obligation that must be clean BEFORE any rate is evaluated, asserted in
+    # test_fp_rate_within_budget): every declared kind has >=3 distinct clean
+    # sentinel files and >=5 TP specimens. TP fixture-file diversity is retained
+    # as an additional gate.
     # At >=10 active defects the kind meets the 5% FP budget; below 10 it is
     # sentinel-gated low-sample and its counts go into the implementation receipt.
     rec = harness.reconcile()
@@ -2009,7 +2279,7 @@ def _rule_maturities() -> dict[str, str]:
 - [ ] **Step 4: Reconcile the real corpus.**
 
 Run: `cd tests && uv run python -c "from corpus.harness import reconcile; r = reconcile(); [print(k) for k in r.unaccounted]"`
-For EACH `(path, rule_id, qualname)` printed (these are the previously-skipped PREVIEW findings over fixtures/sentinels), add a manifest row under its file with `maturity: preview` and an honest label: `TRUE_POSITIVE` if the fixture genuinely exhibits that preview rule's defect shape at that site, `FALSE_POSITIVE` if the rule wrongly fires. Add a `note:` per row. Update the MANIFEST.yaml header comment to document the three new fields and their defaults. The dead PY-WL-118 sentinel row (`clean_sql_parameterized.py:60`) gains `maturity: preview` and is now LIVE.
+For EACH `(path, rule_id, qualname)` printed (these are the previously-skipped PREVIEW findings over fixtures/sentinels), add a manifest row under its file with `maturity: preview` and an honest label: `TRUE_POSITIVE` if the fixture genuinely exhibits that preview rule's defect shape at that site, `FALSE_POSITIVE` if the rule wrongly fires. Add a `note:` per row. Update the MANIFEST.yaml header comment to document the three new fields and their defaults. The dead PY-WL-118 sentinel row (`MANIFEST.yaml:60`) gains `maturity: preview` and is now LIVE.
 Create `sentinels/clean_matching_trust.py` as the repeated-same-trust clean counterpart to the existing contradictory marker TP interaction specimen, and manifest the PY-WL-110 pair with `interaction: contradiction`/TRUE_POSITIVE and `interaction: match`/FALSE_POSITIVE. Populate every manifest kind to the floor asserted above.
 
 After reconciliation is clean, generate the low-sample receipt rows:
@@ -2335,6 +2605,13 @@ diagnostic channel that owns it. 'silent' rows are the two DELIBERATE gaps:
 a statically-unreadable VALUE on a declared keyword (runtime-valid code — the
 reader's documented no-opinion), and a shadowed builtin root (anti-spoof
 rejection with its own rationale). Anything else going silent is a regression.
+That silence is a tracked false green (`wardline-2b2a6cddfa`) and it applies to
+BOTH the lone-marker case and the case where the unreadable-level builtin is
+stacked beside a provable marker: Task 4 deliberately does NOT demote the seed.
+Demoting would move the function into RAW_ZONE, where modulate() returns
+Severity.NONE and PY-WL-101 skips the declared tier — silencing the tier-gated
+rules that currently fire on it, which is strictly worse than the silence being
+tracked.
 """
 
 from __future__ import annotations
@@ -2347,7 +2624,10 @@ from wardline.core.finding import Kind
 from wardline.core.run import run_scan
 
 _IMPORTS = "from wardline.decorators import external_boundary, trust_boundary, trusted\n"
-_RUNTIME_VALUES = "KW = {'level': 'ASSURED'}\nCFG = 'ASSURED'\n"
+_RUNTIME_VALUES = (
+    "KW = {'level': 'ASSURED'}\nCFG = 'ASSURED'\nARGS = ()\n"
+    "def audit_fn(x):\n    return x\n"
+)
 
 # (case id, decorator line, expected channel, seed must drop)
 MATRIX = [
@@ -2359,6 +2639,15 @@ MATRIX = [
     ("external_boundary_kwarg", "@external_boundary(source='http')", "PY-WL-130", True),
     ("dynamic_splat", "@trusted(**KW)", "PY-WL-130", True),
     ("invalid_literal_splat_key", "@trusted(**{1: 'ASSURED'})", "PY-WL-130", True),
+    # These four are RUNTIME-VALID calls that Wardline nonetheless refuses to
+    # honour as declarations: they fire PY-WL-130 WITHOUT the runtime-invalid
+    # clause (Task 5's truthfulness split — the diagnostic says the shape is
+    # outside the statically readable declaration grammar, never that Python
+    # raises TypeError).
+    ("positional_callable", "@trusted(audit_fn)", "PY-WL-130", True),
+    ("star_args", "@trusted(*ARGS)", "PY-WL-130", True),
+    ("computed_splat_key", "@trusted(**{'lev' + 'el': 'ASSURED'})", "PY-WL-130", True),
+    ("external_called_with_callable", "@external_boundary(audit_fn)", "PY-WL-130", True),
     ("duplicate_via_splat", "@trusted(level='ASSURED', **{'level': 'ASSURED'})", "PY-WL-130", True),
     ("literal_splat_level_typo", "@trusted(**{'level': 'ASURED'})", "PY-WL-114", True),
     ("bare_required", "@trust_boundary", "PY-WL-130", True),
@@ -2454,7 +2743,7 @@ def test_builtin_malformed_call_is_an_error_defect_and_no_fact(tmp_path: Path) -
 
 
 def test_custom_malformed_marker_is_a_fact_and_never_pywl130(tmp_path: Path) -> None:
-    # The exact construction test_unprovable_boundary.py:31-46 uses.
+    # The exact construction tests/grammar/test_unprovable_boundary.py:19-26 uses.
     f = tmp_path / "m.py"
     f.write_text(
         "import myproj.trust\n@myproj.trust.sanitized(to_level=CFG, extra=1)\ndef g(p):\n    return p\n",
@@ -2716,11 +3005,16 @@ Optionally verify the live GitHub protection/ruleset through an authenticated re
 
 ```markdown
 - **PY-WL-130 — malformed or statically unverifiable builtin-marker calls are
-  loud.** Runtime-invalid shapes include illegal bare/called forms, positional
-  arguments, undeclared/duplicated keywords, invalid literal `**` keys, and
-  missing required keywords. A dynamic `**mapping` is different: it may be
-  runtime-valid, but Wardline cannot statically prove it satisfies the marker
-  grammar. Every such shape previously
+  loud.** The diagnostic distinguishes three channels, and claims a runtime
+  error only where the shipped signatures prove one. **Proved runtime-invalid:**
+  a bare call-only marker, an undeclared or duplicated keyword, a missing
+  required keyword, and a non-string constant `**` key. **Statically
+  unverifiable:** a dynamic `**mapping`, or a literal dict with a computed key —
+  both may be perfectly valid at runtime, but Wardline cannot prove they satisfy
+  the marker grammar. **Declaration-grammar only:** calling a bare-only marker,
+  and any positional or `*` argument — `@external_boundary(some_callable)` and
+  `@trusted(audit_fn)` execute cleanly, they are simply not declarations
+  Wardline will honour. Every such shape previously
   UN-DECLARED the function silently (the seed dropped and every tier-modulated
   rule went quiet — the scan got greener on a typo). It is now an ERROR DEFECT
   sharing the exact call-shape validator seeding uses. Companion FACT
@@ -2734,7 +3028,7 @@ Optionally verify the live GitHub protection/ruleset through an authenticated re
   vocabulary descriptor and `REGISTRY_VERSION` are unchanged.
 ```
 
-- [ ] **Step 2: Add under `### Changed` (BREAKING for analyzer tolerance, not for any runtime API):**
+- [ ] **Step 2: Create the `### Changed` heading under `## [Unreleased]` (immediately after the `### Added` block — verified: `## [Unreleased]` currently has an `### Added` heading and no `### Changed`) and add under it (BREAKING for analyzer tolerance, not for any runtime API):**
 
 ```markdown
 - **BREAKING (analyzer-only): the legacy `to_level=` tolerance on `@trusted` is
@@ -2745,7 +3039,7 @@ Optionally verify the live GitHub protection/ruleset through an authenticated re
   `@trusted(level=...)` / bare `@external_boundary`.
 ```
 
-- [ ] **Step 3: Add the version-discipline record under the existing `### Changed` heading** (do not create a nonstandard `### Development` changelog category):
+- [ ] **Step 3: Add the version-discipline record under the `### Changed` heading created in Step 2** (do not create a nonstandard `### Development` changelog category):
 
 ```markdown
 - **Version-bump discipline (recorded).** Internal, non-serialized registry
@@ -2772,16 +3066,21 @@ Optionally verify the live GitHub protection/ruleset through an authenticated re
 ### Task 17: Loomweave dual-accept via (schema, version) pairs (§13.1.1) — repo `/home/john/loomweave`
 
 **Files (all under `/home/john/loomweave`; NEVER touch `.worktrees/`):**
-- Modify: `plugins/python/src/loomweave_plugin_python/wardline_descriptor.py` (:30 constants; `_state_from_text` :146; `_parse_descriptor` :166-188)
+- Modify: `plugins/python/src/loomweave_plugin_python/wardline_descriptor.py` (:11-13 docstring; :20 `dataclasses` import; :30 constants; `_state_from_text` :146; `_parse_descriptor` :166-188)
+- Modify: `plugins/python/src/loomweave_plugin_python/extractor.py` (`WardlineDecoratorMetadata` :173-178; `_attach_wardline_entity_metadata` :1288-1319)
 - Modify: `plugins/python/plugin.toml:77-78` (`[integrations.wardline]`)
 - Modify: `scripts/check-wardline-version-bounds.py`
-- Modify: `plugins/python/tests/test_wardline_vocabulary_descriptor_conformance.py` (docstring of :250 test; new acceptance test)
+- Modify: `plugins/python/tests/test_wardline_vocabulary_descriptor_conformance.py` (docstring of :250 test; new acceptance test; new end-to-end attribution test)
+- Modify: `plugins/python/tests/test_extractor.py` (the `_wardline_vocabulary()` helper at `:2818-2843`)
 - Modify: `plugins/python/tests/test_package.py:47-49` (manifest pin extension)
 - Create: `plugins/python/tests/fixtures/wardline-vocabulary-descriptor.generic-3.preview.yaml`
 - Test: `plugins/python/tests/test_wardline_descriptor.py` (extend)
 
+⚠️ There are **three** `WardlineVocabulary` construction sites, not two — `wardline_descriptor.py:151` (the skew branch), `wardline_descriptor.py:183` (`_parse_descriptor`), and `tests/test_extractor.py:2822` (`_wardline_vocabulary()`, which passes exactly four kwargs). A non-defaulted `schema: str` is an immediate `TypeError` at the third, reddening every wardline extractor test. Step 4 converts the skew branch (`:151`) to `dataclasses.replace`, which needs no `schema=` argument, so after Step 4 exactly **two** literal constructions (`_parse_descriptor` `:183` and `test_extractor.py:2822`) must pass `schema=` explicitly.
+
 **Interfaces:**
-- Produces: `ACCEPTED_DESCRIPTORS: frozenset[tuple[str, str]]` = {(v1, generic-2), (v2, generic-3)}; the parser now READS the `schema` key (previously ignored; absent → `"wardline.vocabulary/v1"`, the pre-schema era). `WardlineVocabulary` gains `schema: str`. Wardline S1 depends on this landing FIRST (Rollout Fence).
+- Produces: `ACCEPTED_DESCRIPTORS: frozenset[tuple[str, str]]` = {(v1, generic-2), (v2, generic-3)}; the parser now READS the `schema` key (previously ignored; absent → `"wardline.vocabulary/v1"`, the pre-schema era). `WardlineVocabulary` gains `schema: str` **and** `facets_by_name: dict[str, DescriptorEntry]`, plus a `facet_for_decorator()` lookup mirroring the existing `entry_for_decorator()` (`:62-63`). Neither new field is defaulted: `schema` already forces every remaining construction site to be edited, so a default would only re-create the silent-drop vector this task exists to fix. Facets get their **own** map rather than being folded into `entries_by_name` — the only alternative discriminator would be the opaque `group == 3` integer, which re-creates exactly the implicit cross-repo coupling that produced this defect, and a single dict would turn a facet/entry name collision into a silent overwrite instead of an error. Wardline S1 depends on this landing FIRST (Rollout Fence).
+- **Acceptance is accept-and-READ (spec rev 5 §4.3, §13.1.1).** Accepting the `(wardline.vocabulary/v2, wardline-generic-3)` pair obliges this reader to parse every section the v2 schema defines. Accepting the pair while `_parse_descriptor` reads only `version` and `entries` would silently discard every facet while still reporting full `confidence_basis: "descriptor"` confidence — an accept-and-ignore fail-open, not acceptance.
 - **Key constraints (verified 2026-08-09):** `manifest.rs:137` deserialises `[integrations.wardline]` as `BTreeMap<String, String>` — a TOML **array** value is a HARD manifest-parse failure (`LMWV-INFRA-MANIFEST-MALFORMED`; the plugin refuses to load). The accepted-set key below is therefore a space-separated STRING. `EXPECTED_DESCRIPTOR_VERSION` stays `"wardline-generic-2"` everywhere in S0 (the check script + `test_package.py:47` + CI `verify.yml:82-85` pin it). The generic-3 fixture is a SEMANTIC fixture — parsed and field-asserted, NOT byte-pinned; wardline's S1 producer output gets byte-frozen (and blob-pinned on both sides) when it exists.
 
 - [ ] **Step 1: Write the failing tests** — append to `plugins/python/tests/test_wardline_descriptor.py` (its idiom: inline `mkdir` + `write_text` at `:214-221`; module fixture `_DESCRIPTOR` at `:15-29` carries NO schema line):
@@ -2803,15 +3102,31 @@ def _plant(tmp_path: Path, text: str) -> None:
 def test_generic_3_descriptor_is_accepted_not_skew(tmp_path: Path) -> None:
     # Consumer-first dual-accept (wardline declaration-surface-v2 §13.1.1):
     # the (wardline.vocabulary/v2, wardline-generic-3) PAIR is accepted BEFORE
-    # wardline can emit it. The v2 schema's new `facets:` section is an unknown
-    # top-level key to this parser — tolerated by construction.
+    # wardline can emit it — and acceptance means the v2 schema's `facets:`
+    # section is READ, not tolerated as an unknown key (spec rev 5 §4.3).
     _plant(tmp_path, GENERIC_3_FIXTURE.read_text(encoding="utf-8"))
     state = load_wardline_descriptor(tmp_path)
     assert state.status == "enabled"
     assert state.descriptor_version == "wardline-generic-3"
     assert state.vocabulary is not None
-    assert state.vocabulary.confidence_basis == "descriptor"
-    assert set(state.vocabulary.entries_by_name) >= {"external_boundary", "trust_boundary", "trusted"}
+    vocab = state.vocabulary
+    assert vocab.schema == "wardline.vocabulary/v2"
+    assert vocab.confidence_basis == "descriptor"
+    # Exact equality, not a superset: a dropped v2 entry must red.
+    assert sorted(vocab.entries_by_name) == ["external_boundary", "trust_boundary", "trusted"]
+    assert {n: e.attrs for n, e in vocab.entries_by_name.items()} == {
+        "external_boundary": {},
+        "trust_boundary": {"_wardline_to_level": "TaintState"},
+        "trusted": {"_wardline_level": "TaintState"},
+    }
+    # The facets: section is READ, not silently ignored — the S1 defect.
+    assert sorted(vocab.facets_by_name) == ["audit_record"]
+    assert vocab.facets_by_name["audit_record"].group == 3
+    assert vocab.facets_by_name["audit_record"].attrs == {}
+    # …and it is a FACET, never folded into the seeding-marker table.
+    assert "audit_record" not in vocab.entries_by_name
+    assert vocab.entry_for_decorator("audit_record") is None
+    assert vocab.facet_for_decorator("weft_markers.audit_record") is vocab.facets_by_name["audit_record"]
 
 
 def test_generic_3_with_v1_schema_is_pair_mismatch_skew(tmp_path: Path) -> None:
@@ -2831,6 +3146,26 @@ def test_generic_9_is_still_version_skew(tmp_path: Path) -> None:
 ```
 
 (`_DESCRIPTOR` has no `schema:` line — absent schema defaults to v1, so `test_generic_3_with_v1_schema_is_pair_mismatch_skew` exercises the pair rule through BOTH the absent-schema default and the version bump. The existing skew tests at `:52`, `:116`, `:213-227` keep passing unchanged for the same reason.)
+
+Add these facet-reading tests to the same module (`plugins/python/tests/test_wardline_descriptor.py`). Every malformed-facet case degrades to `status="absent"`, `reason="invalid_descriptor"` — `_parse_facets` raises `_DescriptorError`, which `_state_from_text`'s existing `except (OSError, yaml.YAMLError, _DescriptorError)` already converts; the reader fails closed rather than honouring a half-understood v2 descriptor:
+
+- `test_generic_3_facets_section_is_parsed` — the preview fixture's `facets:` reaches `facets_by_name` with `group == 3` and empty `attrs`.
+- `test_v1_descriptor_without_facets_key_parses_with_empty_facets` — the `_DESCRIPTOR` module fixture still parses, `facets_by_name == {}`; every v1 descriptor is unchanged.
+- `test_facets_section_that_is_not_a_list_degrades_to_absent`
+- `test_malformed_facet_entry_degrades_to_absent` (non-mapping element; missing `canonical_name`/`group`)
+- `test_facet_carrying_attrs_degrades_to_absent` — a facet seeds no taint, so attrs on a facet is a contract violation, never an honoured trust marker.
+- `test_duplicate_facet_canonical_names_degrade_to_absent`
+- `test_facet_colliding_with_entry_name_degrades_to_absent`
+- `test_facets_section_under_v1_schema_degrades_to_absent` — v1's shape is known exactly; honouring a section the declared schema does not have is the fail-open this reader exists to avoid.
+- `test_version_skew_preserves_parsed_facets` — the `dataclasses.replace` regression guard (Step 4.2): a hand-copied field-by-field skew rebuild would drop `facets_by_name` silently.
+- `test_generic_3_preview_fixture_declares_only_known_sections` — needs `import yaml`; asserts the fixture's top-level key set is EXACTLY `{"schema", "version", "entries", "facets"}`. This is the tripwire that makes a future producer-added section red a test instead of being silently ignored.
+
+In `plugins/python/tests/test_extractor.py`: extend the existing `_wardline_vocabulary()` helper (`:2818-2843`) with `schema`, `version` and `facets_by_name` keyword parameters whose defaults preserve today's v1 behaviour (`schema="wardline.vocabulary/v1"`, `version="wardline-generic-2"`, `facets_by_name={}`), then add:
+
+- `test_wardline_facet_decorator_is_attributed_with_tag` — the emitted decorator record carries `kind: "facet"`, `attrs: {}`, `group: 3`, and `wardline:audit_record` is in the entity's `tags`.
+- `test_wardline_entry_decorator_record_omits_kind` — pins that a seeding entry's record stays byte-identical to today's (no `kind` key), so no exact-dict assertion anywhere moves.
+
+In `plugins/python/tests/test_wardline_vocabulary_descriptor_conformance.py`: add `test_consumer_attributes_v2_facet_through_extractor`, driving the preview fixture through the real `load_wardline_descriptor` and the real `extract` and asserting the facet tag survives producer-bytes → parse → attribution. This is the **non-circular** proof: every other facet test constructs its vocabulary in Python, so only this one shows that the bytes Wardline will emit actually reach an entity's tags.
 
 - [ ] **Step 2: Author the semantic preview fixture** — `plugins/python/tests/fixtures/wardline-vocabulary-descriptor.generic-3.preview.yaml` (NO comments inside — content only; comments would survive into byte comparisons later):
 
@@ -2894,16 +3229,149 @@ ACCEPTED_DESCRIPTORS: frozenset[tuple[str, str]] = frozenset(
         raise _DescriptorError(msg)
 ```
 
-     …and passes `schema=schema` to both `WardlineVocabulary(...)` constructions (`_parse_descriptor`'s at :183-188 and the skew-branch copy in `_state_from_text` :151-156).
+     …and passes `schema=schema` to `_parse_descriptor`'s own `WardlineVocabulary(...)` at `:183-188`. **Do NOT pass `schema=schema` to the skew-branch copy in `_state_from_text` `:151-156`: there is no `schema` local in that function.** That branch's hand-copied, field-by-field rebuild is *precisely* the mechanism that silently drops a newly-parsed field — it would have discarded `facets_by_name` the moment Step 5 adds it. Replace the whole rebuild with:
+
+```python
+            vocabulary=replace(vocabulary, confidence_basis="descriptor_version_skew"),
+```
+
+     adding `replace` to the `dataclasses` import at `:20` (`from dataclasses import dataclass, replace`). Every future field is then carried by construction, and `test_version_skew_preserves_parsed_facets` is its regression guard.
   3. The gate at `:146` becomes:
 
 ```python
     if (vocabulary.schema, vocabulary.version) not in ACCEPTED_DESCRIPTORS:
 ```
 
-     (the degrade-to-`version_skew` body is unchanged).
+     (the degrade-to-`version_skew` body is otherwise unchanged).
+  4. Rewrite the module docstring at `:11-13`. It currently claims "The parser ignores unknown top-level keys, so a future `schema` field is tolerated without change." That sentence is now FALSE, and it is the authority under which `facets:` was silently dropped — delete it. Replace it with an explicit enumeration of the four keys this parser reads: `schema` (absent = the pre-schema v1 era), `version`, `entries`, and — under `wardline.vocabulary/v2` — `facets`; plus the standing rule that when Wardline adds a section to a schema this reader accepts, the reader is extended in the same consumer-first change (spec P6). Acceptance of a schema is the obligation to read every section that schema defines, not permission to ignore the ones this reader has not learned yet.
 
-- [ ] **Step 5: plugin.toml + check script.** In `plugin.toml` `[integrations.wardline]` (:77-78) — STRING value, never an array (manifest.rs:137):
+- [ ] **Step 5: Parse the `facets:` section** in `wardline_descriptor.py`. This is the half that makes acceptance real.
+
+`_parse_entry` **cannot** be reused for facets. It does `attrs = raw_entry.get("attrs")` then `if not isinstance(attrs, dict): raise _DescriptorError` (`:201-203`), so an ABSENT `attrs` key — exactly the shape a facet has per spec §7 — is rejected outright. A dedicated `_parse_facet` is required, and it must be *stricter* than `_parse_entry`, rejecting any facet that carries attrs at all: §7 registers facets in their own vocabulary group precisely so `apply_marker` rejects level attributes and a facet can never become a trust claim. Insert both functions after `_parse_entry`:
+
+```python
+def _parse_facets(
+    descriptor: dict[Any, Any],
+    schema: str,
+    entries_by_name: dict[str, DescriptorEntry],
+) -> dict[str, DescriptorEntry]:
+    """Parse the ``wardline.vocabulary/v2`` ``facets:`` section.
+
+    Facets are decorators that seed no taint (declaration-surface-v2 §7), which
+    is why Wardline gives them their own section — and why Loomweave gives them
+    their own map rather than folding them into ``entries_by_name``. An absent
+    section yields an empty map, so every v1 descriptor parses unchanged.
+
+    A ``facets:`` key under the v1 schema is a contract violation, not an
+    unknown key: v1's shape is known exactly, and honouring a section the
+    declared schema does not have is the fail-open this reader exists to avoid.
+    """
+    if "facets" not in descriptor:
+        return {}
+    if schema == _DEFAULT_SCHEMA:
+        msg = "descriptor carries a facets section under the v1 schema"
+        raise _DescriptorError(msg)
+    facets = descriptor["facets"]
+    if not isinstance(facets, list):
+        msg = "descriptor facets must be a list"
+        raise _DescriptorError(msg)
+
+    facets_by_name: dict[str, DescriptorEntry] = {}
+    for raw_facet in facets:
+        facet = _parse_facet(raw_facet)
+        if facet.canonical_name in facets_by_name:
+            msg = f"duplicate Wardline descriptor facet: {facet.canonical_name}"
+            raise _DescriptorError(msg)
+        if facet.canonical_name in entries_by_name:
+            msg = f"Wardline descriptor facet collides with an entry: {facet.canonical_name}"
+            raise _DescriptorError(msg)
+        facets_by_name[facet.canonical_name] = facet
+    return facets_by_name
+
+
+def _parse_facet(raw_facet: Any) -> DescriptorEntry:
+    """Parse one ``facets:`` element.
+
+    A facet carries ``canonical_name`` and ``group`` but stamps no
+    ``_wardline_*`` level attributes — Wardline registers facets in their own
+    vocabulary group precisely so ``apply_marker`` rejects level attributes and
+    a facet can never become a trust claim (§7). ``attrs`` is therefore absent
+    or an explicit empty mapping; a facet carrying attrs fails closed rather
+    than being honoured as a trust marker.
+    """
+    if not isinstance(raw_facet, dict):
+        msg = "descriptor facet must be a mapping"
+        raise _DescriptorError(msg)
+    canonical_name = raw_facet.get("canonical_name")
+    group = raw_facet.get("group")
+    if not isinstance(canonical_name, str) or not isinstance(group, int):
+        msg = "descriptor facet must carry canonical_name and group"
+        raise _DescriptorError(msg)
+    attrs = raw_facet.get("attrs", {})
+    if not isinstance(attrs, dict) or attrs:
+        msg = "descriptor facet must not carry attrs (a facet seeds no taint)"
+        raise _DescriptorError(msg)
+    return DescriptorEntry(canonical_name=canonical_name, group=group, attrs={})
+```
+
+`_parse_descriptor`'s return becomes:
+
+```python
+    return WardlineVocabulary(
+        version=version,
+        schema=schema,
+        source=source,
+        confidence_basis="descriptor",
+        entries_by_name=entries_by_name,
+        facets_by_name=_parse_facets(descriptor, schema, entries_by_name),
+    )
+```
+
+…and the `WardlineVocabulary` dataclass gains the lookup, beside the existing `entry_for_decorator` at `:62-63`:
+
+```python
+    def facet_for_decorator(self, qualified_name: str) -> DescriptorEntry | None:
+        """A facet from the v2 ``facets:`` section. Facets are decorators too,
+        but they seed no taint (declaration-surface-v2 §7), so they resolve
+        through their own lookup and can never be mistaken for a trust claim."""
+        return self.facets_by_name.get(qualified_name.rsplit(".", 1)[-1])
+```
+
+- [ ] **Step 6: Attribute facets in the extractor** — `plugins/python/src/loomweave_plugin_python/extractor.py`. A parsed facet that never reaches an entity is still a silently-ignored section, so parsing alone does not discharge the accept-and-read obligation.
+
+`WardlineDecoratorMetadata` (`:173-178`) gains ONE additive key — `NotRequired` and `Literal` are already imported in that module (`:73`):
+
+```python
+    # Present only on facets (declaration-surface-v2 §7): a decorator that is
+    # attributed but seeds no taint. Absent means a seeding entry, so every
+    # pre-facet record is byte-identical and no exact-dict assertion moves.
+    kind: NotRequired[Literal["facet"]]
+```
+
+and `_attach_wardline_entity_metadata` (`:1288-1319`) resolves entries first, then facets:
+
+```python
+        entry = vocabulary.entry_for_decorator(qualified_name)
+        facet = None if entry is not None else vocabulary.facet_for_decorator(qualified_name)
+        marker = entry if entry is not None else facet
+        if marker is None:
+            continue
+        record: WardlineDecoratorMetadata = {
+            "canonical_name": marker.canonical_name,
+            "qualified_name": qualified_name,
+            "group": marker.group,
+            "attrs": dict(marker.attrs),
+            "line": decorator.lineno,
+        }
+        if facet is not None:
+            record["kind"] = "facet"
+        decorators.append(record)
+        tags.update({"wardline", f"wardline:{marker.canonical_name}"})
+```
+
+The `entity["wardline"]` block itself is UNCHANGED — same `descriptor_version`, `confidence_basis`, `decorators` shape. The existing tag expression is reused unmodified, so a facet simply gets `wardline:audit_record` alongside `wardline`, with no new tag-construction path to keep in sync. A facet's `attrs` is the truthful `{}` — the parser guarantees it, so `dict(marker.attrs)` needs no special case. Entry resolution is tried FIRST and facets only when it misses, so no seeding marker can ever be re-labelled a facet by a name collision (and the parser already rejects such a collision at load).
+
+- [ ] **Step 7: plugin.toml + check script.** In `plugin.toml` `[integrations.wardline]` (:77-78) — STRING value, never an array (manifest.rs:137):
 
 ```toml
 [integrations.wardline]
@@ -2911,7 +3379,7 @@ expected_descriptor_version = "wardline-generic-2"
 accepted_descriptors = "wardline.vocabulary/v1@wardline-generic-2 wardline.vocabulary/v2@wardline-generic-3"
 ```
 
-Delete `accepted_descriptor_versions`; a loose version list destroys the schema/version association. The final manifest contains only `expected_descriptor_version` plus the exact pair-encoded `accepted_descriptors` string shown above.
+`accepted_descriptors` is a NEW key — verified 2026-08-09: `[integrations.wardline]` today contains ONLY `expected_descriptor_version` (`plugin.toml:77-78`), and no key named `accepted_descriptor_versions` exists anywhere in loomweave. This task INTRODUCES the accepted set; it does not replace a loose one. The pair-encoded `schema@version` string form is deliberate: a version-only list would destroy the schema/version association that the whole pair gate rests on, re-admitting "version alone unlocks v2 parsing". The final manifest contains exactly `expected_descriptor_version` plus the pair-encoded `accepted_descriptors` string shown above.
 
 In `scripts/check-wardline-version-bounds.py` define:
 
@@ -2942,7 +3410,7 @@ def descriptor_cross_check_hook(
 
 `rg` found no production callers outside the self-test, so change the signature directly. Extend the self-test with v1/generic-2 and v2/generic-3 true; v1/generic-3, v2/generic-2, and v2/generic-9 false. In `test_package.py`, import runtime `ACCEPTED_DESCRIPTORS`, decode the manifest tokens back to pairs, and assert exact set equality.
 
-- [ ] **Step 6: Update the conformance test's meaning.** In `test_wardline_vocabulary_descriptor_conformance.py`, the `:250` test (`test_consumer_version_gate_rejects_skew_copy`) still passes — the golden carries `schema: wardline.vocabulary/v1` (line 1), so the generic-3 substitution produces the UNACCEPTED pair (v1, generic-3). Update its docstring: "…the gate keys on the (schema, version) PAIR: the same golden bytes with only the version bumped are a pair mismatch — the proof that version alone cannot unlock v2 parsing." Add the acceptance twin right below it:
+- [ ] **Step 8: Update the conformance test's meaning.** In `test_wardline_vocabulary_descriptor_conformance.py`, the `:250` test (`test_consumer_version_gate_rejects_skew_copy`) still passes — the golden carries `schema: wardline.vocabulary/v1` (line 1), so the generic-3 substitution produces the UNACCEPTED pair (v1, generic-3). Update its docstring: "…the gate keys on the (schema, version) PAIR: the same golden bytes with only the version bumped are a pair mismatch — the proof that version alone cannot unlock v2 parsing." Add the acceptance twin right below it:
 
 ```python
 def test_consumer_accepts_the_v2_pair(tmp_path: Path) -> None:
@@ -2957,13 +3425,19 @@ def test_consumer_accepts_the_v2_pair(tmp_path: Path) -> None:
     assert state.descriptor_version == "wardline-generic-3"
 ```
 
-- [ ] **Step 7: Run the loomweave gates** — from `/home/john/loomweave`:
+- [ ] **Step 9: Run the loomweave gates** — from `/home/john/loomweave`:
   1. `uv run --project plugins/python --extra dev pytest -o addopts='' plugins/python/tests/test_wardline_descriptor.py plugins/python/tests/test_wardline_vocabulary_descriptor_conformance.py plugins/python/tests/test_package.py -q` — PASS; the generic-2 golden byte-pin (`UPSTREAM_BLOB_SHA`) is untouched.
   2. `python scripts/check-wardline-version-bounds.py --self-test && python scripts/check-wardline-version-bounds.py` — both green.
   3. `cargo test -p loomweave-core manifest && cargo test -p loomweave-storage --test writer_actor python_plugin_edge_kinds_are_accepted_by_writer_contract` — proves the string key parses (manifest.rs:137) and the production manifest still loads.
   4. `uv run --project plugins/python --extra dev pytest plugins/python` — authoritative plugin CI-equivalent gate.
 
-- [ ] **Step 8: Commit (orchestrator, `/home/john/loomweave`, `release/1.5.0`, explicit paths only)** — `feat(wardline-descriptor): dual-accept schema/version pairs with semantic preview fixture`
+**Blast radius — what is verified UNAFFECTED (2026-08-09, in loomweave source):**
+- The v1 vocabulary golden and its `UPSTREAM_BLOB_SHA` (`f5ad8d2346ffb6ea75aa469e423c6c7cfd16d40a`, `test_wardline_vocabulary_descriptor_conformance.py:92`) do NOT move: the v1 golden gains no facets, and the conformance byte-compare operates on the v1 golden only. The generic-3 preview fixture stays semantic/field-asserted (Rollout Fence §3 byte-freezes it in S1).
+- `plugin.toml`'s `[ontology].classifier_tags` needs no change — `wardline:*` tags are not classifier tags.
+- No Rust struct mirrors `WardlineVocabulary` or the decorator record: `RawEntity` (`crates/loomweave-core/src/plugin/host.rs:118-151`) carries the whole `wardline` block through its `#[serde(flatten)] extra: serde_json::Map<…>` field, "accepted without interpretation". Adding a dataclass field or a `kind` key is therefore invisible to Rust — no crate rebuild semantics change.
+- **One deliberate non-change:** `wardline:audit_record` is NOT added to `ontology.rs`'s `tags::DEAD_CODE_ROOTS` (`crates/loomweave-core/src/ontology.rs:23-34`), whose only `wardline:*` members are `wardline:external_boundary` and `wardline:trusted`. A facet seeds no taint and is not an externally-reached entry point, so it must not become a reachability root — doing so would silently resurrect dead code on the strength of an audit annotation.
+
+- [ ] **Step 10: Commit (orchestrator, `/home/john/loomweave`, `release/1.5.0`, explicit paths only)** — `feat(wardline-descriptor): dual-accept schema/version pairs, read and attribute the v2 facets section`
 
 ---
 
@@ -3102,7 +3576,7 @@ def test_vendored_warpline_copy_is_byte_identical_when_present() -> None:
     assert vendored.read_bytes() == VECTOR.read_bytes()
 ```
 
-- [ ] **Step 2: Recheck the spec blob pin (the static rev-4 blob check from the execution preflight), then generate the non-normative preview vector once** (scratch script; the tests then freeze it — the HMAC pin makes any later edit loud). Mark the vector and contract status `DRAFT/S0 preview`; S1's first real serializer output must be byte- and semantic-compared before replacing it.
+- [ ] **Step 2: Recheck the spec blob pin (the static rev-5 blob check from the execution preflight), then generate the non-normative preview vector once** (scratch script; the tests then freeze it — the HMAC pin makes any later edit loud). Mark the vector and contract status `DRAFT/S0 preview`; S1's first real serializer output must be byte- and semantic-compared before replacing it.
 
 ```bash
 uv run python - <<'PY'
@@ -3525,8 +3999,10 @@ S0_WARPLINE_HEAD="$(git -C /home/john/warpline rev-parse refs/heads/main)"
 S0_LEGIS_HEAD="$(git -C /home/john/legis rev-parse refs/heads/main)"
 
 # Populate these four from the implementation receipt before running.
-test -n "$S0_TASK17_COMMIT" && test -n "$S0_TASK19_COMMIT"
-test -n "$S0_TASK20_LEGIS_COMMIT" && test -n "$S0_TASK21_COMMIT"
+: "${S0_TASK17_COMMIT:?populate from the Task 17 implementation receipt}"
+: "${S0_TASK19_COMMIT:?populate from the Task 19 implementation receipt}"
+: "${S0_TASK20_LEGIS_COMMIT:?populate from the Task 20 implementation receipt}"
+: "${S0_TASK21_COMMIT:?populate from the Task 21 implementation receipt}"
 git -C /home/john/loomweave merge-base --is-ancestor "$S0_TASK17_COMMIT" "$S0_LOOMWEAVE_HEAD"
 git -C /home/john/warpline merge-base --is-ancestor "$S0_TASK19_COMMIT" "$S0_WARPLINE_HEAD"
 git -C /home/john/legis merge-base --is-ancestor "$S0_TASK20_LEGIS_COMMIT" "$S0_LEGIS_HEAD"
@@ -3584,7 +4060,7 @@ Restart long-running Wardline/federation processes. Passing this gate permits lo
 
 **3. S1 producer preflight.** In the same producer change that bumps `REGISTRY_VERSION`/`ATTEST_SCHEMA`, bump `_RESOLVER_VERSION` again beyond `sp1h`; re-vendor `vocabulary.yaml`, descriptor goldens, and blob pins; compare the first real generic-3 and attest-3 serializer outputs semantically and bytewise against the non-normative previews before replacing them; update Task 11's pinned builtin fingerprint and Task 18's emission freeze. Public emission additionally requires gate 2.
 
-**4. The generic-3 inversion trap (S1 must re-tokenize four tests).** Four loomweave tests derive their skew case by literally replacing `"wardline-generic-2"` → `"wardline-generic-3"` (`test_wardline_descriptor.py:52,116,217`; `test_wardline_vocabulary_descriptor_conformance.py:261`). Once generic-3 is accepted-and-expected, those derivations invert (the conformance one even self-asserts `skewed != golden` and reds). S1 switches their skew token to `"wardline-generic-9"`. Task 17 deliberately does NOT touch them — they still pass in S0 because (v1-or-absent schema, generic-3) remains an unaccepted pair.
+**4. The generic-3 inversion trap (S1 must re-tokenize two tests).** Exactly TWO loomweave tests derive their skew case by literally replacing `"wardline-generic-2"` → `"wardline-generic-3"`: `test_wardline_descriptor.py:217` and `test_wardline_vocabulary_descriptor_conformance.py:261`. (Corrected in rev 3.4: the previously-cited `test_wardline_descriptor.py:52` and `:116` substitute to `wardline-generic-**9**`, not generic-3 — they are unrelated fixtures for two different tests and are not part of this trap.) Once generic-3 is accepted-and-expected, those two derivations invert (the conformance one even self-asserts `skewed != golden` and reds). S1 switches their skew token to `"wardline-generic-9"`. Task 17 deliberately does NOT touch them — they still pass in S0 because (v1-or-absent schema, generic-3) remains an unaccepted pair.
 
 **5. Legis two-sided re-pin (S1).** When S1 adds real `declarations` content to the MAIN scan-artifact vector (`wardline_scan_artifact.v1.json`), its `expected_signature` hex is pinned on BOTH sides (the legis vector note says the hex is identical to wardline's golden in `tests/unit/core/test_legis_artifact.py`) — a two-sided re-pin in one coordinated pair of commits, plus the documented `scan_digest` shift in every routed scan. The Task 20 preview vector deliberately carries no hex so it needs no re-pin.
 
@@ -3620,3 +4096,4 @@ Restart long-running Wardline/federation processes. Passing this gate permits lo
 - Ticket item (a) → Tasks 1–5; (b) → Tasks 6–7; (c) P1/P2/P3 → Task 8, P4 → Task 9, P7 → Task 10, P8 → Task 11, P9 → Task 2, P10 → Task 12, P13 → Task 14; (d) → Task 15; (e) → Task 16. Spec §12 P5/P6/P12 → Task 13; P11a → Task 6; P11b generic gate → the S2 sensitivity ticket; its Evidence-domain integration repeat → the S3 restoration ticket. P14 → Tasks 1–5. §13.1.1 → Task 17; §13.1.2 → Tasks 18–19 plus Task 21's receipt; §13.1.3 → Task 20; §13.1 sequencing → Rollout Fence.
 - NO-GO findings disposition: `to_level` tolerance removed; complete call grammar and cache invalidation added; QE loader/population/per-kind floors made total; custom fingerprints made collision-resistant; waiver usage remains zero under a reviewed ceiling of five; descriptor acceptance made pair-aware; Warpline's non-key-holding role stated accurately; two-sided receipt precedes seam truth-up; and local coordination is separated from published emission readiness.
 - Deliberately NOT in S0: any weft-markers export, `REGISTRY_VERSION`/`vocabulary.yaml`/`ATTEST_SCHEMA` changes, attest-3 EMISSION, the declarations inventory factory, per-group inertness arming, fixes to the two Task 13-filed engine bugs (golden-drifting / semantics-changing — S1+ with their own tickets), and the two re-scoped false-green siblings `wardline-b857b50b54` (Rust marker shape channel) and `wardline-2b2a6cddfa` (unreadable level value) — both live after S0, both named in `wardline-4928b75782`'s close comment per rev 3.3.
+- **Rev 3.4 amendments (2026-08-09).** The rev-3.2 go/no-go review's six pre-merge conditions are folded in: the Task 1 tripwire covers both builtin roots; Task 4's shape validator drops a malformed builtin's seed with PY-WL-130 (ERROR) as the loud channel, and a proposed demotion of that seed to `UNKNOWN_RAW` beside a provable sibling was **evaluated and REJECTED on measurement** — `UNKNOWN_RAW` is in `RAW_ZONE`, `modulate()` returns `NONE` there and PY-WL-101 skips a `RAW_ZONE` declared tier, so demoting silences the very rules the change exists to preserve, whereas dropping the malformed marker and letting the provable one stand is strictly louder than today (pinned by Task 4 Step 1's `test_malformed_sibling_never_reduces_the_error_population`); Task 6 Step 4.2 keeps its plain `taint_for` instruction; PY-WL-130 claims runtime-invalidity only where a `TypeError` is proved from the shipped signatures; PY-WL-130's `examples_clean` no longer freezes the `wardline-2b2a6cddfa` silence into a shipped contract; and Task 17 now READS the generic-3 descriptor's `facets:` section (parse + attribute + non-circular end-to-end proof) rather than accepting-and-ignoring it. The governing spec moved to **rev 5** and the blob pin was re-cut to `9624f8925a006a80677c12eaa0951933d631920f`. The complete site inventory is **five**, not three — the rev-3.2 blockquote, the Global Constraints pin bullet, the preflight `git hash-object` check, the Task-dependency-order line, and Task 18 Step 2's recheck instruction. The last two are prose references to "the rev-N pin" rather than literal hashes, which is exactly why an inventory built by grepping the hash missed them; grep the revision word as well as the digest. Spec §4.2's reason vocabulary is deliberately left at **eight** values — the two dual-form reasons are split by offender token, not by minting new reasons, so no consumer's closed reason vocabulary widens. `wardline-b857b50b54` (Rust marker shape channel) and `wardline-2b2a6cddfa` (unreadable level value, lone or stacked) remain OPEN as out-of-S0 residue.
