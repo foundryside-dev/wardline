@@ -41,10 +41,6 @@ This program is **Wardline 2**; its residency is **`release/2.0.0`** (PDR-0015).
   (all plan-named branches, zero dirty lines, spec pin OK).
 - **P0 re-review verdict (owner-run):** against spec rev 3; includes the two
   comment-268 adjudication items.
-- **v1.5.0 publication (owner, outward-facing):** 1.5.0 is MERGED to main
-  (`23ce09c4`, PR #126) but deliberately NOT tagged, released, or published
-  (PDR-0014). Does the owner want a v1.5.0 tag / GitHub release / PyPI publish now,
-  or does 2.0.0 supersede publication of 1.5.0?
 - **Stale tracker custody:** `wardline-c66f62894b` remains assigned to `codex` with
   an expired claim; reconcile separately.
 - **Standing measurement debt:** agent-fix success and the preview-rule FP rate
@@ -61,6 +57,13 @@ This program is **Wardline 2**; its residency is **`release/2.0.0`** (PDR-0015).
 - Reconciled the tracker live during the session (comments 268/269); no horizon
   change, so `roadmap.md` untouched; no new metric readings, so `metrics.md`
   untouched (G2 still shows exactly one known false green, closed by executing S0).
+- **Post-checkpoint addendum (same day):** the owner authorized v1.5.0
+  publication — **PDR-0016**: tag `v1.5.0` at `23ce09c4`, Release workflow
+  `31296246189` green, `wardline 1.5.0` live on PyPI (wheel + sdist, attested).
+  The PDR-0014 publication escalation is closed. Also noted: spec revision 4
+  (S0-contract reconciliation, §17) is in flight in the working tree — once it
+  commits, plan rev 3.1's static blob pin `4956ba3b…` must be refreshed to the
+  rev-4 blob (the pin's own drift rule makes this a hard preflight stop, by design).
 
 ## Next session, start here
 
