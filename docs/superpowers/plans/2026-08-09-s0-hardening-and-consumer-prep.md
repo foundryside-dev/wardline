@@ -1,10 +1,12 @@
-# S0 — Hardening + Consumer-First Cross-Product Prep — Implementation Plan (rev 3)
+# S0 — Hardening + Consumer-First Cross-Product Prep — Implementation Plan (rev 3.1)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 >
 > **Git discipline (non-negotiable):** subagents NEVER run git — no `git add/commit/stash/checkout/restore/reset/diff/status`, nothing. Every "Commit" step is executed by the orchestrator. Cross-repo tasks (17–21) touch fixed targets only. The target must be clean before its task starts; before commit, intended edits are expected, but every changed path must be in that task's explicit file list. The orchestrator runs `git diff --check`, inspects `git diff --stat`, stages explicit paths only (never `-A`), and inspects `git diff --cached --name-status`. Any unexpected path is a hard stop. `/home/john/loomweave/.worktrees/integrate-review-fixes/` and every `.claude/worktrees/*` checkout are non-targets.
 >
 > **Rev 3 custody decision** (post adversarial core/QE/consumer scrub of rev 2): rescue this plan in place so the ticket link remains canonical. Builtin call grammar now includes bare-vs-called form; literal `**{...}` values share the PY-WL-114/provider reader; dynamic `**mapping` is described truthfully as statically unverifiable; custom packs remain untouched; mixed-root shadows are filtered per marker; S0 bumps the resolver cache epoch; P11 is split honestly; the complete per-kind QE floor is specified; custom-grammar hashing is collision-resistant; and consumer readiness is separated into local coordinated and published-release gates. Preview vectors are non-normative and pinned to the design-spec blob until real S1 serializers replace them.
+>
+> **Rev 3.1 (pre-execution resolutions):** the Task 1 spec correction was pre-landed as spec rev 3 (commit `1244f627`, blob `4956ba3b33ad3c594f0ad47db98ee6d636ad3051`) so the pending P0 re-review reads the corrected spec — Task 1 is now code-only and the spec pin is a static constant below; the Legis clean-target stop was resolved by committing the untracked plainweave plan on legis `main` (`a117a21`); the preflight claim uses the executing session's actor; and the shared `read_level`'s declared-sibling widening is now a named, pinned contract (Task 2). With the 1.5.0→main merge, wardline's fixed target branch is **`release/2.0.0`** (the wardline-2 program residency — this plan and its spec ARE wardline 2); loomweave remains `release/1.5.0`.
 
 **Goal:** Ship stage S0 of the declaration-surface-v2 program: fix the live false green `wardline-4928b75782` (PY-WL-130 + `WLN-ENGINE-UNKNOWN-MARKER`), land the §4.2 registry-owned argument and call-form grammar, close QE prerequisites P1–P10 and P12–P14, close P11a (forward vocabulary skew), bind P11b to the first `TOKEN_SET` stage, and stage consumer-first cross-product prep — all before any new marker vocabulary exists. “Stage” means merged, commit-anchored consumer support plus an isolated local-install proof; it does not mean a public consumer release has shipped.
 
@@ -25,11 +27,11 @@
 - **Custom-pack compatibility is a hard gate.** Tasks 1–7 must keep `tests/grammar/test_thirdparty_pack_bridge.py` green and preserve its two recognised boundaries. PY-WL-130 never validates custom marker kwargs.
 - **Truthful diagnostics.** PY-WL-130 may call a shape runtime-invalid only for a proved runtime-invalid reason. `unreadable_splat` says Wardline cannot statically prove the mapping; it never promises Python raises `TypeError`.
 - **P11 is split.** P11a (new marker on old Wardline) lands in Task 6. P11b (unknown `TOKEN_SET`/evidence token makes the whole declaration unreadable) is a Phase 3 release gate and must land before the first evidence-bearing marker emits; a LEVEL-token proxy is not accepted as evidence.
-- **Preview-vector source pin.** Blob `0f04eeb172e4479c330a806b37ff9b2132917f20` at commit `ed7bfe860d836f4bbab891eddfbada90330db825` is review provenance, not the post-Task-1 pin: Task 1 deliberately corrects call-form/P11 prose in that spec. Task 1 records its committed spec blob in the implementation receipt. Tasks 17, 18, and 20 depend on Task 1 and verify the recorded post-Task-1 blob; any later drift is STOP-and-re-review. S1's first serializer gate replaces every non-normative preview with real producer output and compares it before emission.
+- **Preview-vector source pin.** The governing spec pin is blob `4956ba3b33ad3c594f0ad47db98ee6d636ad3051` (spec rev 3, commit `1244f627`) — the call-form/P11 corrections are already IN the committed spec, so no task amends it. Blob `0f04eeb172e4479c330a806b37ff9b2132917f20` at commit `ed7bfe860d836f4bbab891eddfbada90330db825` is rev-2 review provenance only. Tasks 17, 18, and 20 verify the rev-3 blob via the execution preflight's static check; any spec drift after `1244f627` is STOP-and-re-review. S1's first serializer gate replaces every non-normative preview with real producer output and compares it before emission.
 - New rule id is exactly **`PY-WL-130`**; new FACT id is exactly **`WLN-ENGINE-UNKNOWN-MARKER`** (ids reserved by the spec; next free id after this plan is 131).
 - Conventions: FACTs are `Severity.NONE` + `Kind.FACT`; PY-WL-130 is `Severity.ERROR` + `Kind.DEFECT`, `maturity=Maturity.STABLE` (default), `multi_emit=True`.
 - Test commands run from `/home/john/wardline` unless a task names another repo. Full suite = `uv run pytest -q`.
-- Commit messages follow `feat(scope):` / `fix(scope):` / `test(scope):` / `docs(scope):`. Fixed targets are Wardline and Loomweave `release/1.5.0`, Warpline and Legis `main`; "current branch" is never accepted as a substitute.
+- Commit messages follow `feat(scope):` / `fix(scope):` / `test(scope):` / `docs(scope):`. Fixed targets are Wardline `release/2.0.0`, Loomweave `release/1.5.0`, Warpline and Legis `main`; "current branch" is never accepted as a substitute.
 - **No consumer version bumps in S0.** Loomweave's plugin version is CI-lockstepped to the Rust workspace version (`scripts/check-workspace-version-lockstep.py`); the rollout floor is recorded as commits, not version strings (see Rollout Fence).
 - **Unexpected-red discipline.** A red in a file the current task does not name is STOP-and-report, not permission to broaden scope. On an honest corpus-budget STOP, leave the worktree dirty and wait; never relabel findings, regenerate scan goldens, or stash shared-tree work to force green.
 
@@ -43,7 +45,7 @@ git status --short --branch
 git rev-parse HEAD
 git worktree list --porcelain
 filigree session-context
-filigree start-work wardline-4928b75782 --assignee codex
+filigree start-work wardline-4928b75782 --assignee claude  # use the executing session's actor
 ```
 
 Before Tasks 17–21, run this exact clean-target preflight. Any output from `status --porcelain` is a hard stop: do not stash, delete, absorb, or commit unrelated files.
@@ -62,7 +64,7 @@ while IFS='|' read -r S0_REPO_PATH S0_TARGET_BRANCH; do
   git -C "$S0_REPO_PATH" rev-parse HEAD
   git -C "$S0_REPO_PATH" worktree list --porcelain
 done <<'EOF'
-/home/john/wardline|release/1.5.0
+/home/john/wardline|release/2.0.0
 /home/john/loomweave|release/1.5.0
 /home/john/warpline|main
 /home/john/legis|main
@@ -74,28 +76,23 @@ Immediately before each cross-repository commit, recheck the branch, then requir
 
 | Repo | Required target checkout | Required target branch | Other worktrees observed during rev 3 review |
 |---|---|---|---|
-| wardline | `/home/john/wardline` | `release/1.5.0` | `codex-c16-scan-summary`, `release-prep` |
+| wardline | `/home/john/wardline` | `release/2.0.0` | `codex-c16-scan-summary`, `release-prep` |
 | loomweave | `/home/john/loomweave` | `release/1.5.0` | agent worktree, `integrate-review-fixes`, `reconcile` |
 | warpline | `/home/john/warpline` | `main` | `codex-c17-overflow-contract`, `c20` |
 | legis | `/home/john/legis` | `main` | `c20`, `seam-debt`, `plainweave-doctor-binding` |
 
-For every non-target worktree, inspect `git status --short --branch` and check the owning agent/session. If a live or dirty worktree overlaps a named file, STOP and coordinate. Clean status alone is not a liveness proof. Cross-repo tasks edit the primary targets above only, stage explicit paths only, and verify the resulting commit is an ancestor of the named target branch. The currently untracked Legis file `docs/superpowers/plans/2026-07-14-plainweave-preflight-v2-conformance.md` is an active preflight blocker until its owner resolves it; it must be preserved.
+For every non-target worktree, inspect `git status --short --branch` and check the owning agent/session. If a live or dirty worktree overlaps a named file, STOP and coordinate. Clean status alone is not a liveness proof. Cross-repo tasks edit the primary targets above only, stage explicit paths only, and verify the resulting commit is an ancestor of the named target branch. (The formerly untracked Legis file `docs/superpowers/plans/2026-07-14-plainweave-preflight-v2-conformance.md` was preserved byte-for-byte and committed on legis `main` as `a117a21` — that preflight stop is resolved; the check above still guards against any NEW dirt.)
 
-Recheck the committed post-Task-1 spec pin before consumer work (populate the task commit from the implementation receipt):
+Recheck the committed spec rev 3 pin before consumer work:
 
 ```bash
-(
-set -euo pipefail
-test -n "${S0_TASK1_COMMIT:-}"  # exported from the Task 1 implementation receipt
-S0_TASK1_SPEC_BLOB="$(git rev-parse "$S0_TASK1_COMMIT:docs/superpowers/specs/2026-08-09-declaration-surface-v2-design.md")"
 test "$(git hash-object docs/superpowers/specs/2026-08-09-declaration-surface-v2-design.md)" = \
-  "$S0_TASK1_SPEC_BLOB"
-)
+  "4956ba3b33ad3c594f0ad47db98ee6d636ad3051"
 ```
 
 ## Task dependency order
 
-T1 → T2 → T3 → T4 → T5 → T6 → T7; T8–T16 depend only on earlier Wardline tasks where stated (T12 needs T5+T6). Cross-repo: **T17, T18, and T20 require T1's refreshed spec pin; T18 precedes T19; T21 requires T18+T19 and runs after T20 so both consumer receipts exist.** Recommended execution order is numeric.
+T1 → T2 → T3 → T4 → T5 → T6 → T7; T8–T16 depend only on earlier Wardline tasks where stated (T12 needs T5+T6). Cross-repo: **T17, T18, and T20 require the pre-landed spec rev 3 pin (preflight blob check), independent of T1; T18 precedes T19; T21 requires T18+T19 and runs after T20 so both consumer receipts exist.** Recommended execution order is numeric.
 
 ## Filigree discipline
 
@@ -108,7 +105,6 @@ T1 → T2 → T3 → T4 → T5 → T6 → T7; T8–T16 depend only on earlier Wa
 ### Task 1: Complete registry grammar — `ArgKind`, call form, and immutable kwargs (P14)
 
 **Files:**
-- Modify: `docs/superpowers/specs/2026-08-09-declaration-surface-v2-design.md` (registry call form; P11 split)
 - Modify: `src/wardline/core/registry.py`
 - Modify: `src/wardline/scanner/boundary_types.py:133-141` (tripwire extension)
 - Modify: `src/wardline/scanner/diagnostics.py:36-38` (native/compiled import allowlist)
@@ -195,8 +191,6 @@ Run: `uv run pytest tests/unit/core/test_registry.py -v`
 Expected: FAIL — `ImportError: cannot import name 'ArgKind'`.
 
 - [ ] **Step 3: Implement in `src/wardline/core/registry.py`.** Add `from enum import StrEnum` and extend the dataclass import with `field`. Insert after `REGISTRY_VERSION`:
-
-First amend the design spec in the same commit: §4.2 records `call_form` plus the literal/dynamic splat grammar, and the compatibility section splits P11a (forward marker skew, S0) from P11b (unknown TOKEN_SET/evidence token, Phase 3 release gate). This is a correction to the plan's governing contract, not a vocabulary emission change.
 
 ```python
 class ArgKind(StrEnum):
@@ -317,7 +311,7 @@ del _bt, _entry
 Run: `uv run pytest tests/unit/core/test_registry.py tests/unit/scanner/test_diagnostics.py tests/unit/core/test_descriptor.py tests/grammar/test_grammar_model.py tests/conformance/test_vocabulary_descriptor_wire_golden.py -q`
 Expected: all PASS. `test_committed_vocabulary_yaml_matches_registry` proves the descriptor bytes did not move.
 
-- [ ] **Step 7: Commit and record the refreshed pin** — `feat(registry): record immutable marker kwargs, arg kinds, and call forms (S0 P14)`. In the implementation receipt record the commit SHA and `git rev-parse 'HEAD:docs/superpowers/specs/2026-08-09-declaration-surface-v2-design.md'`; that blob becomes `S0_TASK1_SPEC_BLOB` for Tasks 17/18/20.
+- [ ] **Step 7: Commit** — `feat(registry): record immutable marker kwargs, arg kinds, and call forms (S0 P14)`. Record the commit SHA in the implementation receipt.
 
 ---
 
@@ -342,7 +336,7 @@ Expected: all PASS. `test_committed_vocabulary_yaml_matches_registry` proves the
   - `level_token(value: ast.expr, alias_map: Mapping[str, str]) -> str | None` (STRICT: alias-resolved `wardline.core.taints.TaintState` receiver or str literal)
   - `KeywordExtraction(items: tuple[tuple[str, ast.expr], ...], offences: tuple[tuple[str, str], ...])`
   - `extract_keywords(deco: ast.expr) -> KeywordExtraction` — direct and literal-splat keywords in Python's evaluation order.
-  - `read_level(deco: ast.expr, arg: str, *, declared: frozenset[str], allowed: frozenset[TaintState], default: TaintState | None, alias_map: Mapping[str, str]) -> TaintState | None` (uses `extract_keywords`; no ignored-arg path).
+  - `read_level(deco: ast.expr, arg: str, *, declared: frozenset[str], allowed: frozenset[TaintState], default: TaintState | None, alias_map: Mapping[str, str]) -> TaintState | None` (uses `extract_keywords`; no ignored-arg path). Declared-sibling semantics are a deliberate, pinned widening over the old provider-private reader (which failed closed on ANY keyword other than the one being read): a keyword that is DECLARED but is not the arg being read is legal. Observable only for multi-level-arg custom markers; none ship in the builtin grammar.
   - `call_shape_offences(deco: ast.expr, *, call_form: MarkerCallForm, declared: frozenset[str], required: frozenset[str]) -> tuple[tuple[str, str], ...]` — the ONE call-shape verdict.
   - `is_builtin_decorator_fqn(fqn: str, canonical_name: str, module_prefix: str) -> bool`
   - `shadowed_builtin_roots(project_modules: frozenset[str]) -> frozenset[str]`
@@ -611,7 +605,13 @@ import pytest
 
 from wardline.core.run import run_scan
 from wardline.core.registry import MarkerCallForm
-from wardline.scanner.marker_reader import alias_map_for_qualname, call_shape_offences, level_token
+from wardline.core.taints import TaintState
+from wardline.scanner.marker_reader import (
+    alias_map_for_qualname,
+    call_shape_offences,
+    level_token,
+    read_level,
+)
 
 CASES = [
     ("'ASSURED'", {}, "ASSURED"),
@@ -731,6 +731,22 @@ def test_alias_map_for_qualname_uses_longest_owner() -> None:
 
 def test_alias_map_for_qualname_without_owner_is_empty() -> None:
     assert alias_map_for_qualname("other.f", {"pkg": {"x": "pkg.x"}}) == {}
+
+
+def test_read_level_accepts_sibling_declared_keywords() -> None:
+    # Deliberate widening vs the old provider-private reader (None on ANY
+    # keyword other than the one being read): a DECLARED sibling keyword is
+    # legal while reading one arg. Observable only for multi-level-arg
+    # custom markers; none ship in the builtin grammar.
+    deco = ast.parse("@m(a='ASSURED', b='ASSURED')\ndef f(): ...").body[0].decorator_list[0]
+    assert read_level(
+        deco,
+        "a",
+        declared=frozenset({"a", "b"}),
+        allowed=frozenset(TaintState),
+        default=None,
+        alias_map={},
+    ) is TaintState.ASSURED
 ```
 
 - [ ] **Step 6: Run the affected suites**
@@ -3032,7 +3048,7 @@ def test_vendored_warpline_copy_is_byte_identical_when_present() -> None:
     assert vendored.read_bytes() == VECTOR.read_bytes()
 ```
 
-- [ ] **Step 2: Recheck the spec blob pin, then generate the non-normative preview vector once** (scratch script; the tests then freeze it — the HMAC pin makes any later edit loud). Mark the vector and contract status `DRAFT/S0 preview`; S1's first real serializer output must be byte- and semantic-compared before replacing it.
+- [ ] **Step 2: Recheck the spec blob pin (the static rev-3 blob check from the execution preflight), then generate the non-normative preview vector once** (scratch script; the tests then freeze it — the HMAC pin makes any later edit loud). Mark the vector and contract status `DRAFT/S0 preview`; S1's first real serializer output must be byte- and semantic-compared before replacing it.
 
 ```bash
 uv run python - <<'PY'
@@ -3387,7 +3403,7 @@ def test_legis_vendored_copy_is_byte_identical_when_present() -> None:
 
 - [ ] **Step 4: Run** — from `/home/john/legis`: `uv run pytest tests/contract/weft/test_unknown_artifact_key_tolerance.py -v`. Expected: PASS — this pins EXISTING behaviour; if it fails, legis is NOT tolerant, spec §13.1.3's premise is wrong: STOP and report to John before any S1 work. From `/home/john/wardline`: `uv run pytest tests/conformance/test_legis_declarations_preview_vector.py -v`. Expected: PASS.
 
-- [ ] **Step 5: Commits (orchestrator, after the dirty-target preflight).** Wardline `release/1.5.0`: `test(conformance): author wardline-legis declarations preview and receipt`. Legis `main`, explicit paths: `test(weft): pin unknown-artifact-key tolerance and vendor Wardline preview`.
+- [ ] **Step 5: Commits (orchestrator, after the dirty-target preflight).** Wardline `release/2.0.0`: `test(conformance): author wardline-legis declarations preview and receipt`. Legis `main`, explicit paths: `test(weft): pin unknown-artifact-key tolerance and vendor Wardline preview`.
 
 ---
 
@@ -3395,7 +3411,7 @@ def test_legis_vendored_copy_is_byte_identical_when_present() -> None:
 
 **Depends on:** Tasks 18 and 19; run after Task 20 so all consumer receipts exist.
 
-**Files (Wardline `release/1.5.0`):**
+**Files (Wardline `release/2.0.0`):**
 - Modify: `tests/conformance/seam_registry.json` (attest row only)
 
 - [ ] **Step 1: Require both receipts and byte identity; no skips.**
@@ -3428,7 +3444,7 @@ uv run pytest \
   tests/conformance/test_seam_registry.py -q
 ```
 
-Commit separately on Wardline `release/1.5.0`: `test(conformance): truth up two-sided attest seam after Warpline receipt`.
+Commit separately on Wardline `release/2.0.0`: `test(conformance): truth up two-sided attest seam after Warpline receipt`.
 
 ---
 
@@ -3436,7 +3452,7 @@ Commit separately on Wardline `release/1.5.0`: `test(conformance): truth up two-
 
 S0 stages consumers; S1 may develop against a coordinated local stack, but public producer emission has a separate release gate. These gates are cumulative and not interchangeable.
 
-**1. Local coordination gate.** Record the task commit and integrated target-branch HEAD for all four repositories. Each task commit must be an ancestor of Wardline/Loomweave `release/1.5.0` or Warpline/Legis `main`, as applicable. Build cold-install inputs from Git archives of those recorded commits—never dirty checkout bytes:
+**1. Local coordination gate.** Record the task commit and integrated target-branch HEAD for all four repositories. Each task commit must be an ancestor of Wardline `release/2.0.0`, Loomweave `release/1.5.0`, or Warpline/Legis `main`, as applicable. Build cold-install inputs from Git archives of those recorded commits—never dirty checkout bytes:
 
 ```bash
 (
@@ -3449,7 +3465,7 @@ S0_UV_BIN_DIR="$S0_COLD_ROOT/bin"
 mkdir -p "$S0_SNAPSHOT_ROOT"/{wardline,loomweave,warpline,legis} \
   "$S0_UV_TOOL_DIR" "$S0_UV_BIN_DIR"
 
-S0_WARDLINE_HEAD="$(git -C /home/john/wardline rev-parse refs/heads/release/1.5.0)"
+S0_WARDLINE_HEAD="$(git -C /home/john/wardline rev-parse refs/heads/release/2.0.0)"
 S0_LOOMWEAVE_HEAD="$(git -C /home/john/loomweave rev-parse refs/heads/release/1.5.0)"
 S0_WARPLINE_HEAD="$(git -C /home/john/warpline rev-parse refs/heads/main)"
 S0_LEGIS_HEAD="$(git -C /home/john/legis rev-parse refs/heads/main)"
