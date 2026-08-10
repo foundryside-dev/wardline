@@ -22,7 +22,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 
-from wardline.core.registry import REGISTRY
+from wardline.core.registry import REGISTRY, ArgKind
 from wardline.core.taints import TaintState
 from wardline.scanner.taint.provider import FunctionTaint
 
@@ -128,14 +128,26 @@ BUILTIN_BOUNDARY_TYPES: tuple[BoundaryType, ...] = (
     ),
 )
 
-# Consistency tripwire: builtin names/group must mirror the released REGISTRY so the
-# two views (REGISTRY = declaration contract; grammar = + seed semantics) cannot drift.
+# Consistency tripwire: builtin names/group/kwargs/arg-kinds must mirror the released
+# REGISTRY so the two views (REGISTRY = declaration contract; grammar = + seed
+# semantics) cannot drift. BOTH builtin roots are covered (spec §4.2): the
+# ``weft_markers`` rows share the same canonical REGISTRY rows as their
+# ``wardline.decorators`` twins — verified identical on group, level_args and seed —
+# so the loop simply revisits each canonical name once per root. The three redundant
+# lookups are intentional: they are what proves a future per-root edit cannot desync
+# one root while the other stays green.
 for _bt in BUILTIN_BOUNDARY_TYPES:
-    if _bt.module_prefix == _WEFT_MARKERS_PREFIX:
-        continue
     _entry = REGISTRY.get(_bt.canonical_name)
     if _entry is None or _entry.group != _bt.group:  # pragma: no cover
         # Load-time tripwire: unreachable unless a future edit desyncs the builtin
         # boundary types from the frozen REGISTRY. Fail CLOSED-LOUD at import.
         raise ValueError(f"builtin BoundaryType {_bt.canonical_name!r} drifted from REGISTRY")
-del _bt, _entry
+    _expected_kwargs = frozenset(_la.arg_name for _la in _bt.level_args)
+    _expected_kinds = {_la.arg_name: ArgKind.LEVEL for _la in _bt.level_args}
+    if _entry.kwargs != _expected_kwargs:  # pragma: no cover
+        # The registry's declared keyword set IS the level-arg schema; PY-WL-130
+        # and seeding both derive tolerance from one place. Fail CLOSED-LOUD.
+        raise ValueError(f"builtin BoundaryType {_bt.canonical_name!r} kwargs drifted from REGISTRY")
+    if dict(_entry.arg_kinds) != _expected_kinds:  # pragma: no cover
+        raise ValueError(f"builtin BoundaryType {_bt.canonical_name!r} arg kinds drifted from REGISTRY")
+del _bt, _entry, _expected_kwargs, _expected_kinds

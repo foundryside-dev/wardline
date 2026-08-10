@@ -34,7 +34,9 @@ _BUILTIN_MARKER_IMPORTS: dict[str, frozenset[str]] = {
 # ``wardline.core`` or ``wardline.decorators`` prefix would hide misspelled exports
 # and bogus submodules, which are real diagnostic coverage gaps.
 _NATIVE_FIRST_PARTY_IMPORTS: dict[str, frozenset[str]] = {
-    "wardline.core.registry": frozenset({"REGISTRY", "REGISTRY_VERSION", "RegistryEntry"}),
+    "wardline.core.registry": frozenset(
+        {"REGISTRY", "REGISTRY_VERSION", "RegistryEntry", "ArgKind", "MarkerCallForm"}
+    ),
 }
 
 

@@ -270,6 +270,19 @@ def test_native_first_party_core_import_resolves_without_project_module() -> Non
     assert out == [], f"native first-party import wrongly flagged: {out}"
 
 
+def test_native_first_party_registry_grammar_enums_import_resolves() -> None:
+    # ArgKind/MarkerCallForm ship alongside REGISTRY/REGISTRY_VERSION/RegistryEntry
+    # in the native/compiled surface (P14) — same native-module-absent scenario.
+    tree = ast.parse("from wardline.core.registry import ArgKind, MarkerCallForm\n")
+    out = diagnose_unknown_imports(
+        tree=tree,
+        module_path="wardline.scanner.boundary_types",
+        project_modules=frozenset(),  # native module NOT present
+        stdlib_keys=frozenset(),
+    )
+    assert out == [], f"native first-party import wrongly flagged: {out}"
+
+
 def test_native_first_party_decorators_import_resolves() -> None:
     tree = ast.parse("from wardline.decorators import trust_boundary\n")
     out = diagnose_unknown_imports(tree=tree, module_path="x", project_modules=frozenset(), stdlib_keys=frozenset())
