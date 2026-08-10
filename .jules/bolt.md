@@ -1,0 +1,3 @@
+## 2024-08-10 - Avoid Eager Generator Materialization in AST Traversal
+**Learning:** In python ast parsing, eagerly materializing generators using `list(ast.iter_child_nodes(node))` forces unnecessary memory allocation. Since `ast.iter_child_nodes` provides an iterator (a generator), they can be passed directly as iterables down the recursion chain, preventing the allocation overhead.
+**Action:** When implementing or modifying AST traversal functions, accept `Iterable[ast.AST]` and pass generators (like `ast.iter_child_nodes()`) directly instead of eagerly materializing them into lists (e.g., `list(ast.iter_child_nodes())`) to prevent unnecessary memory allocations.
