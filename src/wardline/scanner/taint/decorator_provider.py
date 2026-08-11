@@ -124,9 +124,10 @@ class _Walk:
         self.uncacheable: bool = False
         # Top-level packages the grammar's own seeds live in.
         self.pack_roots: frozenset[str] = frozenset()
-        # Top-level packages a seed hands over DIRECTLY, as a module object in its own
-        # globals — the pack's declared dispatch surface beyond its own root.
-        self.surface_roots: frozenset[str] = frozenset()
+        # Top-level packages beyond the seeds' own roots that belong to the grammar's
+        # surface. GROWN DURING THE WALK rather than precomputed — see
+        # ``_grow_surface_roots`` for why a precomputed set could not keep up.
+        self.surface_roots: set[str] = set()
 
 
 def _canonical_json(value: object) -> str:
@@ -914,6 +915,10 @@ def _function_identity(fn: object, walk: _Walk, depth: int) -> dict[str, object]
     globals_map = _probe(fn, "__globals__")
     globals_record: dict[str, object] = {}
     names = _reachable_names(code)
+    if isinstance(globals_map, dict):
+        # BEFORE descending: the members expanded below are exactly where a
+        # second-package dispatcher is reached, so the surface must already include it.
+        _grow_surface_roots(fn, names, globals_map, walk)
     if _computed_dispatch_is_unprovable(fn, names, walk):
         # COMPUTED-NAME DISPATCH — the demand set is not statically knowable.
         #
@@ -969,7 +974,48 @@ def _function_identity(fn: object, walk: _Walk, depth: int) -> dict[str, object]
 # in a function's reachable code means the set of members it touches cannot be read off
 # its code object. ``attrgetter``/``methodcaller`` are the ``operator`` spellings of the
 # same thing and collided identically.
-_COMPUTED_TRIGGER_NAMES = frozenset({"getattr", "vars", "globals", "attrgetter", "methodcaller"})
+# ONE deliberate enumeration pass over the language surface, not one name per round.
+# This axis has NO structural closure — no traversal enumerates "every way to resolve a
+# name at run time" — so it can only ever be an allow-list, and the honest way to close
+# it is a single pass with each entry MEASURED to collide before it is added.
+#
+#   attribute by computed name : getattr, __getattribute__, vars,
+#                                operator.attrgetter / methodcaller, inspect.getattr_static
+#   namespace by computed name : globals
+#   MODULE by computed name    : importlib.import_module, __import__, importlib.reload
+#   arbitrary code             : eval, exec
+#
+# Computed module ACQUISITION is the one the first five rounds of this guard missed
+# entirely: `importlib.import_module("mypack.levels." + name)` inside a seed puts the
+# target on DISK, never in the object graph, so the digest cannot key it however hard it
+# walks. It is in this set precisely because the digest knows it cannot see — measured
+# with an on-disk control (two package trees, behaviour verified to differ): COLLIDE.
+#
+# Note the contrast that makes this precise: a BUILD-time computed import is safe and is
+# measured safe — the factory shape of round 11 DIFFs correctly, because the resolved
+# target binds into the seed's closure where the digest keys it structurally. Only the
+# CALL-time form escapes.
+#
+# MEASURED AND DELIBERATELY EXCLUDED, because both discriminate structurally already:
+# `locals()[computed]` (the local is bound from a global the digest keys) and
+# `operator.itemgetter` (container contents are keyed). `setattr`/`delattr` mutate rather
+# than resolve. Adding those would be over-invalidation with no correctness gain.
+_COMPUTED_TRIGGER_NAMES = frozenset(
+    {
+        "getattr",
+        "__getattribute__",
+        "vars",
+        "globals",
+        "attrgetter",
+        "methodcaller",
+        "getattr_static",
+        "import_module",
+        "__import__",
+        "reload",
+        "eval",
+        "exec",
+    }
+)
 
 
 def _module_root(value: object) -> str:
@@ -1052,43 +1098,57 @@ def _is_foreign_distribution(root: str, pack_roots: frozenset[str]) -> bool:
     return root_dists.isdisjoint(pack_dists)
 
 
-def _surface_roots(boundary_types: tuple[BoundaryType, ...]) -> frozenset[str]:
-    """Roots a seed hands over DIRECTLY, as a module object in its own globals.
+def _is_grammar_surface(fn: object, walk: _Walk) -> bool:
+    """Is this function part of the grammar's own surface (its roots, or a grown one)?"""
+    root = _module_root(fn)
+    return root in walk.pack_roots or root in walk.surface_roots
 
-    ``import otherpkg.mod as sibling`` inside the grammar module declares ``otherpkg``
-    as part of the surface the pack is responsible for. A seed that instead names a
-    CLASS or a FUNCTION from a library (``LIB = jsonschema.Draft7Validator``) declares
-    no such thing — which is the distinction that keeps ``jsonschema``'s dynamically
-    built validator methods, two hops down and naming ``getattr``, from being read as
-    the pack's own dispatch.
+
+def _grow_surface_roots(fn: object, names: tuple[str, ...], globals_map: dict[str, object], walk: _Walk) -> None:
+    """Extend the grammar's surface from the SAME traversal that consults the guard.
+
+    THE ASYMMETRY THIS REMOVES, stated once so it cannot recur on a fourth axis: the
+    producer of ``surface_roots`` used to walk **the seed's own code object only**,
+    while the consumer (``_computed_dispatch_is_unprovable``) is consulted on **every
+    function the walk reaches, transitively**. Producer specific, consumer general.
+    Three rounds each closed one axis of that gap — dispatcher reach, then seed member
+    KIND, then seed reach DEPTH — and each fix was correct and left another axis.
+
+    Measured before this change, on the canonical pack shape this very test module
+    already uses (``seed`` -> ``_pick``): a seed calling a module-level helper that
+    reaches a second-package dispatcher collided **6/6** across both import spellings
+    and all three dispatch forms, with ``surface_roots == {'mypack'}`` instead of
+    ``{'otherpkg'}``. ``@functools.wraps`` was the same defect in another spelling.
+
+    Now the surface grows wherever the walk is standing on grammar code, so producer
+    and consumer read the same graph and the depth axis closes for every depth at once.
+    The distribution gate is applied at ADD time, so a third-party root never enters the
+    set in the first place.
     """
-    roots: set[str] = set()
-    for boundary in boundary_types:
-        target = boundary.seed
-        code = _code_of(target) or _code_of(_probe(target, "func"))
-        globals_map = _probe(target, "__globals__") or _probe(_probe(target, "func"), "__globals__")
-        if code is None or not isinstance(globals_map, dict):
+    if not _is_grammar_surface(fn, walk):
+        return
+    for name in names:
+        member = globals_map.get(name)
+        if member is None:
             continue
-        for name in _reachable_names(code):
-            member = globals_map.get(name)
-            if isinstance(member, ModuleType):
-                if not _is_structurally_opaque_module(member):
-                    named = str(_probe(member, "__name__") or "")
-                    if named:
-                        roots.add(named.split(".", 1)[0])
+        if isinstance(member, ModuleType):
+            if _is_structurally_opaque_module(member):
                 continue
-            # NOT a module: `from otherpkg.mod import pick` binds the FUNCTION, and its
-            # ``__module__`` names the package just as well. Reading only ModuleType
-            # members made the surface-root arm depend on the IMPORT SPELLING — measured,
-            # `from otherpkg.mod import pick` fired 0 of 6 cells while
-            # `import otherpkg.mod as sibling` fired 6 of 6, for identical behaviour.
-            # This is the same reach-agnosticism the DISPATCHER side already had; the
-            # SEED side was still globals-and-ModuleType-only.
-            if member is not None and not _is_structurally_opaque(member):
-                root = _module_root(member)
-                if root:
-                    roots.add(root)
-    return frozenset(roots)
+            root = str(_probe(member, "__name__") or "").split(".", 1)[0]
+        else:
+            # `from otherpkg.mod import pick` binds the FUNCTION, whose ``__module__``
+            # names the package just as well — the guard must not depend on the import
+            # spelling.
+            if _is_structurally_opaque(member):
+                continue
+            root = _module_root(member)
+        if (
+            root
+            and root not in walk.pack_roots
+            and root not in walk.surface_roots
+            and not _is_foreign_distribution(root, walk.pack_roots)
+        ):
+            walk.surface_roots.add(root)
 
 
 def _computed_dispatch_is_unprovable(fn: object, names: tuple[str, ...], walk: _Walk) -> bool:
@@ -1133,10 +1193,7 @@ def _computed_dispatch_is_unprovable(fn: object, names: tuple[str, ...], walk: _
         return False
     if not walk.pack_roots:
         return True
-    root = _module_root(fn)
-    if root in walk.pack_roots:
-        return True
-    return root in walk.surface_roots and not _is_foreign_distribution(root, walk.pack_roots)
+    return _is_grammar_surface(fn, walk)
 
 
 # Import machinery and filesystem paths in a module namespace: neither is behaviour,
@@ -1376,7 +1433,6 @@ def _grammar_digest(boundary_types: tuple[BoundaryType, ...]) -> str:
     # linear in distinct reachable objects while every body change still moves it.
     walk = _Walk()
     walk.pack_roots = frozenset(root for root in (_seed_roots(bt.seed) for bt in boundary_types) if root)
-    walk.surface_roots = _surface_roots(boundary_types)
     records: list[dict[str, object]] = [
         {
             "canonical_name": bt.canonical_name,

@@ -2651,3 +2651,290 @@ def test_the_distribution_gate_canary_can_die(_distribution_map) -> None:  # noq
         assert "+grammar:uncacheable-" in _fp(_bt(seed=_second_package_pack("EXTERNAL_RAW"))), (
             "the distribution gate is not load-bearing in this row"
         )
+
+
+# --- Round 12: PRODUCER reach must match CONSUMER reach ---------------------------
+#
+# `_surface_roots` used to walk the SEED'S OWN code object only, while the guard is
+# consulted on every function the walk reaches TRANSITIVELY. Producer specific,
+# consumer general — the same asymmetry as round 11, one level of reach out. Three
+# rounds closed it one axis at a time (dispatcher reach, seed member KIND, seed reach
+# DEPTH); the surface is now grown from the SAME traversal that consults the guard, so
+# the depth axis closes at every depth at once instead of one hop per round.
+
+
+def _r12_dispatcher(form: str, lvl: str) -> types.ModuleType:
+    return _r11_dispatcher(form, lvl)
+
+
+def _r12_helper_mediated(spelling: str, form: str, lvl: str) -> object:
+    """seed -> module-level helper -> second-package dispatcher.
+
+    This is the canonical pack shape: `_FIRST_MATCH_WINS` in this very module is
+    `seed` -> `_pick`, and `_MAX_VALUE_DEPTH`'s comment measures depth 7 on exactly
+    "a pack whose seed calls a module-level helper".
+    """
+    mod = _r12_dispatcher(form, lvl)
+    ns: dict = {"__name__": "mypack.grammar"}
+    if spelling == "import_module":
+        ns["sibling"] = mod
+        helper_src = "def _helper():\n    return sibling.pick()\n"
+    else:
+        ns["pick"] = mod.__dict__["pick"]
+        helper_src = "def _helper():\n    return pick()\n"
+    src = _FT + helper_src + "def seed(levels):\n    return FunctionTaint(_helper(), levels['to_level'])\n"
+    exec(compile(src, "m.py", "exec"), ns)  # noqa: S102
+    return ns["seed"]
+
+
+def _r12_wraps(form: str, lvl: str) -> object:
+    mod = _r12_dispatcher(form, lvl)
+    ns: dict = {"__name__": "mypack.grammar", "sibling": mod}
+    src = (
+        _FT + "import functools\n"
+        "def _inner():\n    return sibling.pick()\n"
+        "@functools.wraps(_inner)\n"
+        "def _helper():\n    return _inner()\n"
+        "def seed(levels):\n    return FunctionTaint(_helper(), levels['to_level'])\n"
+    )
+    exec(compile(src, "m.py", "exec"), ns)  # noqa: S102
+    return ns["seed"]
+
+
+def _r12_callable_object(form: str, lvl: str) -> object:
+    """Callable-object seed whose `__call__` hands off to a SECOND-package dispatcher.
+
+    Round 11's "callable-object seed FIRES" row put the helper in the grammar's own
+    namespace, so it fired through the pack-root arm and never exercised this one.
+    """
+    mod = _r12_dispatcher(form, lvl)
+    ns: dict = {"__name__": "mypack.grammar", "sibling": mod}
+    src = (
+        _FT + "class Seeder:\n"
+        "    def __call__(self, levels):\n"
+        "        return FunctionTaint(sibling.pick(), levels['to_level'])\n"
+        "seed = Seeder()\n"
+    )
+    exec(compile(src, "m.py", "exec"), ns)  # noqa: S102
+    return ns["seed"]
+
+
+_PRODUCER_REACH_CELLS = (
+    [("helper_mediated_import_module", form) for form in sorted(_DISPATCH_FORMS)]
+    + [("helper_mediated_from_import", form) for form in sorted(_DISPATCH_FORMS)]
+    + [("functools_wraps", form) for form in sorted(_DISPATCH_FORMS)]
+    + [("callable_object_seed", form) for form in sorted(_DISPATCH_FORMS)]
+)
+
+
+def _r12_build(shape: str, form: str, lvl: str) -> object:
+    if shape == "helper_mediated_import_module":
+        return _r12_helper_mediated("import_module", form, lvl)
+    if shape == "helper_mediated_from_import":
+        return _r12_helper_mediated("from_import", form, lvl)
+    if shape == "functools_wraps":
+        return _r12_wraps(form, lvl)
+    return _r12_callable_object(form, lvl)
+
+
+@pytest.mark.parametrize(("shape", "form"), _PRODUCER_REACH_CELLS)
+def test_producer_reach_matches_consumer_reach(shape: str, form: str) -> None:
+    """All twelve cells collided before the surface was grown from the traversal.
+
+    The control that hid them in every shipped test: the same indirection with
+    PACK-CODE dispatch fires through arm 1, so the defect only appears when the
+    dispatcher lives in a second package.
+    """
+    left_seed, right_seed = _r12_build(shape, form, "EXTERNAL_RAW"), _r12_build(shape, form, "ASSURED")
+    levels = {"to_level": TaintState.GUARDED}
+    assert left_seed(levels).body_taint is TaintState.EXTERNAL_RAW
+    assert right_seed(levels).body_taint is TaintState.ASSURED
+    left = _fp(_bt(seed=left_seed))
+    assert "+grammar:uncacheable-" in left, f"{shape}/{form} did not fail closed"
+    assert left != _fp(_bt(seed=right_seed))
+
+
+# --- D4's MAGNITUDE, pinned rather than merely described --------------------------
+
+
+@pytest.mark.parametrize(
+    ("module_name", "attribute"),
+    [("click", "Command"), ("rich.console", "Console"), ("requests", "Session"), ("jsonschema", "Draft7Validator")],
+)
+def test_libraries_stay_cacheable_only_under_installed_metadata(
+    module_name: str, attribute: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ "Re-bricks zero of seven libraries" holds ONLY under installed metadata.
+
+    With the grammar installed and the library root carrying NO metadata — vendored,
+    zip-imported, or a local source tree — the non-module surface-root branch makes all
+    four of these class-refs uncacheable, where round 10 kept them warm. That is D4's
+    size, not just its direction, and it is pinned here so the claim cannot drift back
+    to the unqualified version.
+    """
+    module = pytest.importorskip(module_name)
+    pack = _r7_pack(
+        "from wardline.core.taints import TaintState\n" + _FT + "def seed(levels):\n"
+        "    return FunctionTaint(TaintState.EXTERNAL_RAW if LIB else None, levels['to_level'])\n",
+        extra={"LIB": getattr(module, attribute)},
+    )
+    # (a) real, installed metadata: warm.
+    assert "uncacheable" not in _fp(_bt(seed=pack["seed"]))
+    # (b) grammar installed, library root without metadata: cold. KNOWN, residual D4.
+    monkeypatch.setattr(dp, "_PACKAGE_DISTRIBUTIONS", {"mypack": ("acme-trustpack",)})
+    assert "+grammar:uncacheable-" in _fp(_bt(seed=pack["seed"])), (
+        f"{module_name} no longer re-bricks without metadata — D4 shrank, update the residual"
+    )
+
+
+# --- Round 12 addendum: axis 2, closed by ONE enumeration pass --------------------
+#
+# The trigger set has NO structural closure — no traversal enumerates "every way to
+# resolve a name at run time" — so it can only ever be an allow-list. The honest way to
+# close it is a single deliberate pass over the language surface with every entry
+# MEASURED to collide before it is added, rather than one name per review round.
+
+_RESOLUTION_SHAPES = {
+    "eval_computed": "return eval('H.for_' + 'assured')()\n",
+    "exec_computed": "ns = {'H': H}\nexec('r = H.for_' + 'assured' + '()', ns)\nreturn ns['r']\n",
+    "dunder_getattribute": "return type(H).__getattribute__(H, 'for_' + 'assured')()\n",
+    "inspect_getattr_static": "import inspect\nreturn inspect.getattr_static(H, 'for_' + 'assured')()\n",
+}
+# Measured to DISCRIMINATE STRUCTURALLY, so deliberately NOT triggers — adding them
+# would be pure over-invalidation. `locals()` resolves a local bound from a global the
+# digest already keys; `itemgetter` indexes a container whose contents are keyed.
+_NON_TRIGGER_SHAPES = {
+    "locals_computed": "x = H\nreturn locals()['x'].for_assured()\n",
+    "itemgetter_on_a_dict": "import operator\nreturn operator.itemgetter('for_' + 'assured')(TABLE)()\n",
+}
+
+
+def _resolution_pack(body: str, lvl: str) -> object:
+    helper = _dispatch_helpers(lvl, "wl_res_helpers")
+    ns: dict = {"__name__": "mypack.grammar", "H": helper, "TABLE": {"for_assured": helper.for_assured}}
+    src = (
+        "from wardline.core.taints import TaintState\n"
+        + _FT
+        + "def _pick():\n"
+        + textwrap.indent(body, "    ")
+        + "def seed(levels):\n    return FunctionTaint(_pick(), levels['to_level'])\n"
+    )
+    exec(compile(src, "m.py", "exec"), ns)  # noqa: S102
+    return ns["seed"]
+
+
+@pytest.mark.parametrize("shape", sorted(_RESOLUTION_SHAPES))
+def test_runtime_name_resolution_shapes_fail_closed(shape: str) -> None:
+    """Every entry added to the trigger set was measured to collide first.
+
+    `dunder_getattribute` is residual R11's named gap — a hand-rolled
+    `type(m).__getattribute__(m, computed)` — now closed.
+    """
+    body = _RESOLUTION_SHAPES[shape]
+    left_seed, right_seed = _resolution_pack(body, "EXTERNAL_RAW"), _resolution_pack(body, "ASSURED")
+    levels = {"to_level": TaintState.GUARDED}
+    assert left_seed(levels).body_taint is TaintState.EXTERNAL_RAW
+    assert right_seed(levels).body_taint is TaintState.ASSURED
+    assert "+grammar:uncacheable-" in _fp(_bt(seed=left_seed)), f"{shape} did not fail closed"
+
+
+@pytest.mark.parametrize("shape", sorted(_NON_TRIGGER_SHAPES))
+def test_structurally_discriminating_shapes_are_not_triggers(shape: str) -> None:
+    """The other direction: do not pay over-invalidation for a shape already keyed."""
+    body = _NON_TRIGGER_SHAPES[shape]
+    left_seed, right_seed = _resolution_pack(body, "EXTERNAL_RAW"), _resolution_pack(body, "ASSURED")
+    left, right = _fp(_bt(seed=left_seed)), _fp(_bt(seed=right_seed))
+    assert "uncacheable" not in left, f"{shape} became a trigger — it discriminates already"
+    assert left != right, f"{shape} stopped discriminating; it now NEEDS to be a trigger"
+
+
+def test_call_time_computed_import_fails_closed(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Computed module ACQUISITION — the shape the first five rounds of this guard missed.
+
+    `importlib.import_module("mypack.levels." + name)` inside a seed puts the target on
+    DISK. It never enters the object graph, so the digest cannot key it however hard it
+    walks — which is exactly why it must fail closed. Controlled with two real package
+    trees whose behaviour is verified to differ before the digests are compared.
+    """
+    src = (
+        "from wardline.core.taints import TaintState\n" + _FT + "import importlib\n"
+        "def seed(levels):\n"
+        "    mod = importlib.import_module('wl_levels_t.' + 'assured')\n"
+        "    return FunctionTaint(mod.LEVEL, levels['to_level'])\n"
+    )
+
+    def build(lvl: str) -> tuple[object, str]:
+        root = tmp_path / lvl
+        pkg = root / "wl_levels_t"
+        pkg.mkdir(parents=True)
+        (pkg / "__init__.py").write_text("")
+        (pkg / "assured.py").write_text(f"from wardline.core.taints import TaintState\nLEVEL = TaintState.{lvl}\n")
+        ns: dict = {"__name__": "mypack.grammar"}
+        exec(compile(src, "m.py", "exec"), ns)  # noqa: S102
+        return ns["seed"], str(root)
+
+    def call(seed, root: str) -> TaintState:  # noqa: ANN001
+        for name in [m for m in list(sys.modules) if m.startswith("wl_levels_t")]:
+            monkeypatch.delitem(sys.modules, name, raising=False)
+        monkeypatch.syspath_prepend(root)
+        try:
+            return seed({"to_level": TaintState.GUARDED}).body_taint
+        finally:
+            sys.path.remove(root)
+
+    left_seed, left_root = build("EXTERNAL_RAW")
+    right_seed, right_root = build("ASSURED")
+    assert call(left_seed, left_root) is TaintState.EXTERNAL_RAW
+    assert call(right_seed, right_root) is TaintState.ASSURED
+    assert "+grammar:uncacheable-" in _fp(_bt(seed=left_seed))
+
+
+def test_build_time_computed_import_needs_no_guard() -> None:
+    """The contrast that makes the call-time rule precise.
+
+    A BUILD-time computed import resolves before the digest runs and binds its target
+    into the seed's closure, where the digest keys it structurally. It DIFFs without the
+    guard, and adding one would be pure over-invalidation.
+    """
+
+    def mk(lvl: str) -> object:
+        ns: dict = {"__name__": "mypack.grammar", "H": _dispatch_helpers(lvl, "wl_bt_helpers")}
+        exec(  # noqa: S102
+            compile(
+                _FT + "def make():\n    fn = getattr(H, 'for_' + 'assured')\n"
+                "    def seed(levels):\n        return FunctionTaint(fn(), levels['to_level'])\n    return seed\n",
+                "m.py",
+                "exec",
+            ),
+            ns,
+        )
+        return ns["make"]()
+
+    left, right = _fp(_bt(seed=mk("EXTERNAL_RAW"))), _fp(_bt(seed=mk("ASSURED")))
+    assert "uncacheable" not in left
+    assert left != right
+
+
+def test_library_roots_are_kept_out_of_the_surface_by_the_distribution_gate() -> None:
+    """The structural fix's own acceptance check, and an honest record of its cost.
+
+    Growing the surface from the full traversal means a library root is OFFERED at every
+    grammar-surface function, not just at the seed. Measured with the gate live,
+    `surface_roots` stays EMPTY for a library-referencing pack; with the gate neutered it
+    fills with `urllib3`, `charset_normalizer`, `attr`, `idna`, `rpds`, `referencing` and
+    all four class-refs go uncacheable. The whole discrimination burden for library cases
+    therefore rests on `_is_foreign_distribution` — residual D4, which is live-broken in
+    both directions. That is stated, not hidden.
+    """
+    requests = pytest.importorskip("requests")
+    pack = _r7_pack(
+        "from wardline.core.taints import TaintState\n" + _FT + "def seed(levels):\n"
+        "    return FunctionTaint(TaintState.EXTERNAL_RAW if LIB else None, levels['to_level'])\n",
+        extra={"LIB": requests.Session},
+    )
+    assert "uncacheable" not in _fp(_bt(seed=pack["seed"]))
+    with pytest.MonkeyPatch.context() as patched:
+        patched.setattr(dp, "_is_foreign_distribution", lambda *_a, **_k: False)
+        assert "+grammar:uncacheable-" in _fp(_bt(seed=pack["seed"])), (
+            "the distribution gate is no longer load-bearing here — re-check D4's scope"
+        )
