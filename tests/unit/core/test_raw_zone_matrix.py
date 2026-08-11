@@ -14,10 +14,24 @@ and ``test_modulate_never_escalates`` state that in the words a future reader
 will otherwise re-derive backwards.
 
 Tests marked BRIEF are the Task-15 mandated pins, transcribed verbatim from the
-task brief. Tests marked ADDED close axes no mandated row varies (see the report:
-the ``Severity.NONE`` base is the one ``_DOWNGRADE`` entry the mandated 32-cell
-product cannot reach, and it is the base every FACT rule — PY-WL-130's siblings
-``WLN-ENGINE-UNKNOWN-MARKER`` / ``WLN-ENGINE-UNREADABLE-MARKER-VALUE`` — uses).
+task brief. Tests marked ADDED close axes no mandated row varies — chiefly the
+``Severity.NONE`` base, the one ``_DOWNGRADE`` entry the mandated 32-cell product
+cannot reach.
+
+That NONE-base row is DEFENSIVE, not a live path, and the distinction is measured
+(2026-08-12) rather than assumed: no registered rule has
+``base_severity == Severity.NONE`` (all 27 are ERROR/WARN/INFO), no registered
+rule is non-DEFECT, and the operator-override route is closed at
+``scanner/rules/__init__.py:232`` — which rejects a NONE override for a DEFECT
+rule, and every registered rule is one. The FACT findings that DO carry
+``Severity.NONE`` (``WLN-ENGINE-UNKNOWN-MARKER`` at ``pipeline.py:319``,
+``WLN-ENGINE-UNREADABLE-MARKER-VALUE`` at ``:366``) are constructed directly and
+never call ``modulate``, so they are not reachable evidence for this row either.
+Pinning it is still legitimate — ``modulate`` is declared total over
+``Severity``, the base axis is genuinely one no mandated row varies, and a
+partial function here would crash rather than mis-severity — but the claim is
+"no caller currently passes a NONE base", NOT "this is the base the FACT rules
+use".
 """
 
 from __future__ import annotations
@@ -64,16 +78,15 @@ def test_modulate_none_base_row(taint: TaintState) -> None:
 
     Every mandated row assumes ``base != Severity.NONE``, so the
     ``Severity.NONE: Severity.NONE`` entry of ``_DOWNGRADE`` is unreachable from
-    the 32-cell product. ``Severity.NONE`` is the base severity of every FACT
-    rule the marker work shipped (``WLN-ENGINE-UNKNOWN-MARKER`` /
-    ``WLN-ENGINE-UNREADABLE-MARKER-VALUE``), so both ways of getting that entry
-    wrong are live, and BOTH were measured against the mandated matrix:
+    the 32-cell product. DEFENSIVE — no caller currently passes a NONE base (see
+    the module docstring for the measurement) — but ``modulate`` is declared
+    total over ``Severity``, and both ways of getting that entry wrong were
+    measured against the mandated matrix, which survives BOTH:
 
       * DELETE it from the source map -> the 32 mandated cells stay green while
-        ``modulate(NONE, GUARDED)`` raises ``KeyError`` (a crash on every FACT
-        finding at a partial tier);
+        ``modulate(NONE, GUARDED)`` raises ``KeyError``;
       * make it ESCALATE (``Severity.NONE: Severity.INFO``) -> the 32 mandated
-        cells stay green while a FACT becomes a gateable INFO.
+        cells stay green while a NONE base comes out as a gateable INFO.
 
     ONE assertion, deliberately. At a NONE base every branch of the mandated
     expectation collapses to ``Severity.NONE`` (nothing downgrades below the

@@ -57,6 +57,32 @@ def _metrics(counts: dict[str, int]) -> Finding:
     )
 
 
+def _no_counts() -> Finding:
+    """A metrics finding whose properties carry no ``taint_source_counts`` key."""
+    return Finding(
+        rule_id="WLN-ENGINE-METRICS",
+        message="m",
+        severity=Severity.NONE,
+        kind=Kind.METRIC,
+        location=Location(path="<engine>"),
+        fingerprint=compute_finding_fingerprint(rule_id="WLN-ENGINE-METRICS", path="<engine>"),
+        properties={"files_scanned": 3},
+    )
+
+
+def _bad_counts() -> Finding:
+    """A metrics finding whose ``taint_source_counts`` is not a mapping."""
+    return Finding(
+        rule_id="WLN-ENGINE-METRICS",
+        message="m",
+        severity=Severity.NONE,
+        kind=Kind.METRIC,
+        location=Location(path="<engine>"),
+        fingerprint=compute_finding_fingerprint(rule_id="WLN-ENGINE-METRICS", path="<engine>"),
+        properties={"taint_source_counts": [("anchored", 3)]},
+    )
+
+
 def test_denominator_constants_are_pinned() -> None:
     """BRIEF."""
     assert _MIN_FUNCTIONS == 5
@@ -138,6 +164,54 @@ def test_every_named_bucket_is_classified_by_the_pinned_tuple() -> None:
         recognised = bucket in _RECOGNIZED_BOUNDARY_BUCKETS
         assert posture.inert is not recognised, f"{bucket} classified against the pinned tuple"
         assert posture.recognized_boundaries == (3 if recognised else 0)
+
+
+def test_absent_histogram_fails_OPEN_defect_record() -> None:
+    """DEFECT RECORD — not a contract, and NOT the behaviour anyone should want.
+
+    ``compute_resolution_posture`` answers the question "is this gate enforcing?"
+    from one datum: the ``taint_source_counts`` histogram on
+    ``WLN-ENGINE-METRICS``. When that datum is ABSENT the function does not say
+    "unknown" — it returns ``inert=False, reason=None``, i.e. *the gate looks
+    healthy*. That is catalogue #8: a guard that answers from a datum silently
+    switches off wherever the datum is absent, and here absence routes to the
+    UNSAFE answer. Every other pin in this module is an over-warn-direction pin;
+    this is the under-warn direction, and it had no coverage at all.
+
+    MEASURED LIVE, 2026-08-12 — this is not hypothetical. ``cli/scan.py:774``
+    guards the Python inert warning with ``lang != "rust"``, but
+    ``core/run.py:817`` (the shared gate decision, which the CLI and the MCP scan
+    tool both consume) has NO such guard, and the Rust pipeline emits no
+    ``WLN-ENGINE-METRICS``. Two scans of the SAME shape — six functions, zero
+    trust declarations, one command-execution sink:
+
+      * Python, ``--fail-on-inert``: ``gate: FAILED (--fail-on-inert)``, exit 1.
+      * Rust,   ``--fail-on-inert``: ``gate: PASSED (--fail-on-inert only) —
+        0 recognized trust boundaries (fail_on_inert passed)``, exit 0.
+
+    So ``--fail-on-inert`` SILENTLY NO-OPS on Rust: a gate that does not gate,
+    with a reason string that recites the trip condition and then reports a pass.
+    (The Rust surface has its own separate "no function declares @trusted"
+    warning, which did fire — the signal exists, the GATE does not.)
+
+    WHEN THIS IS FIXED, INVERT THIS TEST — do not delete it. It exists to stop
+    the fail-open being re-introduced quietly, and to stop anyone reading the
+    surrounding pins as evidence that the absent-histogram case was considered
+    and blessed. It was considered and found broken.
+    """
+    for label, findings in (
+        ("no findings at all", []),
+        ("metrics finding with no histogram", [_metrics({})]),
+        ("histogram key absent", [_no_counts()]),
+        ("histogram present but not a dict", [_bad_counts()]),
+    ):
+        posture = compute_resolution_posture(findings)
+        assert posture.inert is False, label
+        assert posture.reason is None, label
+        assert posture.functions_analyzed == 0, label
+        # The tell: zero analyzed functions and a confident not-inert verdict.
+        # A sound implementation would have a third state here, or would trip.
+        assert posture.recognized_boundaries == 0, label
 
 
 def test_reason_is_present_exactly_when_inert() -> None:

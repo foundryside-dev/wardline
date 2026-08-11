@@ -19,8 +19,9 @@ from __future__ import annotations
 import itertools
 from pathlib import Path
 
+from wardline.core.finding import Kind
 from wardline.core.run import run_scan
-from wardline.core.taints import TRUST_RANK, TaintState, least_trusted, taint_join
+from wardline.core.taints import RAW_ZONE, TRUST_RANK, TaintState, least_trusted, taint_join
 
 # The states any source can introduce into the live pipeline (audit linchpin).
 REACHABLE: frozenset[TaintState] = frozenset(
@@ -43,9 +44,27 @@ UNREACHABLE: frozenset[TaintState] = NEVER_PRODUCED | RESTORATION_ONLY
 
 
 def test_unreachable_set_is_the_two_partitions() -> None:
-    """BRIEF (P5)."""
+    """BRIEF (P5), plus the membership anchors the mandated form omits.
+
+    The two mandated asserts constrain the UNION and the pairwise disjointness,
+    which both hold for ANY placement of the three complement states: measured,
+    moving ``UNKNOWN_ASSURED`` from ``RESTORATION_ONLY`` into ``NEVER_PRODUCED``
+    leaves every test in this file green, because ``UNREACHABLE`` is unchanged
+    and ``isdisjoint`` compares two literals in this same file. So the split
+    made the ``NEVER_PRODUCED`` side falsifiable (via the ``taint_join``
+    contrast below) and the ``RESTORATION_ONLY`` side vacuous ON PLACEMENT.
+
+    The two asserts below anchor placement against the ENGINE rather than
+    against this file: ``MIXED_RAW`` is a raw-zone state (a provenance clash is
+    untrusted, and ``modulate`` silences it), whereas the restoration states are
+    deliberately NOT raw-zone (uplifted, unknown-provenance — they downgrade one
+    step instead of going silent). Mis-place either partition and one of them
+    reds.
+    """
     assert frozenset(TaintState) - REACHABLE == UNREACHABLE
     assert NEVER_PRODUCED.isdisjoint(RESTORATION_ONLY)
+    assert NEVER_PRODUCED <= RAW_ZONE
+    assert RESTORATION_ONLY.isdisjoint(RAW_ZONE)
 
 
 def test_never_produced_survives_the_arrival_of_restoration_only() -> None:
@@ -154,3 +173,78 @@ def test_no_unreachable_state_in_scan_output(tmp_path: Path) -> None:
             )
     # Guard against the test silently passing on empty maps.
     assert saw_some, "scan produced no taint entries — corpus did not exercise the engine"
+
+
+# ── The declaration false green, pinned end-to-end. ──────────────────────────
+# The programme's governing fact (measured, wardline-e88c098f91) is that declaring
+# trust is what SUBJECTS a function to the leak rules; an undeclared function is
+# resolved to UNKNOWN_RAW, which is RAW_ZONE, which modulate maps to NONE, which
+# _sink_helpers.py:849 turns into `continue`. The severity-model half of that chain
+# is pinned by test_raw_zone_matrix.py. The half NOT pinned anywhere was the FIRST
+# link — undeclared resolving to UNKNOWN_RAW at all — so the chain was verified
+# from its second step onward. This pins it from the source.
+
+_SINK_BODY = "def run_it(arg):\n    s = read_input(arg)\n    subprocess.run(s, shell=True)\n"
+_UNDECLARED_SINK = f"import subprocess\n\n\ndef read_input(p):\n    return p\n\n\n{_SINK_BODY}"
+_DECLARED_SINK = (
+    "import subprocess\n\n"
+    "from wardline.decorators import external_boundary, trusted\n\n\n"
+    "@external_boundary\n"
+    "def read_input(p):\n    return p\n\n\n"
+    f"@trusted\n{_SINK_BODY}"
+)
+
+
+def _scan_source(tmp_path: Path, name: str, source: str) -> tuple[list[str], dict[str, TaintState]]:
+    proj = tmp_path / name
+    proj.mkdir()
+    (proj / "svc.py").write_text(source, encoding="utf-8")
+    result = run_scan(proj)
+    ctx = result.context
+    assert ctx is not None
+    return [f.rule_id for f in result.findings if f.kind is Kind.DEFECT], dict(ctx.project_taints)
+
+
+def test_undeclared_sink_is_silent_and_declaring_trust_is_what_arms_it(tmp_path: Path) -> None:
+    """The false green and its cure, over the SAME sink, in both directions.
+
+    Byte-for-byte the same ``subprocess.run(s, shell=True)`` reached by the same
+    argument. The ONLY difference is the two decorators. Undeclared: every
+    function resolves to ``UNKNOWN_RAW`` and the scan reports ZERO defects —
+    a ``--fail-on ERROR`` gate over this file passes green while checking
+    nothing. Declared: the sink carrier becomes ``INTEGRAL``, its source becomes
+    ``EXTERNAL_RAW``, and PY-WL-112 fires.
+
+    This is the direction that surprises people, so it is pinned as a pair:
+    demoting a seed toward the raw zone does NOT fail closed, it goes SILENT.
+    A one-sided version of this test would be satisfied by an engine that never
+    fires at all (undeclared half) or by one that fires on everything (declared
+    half); only the pair excludes both.
+    """
+    undeclared_defects, undeclared_taints = _scan_source(tmp_path, "undeclared", _UNDECLARED_SINK)
+    declared_defects, declared_taints = _scan_source(tmp_path, "declared", _DECLARED_SINK)
+
+    # Direction 1 — the false green. The first link of the silencing chain:
+    # undeclared resolves to UNKNOWN_RAW, and UNKNOWN_RAW is RAW_ZONE.
+    assert undeclared_taints == {
+        "svc.read_input": TaintState.UNKNOWN_RAW,
+        "svc.run_it": TaintState.UNKNOWN_RAW,
+    }
+    assert set(undeclared_taints.values()) <= RAW_ZONE
+    assert undeclared_defects == [], (
+        f"an undeclared function piping its argument into subprocess.run(shell=True) "
+        f"produced {undeclared_defects} — the documented silence has changed; if the "
+        f"engine now fires here, the false-green mechanism this pins has been fixed and "
+        f"this test should be re-derived, not deleted"
+    )
+
+    # Direction 2 — the same sink, armed by declaration alone.
+    assert declared_taints == {
+        "svc.read_input": TaintState.EXTERNAL_RAW,
+        "svc.run_it": TaintState.INTEGRAL,
+    }
+    assert "PY-WL-112" in declared_defects
+    # ...and the arming is NOT an artifact of the sink being differently reachable:
+    # the executable body is character-identical across the two corpora.
+    assert _SINK_BODY in _UNDECLARED_SINK
+    assert _SINK_BODY in _DECLARED_SINK
