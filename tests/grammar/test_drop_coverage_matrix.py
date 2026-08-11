@@ -8,7 +8,38 @@ WLN-ENGINE-UNREADABLE-MARKER-VALUE (a Severity.NONE FACT — every builtin LEVEL
 value that stays unreadable after P3 form 5), and the ONE remaining deliberate
 silence, a shadowed builtin vocabulary root, which disables the marker candidate
 so no builtin LEVEL slot exists at all. A statically-unreadable builtin LEVEL
-value is NEVER silent, and anything else going silent is a regression.
+value is NEVER silent.
+
+THE SCOPE OF THAT CLAIM, WHICH IS NARROWER THAN IT READS. The partition covers
+shapes in which the engine RECOGNISES A BUILTIN MARKER AT ALL — that is, the
+decorator's resolved FQN lands under a builtin vocabulary root
+(`wardline.decorators` / `weft_markers`). A decorator whose resolved root is a
+PROJECT module never enters the partition, and "anything else going silent is a
+regression" does not reach it.
+
+That is not hypothetical. MEASURED 2026-08-12, an ordinary cross-module
+re-export of a builtin marker is silent on ALL FOUR channels:
+
+    pkg/al.py  : from wardline.decorators import trusted as T
+    pkg/svc.py : from pkg.al import T
+                 @T(level='ASSURED')   -> no finding; NOT declared; UNKNOWN_RAW
+
+Silent for a well-formed marker, a shape-malformed one, a readable-but-invalid
+level and an unreadable level alike, where the same four spellings imported
+DIRECTLY produce the seed / PY-WL-130 / PY-WL-114 / the FACT respectively. The
+cause is the guard-answers-from-a-datum shape: `unknown_vocabulary_marker`
+decides "is this ours?" from the resolved FQN's root, so `pkg.al.T` reads as NOT
+APPLICABLE rather than UNKNOWN and no channel claims it. A GHOST export *under* a
+builtin root does correctly take WLN-ENGINE-UNKNOWN-MARKER; this shape escapes
+precisely because its root is a project module.
+
+This is a live false green in the engine (the direct import declares the function
+and subjects it to the tier-gated leak rules; the re-export leaves it in
+RAW_ZONE where those rules go quiet). It is filed separately and is NOT this
+module's to fix. Deliberately NO TEST BELOW PINS IT: a test asserting that
+silence would convert a defect into a shipped contract, and the next person to
+fix it would have to argue with this file. It is recorded here as an uncovered
+axis, in prose, on purpose.
 
 ORDERING IS NORMATIVE AND THIS MATRIX PINS IT. Task 5 runs call_shape_offences
 BEFORE the levels loop, so a marker whose call shape is malformed drops its seed
@@ -329,9 +360,12 @@ def test_shadowed_root_silence_is_the_shadow_and_not_another_gate(tmp_path: Path
     # point of rejecting a shadowed vocabulary root (a project-local `wardline/`
     # package could otherwise spoof @trusted and suppress real taint->sink flows).
     #
-    # Absence is asserted over EVERY channel, not just PY-WL-130/114: a shadow that
-    # rerouted the site onto WLN-ENGINE-UNKNOWN-MARKER would be a fifth channel, and
-    # the partition claims there are four.
+    # ABSENCE IS ASSERTED OVER THE WHOLE FINDING SET, not over a hand-picked id list.
+    # An earlier revision of this comment claimed "every channel" while intersecting
+    # with `_ALL_CHANNELS` — five ids chosen by hand — so a reroute onto any OTHER
+    # `WLN-ENGINE-*` id would have read as a pass. Measured 2026-08-12: these fixtures
+    # emit `WLN-ENGINE-METRICS` and nothing else, on all four shapes, so subtracting
+    # that one id is stable and strictly stronger than the intersection was.
     proj = tmp_path / "proj"
     proj.mkdir()
     for rel, text in _SHADOW_TREE.items():
@@ -340,7 +374,7 @@ def test_shadowed_root_silence_is_the_shadow_and_not_another_gate(tmp_path: Path
         path.write_text(text, encoding="utf-8")
     (proj / "svc.py").write_text(f"{_IMPORTS}{_RUNTIME_VALUES}{deco}\ndef f(p):\n    return p\n", encoding="utf-8")
     result = run_scan(proj)
-    fired = {f.rule_id for f in result.findings} & _ALL_CHANNELS
+    fired = {f.rule_id for f in result.findings} - {"WLN-ENGINE-METRICS"}
     assert not fired, f"{deco}: shadowed root must be silent, fired {sorted(fired)}"
     assert result.context is not None
     # The seed is gone too — silence WITHOUT a dropped seed would be the false green.
