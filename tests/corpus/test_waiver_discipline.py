@@ -1,7 +1,7 @@
-"""T1.4 waiver discipline: every waiver carries a reason, and waiver count does not
-outgrow rule count. This guards the repo's own (dogfood) scan config — not the corpus
-FP gate (which scans tests/corpus/fixtures with no config) — so suppression cannot
-quietly accumulate faster than the rule set that justifies it (an FP-economics smell)."""
+"""T1.4 waiver discipline: every waiver carries a reason, and the waiver count stays
+within a fixed, reviewed budget. This guards the repo's own (dogfood) scan config — not
+the corpus FP gate (which scans tests/corpus/fixtures with no config) — so suppression
+cannot quietly accumulate beyond its reviewed budget (an FP-economics smell)."""
 
 from __future__ import annotations
 
@@ -11,7 +11,6 @@ import pytest
 
 from wardline.core.errors import ConfigError
 from wardline.core.waivers import load_project_waivers, parse_waivers
-from wardline.scanner.rules import _ALL_RULE_CLASSES
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 _VALID_FP = "a" * 64  # 64-char lowercase hex
@@ -38,10 +37,19 @@ def test_repo_waivers_all_have_reasons():
         assert waiver.reason and waiver.reason.strip(), f"waiver {waiver.fingerprint} has no reason"
 
 
-def test_waiver_count_not_outgrowing_rule_count():
+# P13: decoupled from rule count. The old `<= len(_ALL_RULE_CLASSES)` ceiling
+# silently grew from 4 to 27 as rules shipped — a suppression budget must not
+# scale with the detection surface it suppresses. The repo carries ZERO waivers
+# today. Five is the reviewed risk ceiling (not current usage): enough room for
+# explicitly triaged false positives without coupling growth to the number of
+# rules. Raising this constant requires a dedicated review with a named owner
+# and rationale; adding a rule never creates suppression headroom as a side effect.
+_WAIVER_CEILING = 5
+
+
+def test_waiver_count_within_fixed_ceiling():
     waiver_count = len(_repo_waivers())
-    rule_count = len(_ALL_RULE_CLASSES)  # the curated builtin rule set (4 today)
-    assert waiver_count <= rule_count, (
-        f"waiver count {waiver_count} exceeds rule count {rule_count} — "
-        "suppression is outgrowing the rule set (FP-economics breach)"
+    assert waiver_count <= _WAIVER_CEILING, (
+        f"waiver count {waiver_count} exceeds the fixed ceiling {_WAIVER_CEILING} — "
+        "suppression is outgrowing its reviewed budget (FP-economics breach)"
     )
