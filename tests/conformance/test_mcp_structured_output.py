@@ -334,6 +334,7 @@ def test_attest_and_verify_attestation_structured_output(tmp_path: Path, monkeyp
 
     verified = _validated(server, "verify_attestation", {"bundle": bundle})
     assert verified["signature_valid"] is True
+    assert verified["schema_recognized"] is True
 
 
 def test_file_finding_structured_output(tmp_path: Path) -> None:

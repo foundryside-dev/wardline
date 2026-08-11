@@ -61,6 +61,11 @@ from wardline.core.run import run_scan
 from wardline.core.waivers import load_project_waivers
 
 ATTEST_SCHEMA = "wardline-attest-2"
+# Consumer-first dual-read (declaration-surface-v2 §13.1 item 2): the verifier
+# RECOGNISES attest-3 before the builder EMITS it (S1). LITERALS on purpose —
+# deriving the first element from ATTEST_SCHEMA would silently drop v2 from the
+# accepted set the moment S1 bumps the constant. Order = oldest first.
+ACCEPTED_ATTEST_SCHEMAS: tuple[str, ...] = ("wardline-attest-2", "wardline-attest-3")
 # `git status` must not execute repo-local helpers while attesting untrusted trees.
 _SAFE_GIT_CONFIG = ("-c", "core.fsmonitor=false")
 
@@ -335,6 +340,14 @@ def verify_attestation(
     and works fully offline with the shared ``key``. A wrong key or any tampered payload
     field yields ``signature_valid=False``.
 
+    An unrecognised schema reports ``schema_recognized=False`` — distinguishable from a
+    wrong key or tamper even when the bundle was re-signed over its own unknown tag (the
+    signer binds the recorded schema). A recognised non-current schema
+    (``wardline-attest-3``) signature-verifies against its own recorded tag;
+    ``--reproduce`` re-derives the CURRENT builder's payload, so a v3 bundle verified
+    before S1 honestly reports the v3-only keys as mismatches (the ``sei_diagnostics``
+    precedent).
+
     When ``reproduce=True`` and ``root`` is given, the payload is re-derived at the
     CURRENT tree and its canonical bytes compared to the recorded payload's; equal →
     ``reproduced=True``, otherwise ``mismatches`` lists the differing top-level payload
@@ -365,9 +378,10 @@ def verify_attestation(
     recorded_payload: dict[str, Any] = recorded_payload_raw
     expected = _sign(recorded_payload, key, schema=schema if isinstance(schema, str) else "")["value"]
     signature = bundle.get("signature") or {}
+    schema_recognized = isinstance(schema, str) and schema in ACCEPTED_ATTEST_SCHEMAS
     signature_valid = (
         isinstance(signature, dict)
-        and schema == ATTEST_SCHEMA
+        and schema_recognized
         and signature.get("alg") == "HMAC-SHA256"
         and signature.get("key_id") == key_id(key)
         and hmac.compare_digest(expected, str(signature.get("value") or ""))
@@ -377,6 +391,7 @@ def verify_attestation(
 
     if not reproduce or root is None:
         return {
+            "schema_recognized": schema_recognized,
             "signature_valid": signature_valid,
             "reproduced": None,
             "mismatches": [],
@@ -397,6 +412,7 @@ def verify_attestation(
     )
     if _canonical_bytes(rederived) == _canonical_bytes(recorded_payload):
         return {
+            "schema_recognized": schema_recognized,
             "signature_valid": signature_valid,
             "reproduced": True,
             "mismatches": [],
@@ -406,6 +422,7 @@ def verify_attestation(
     keys = sorted(set(recorded_payload) | set(rederived))
     mismatches = [k for k in keys if recorded_payload.get(k) != rederived.get(k)]
     return {
+        "schema_recognized": schema_recognized,
         "signature_valid": signature_valid,
         "reproduced": False,
         "mismatches": mismatches,

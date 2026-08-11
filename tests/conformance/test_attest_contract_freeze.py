@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from wardline.core.attest import ATTEST_SCHEMA, build_attestation
+from wardline.core.attest import ACCEPTED_ATTEST_SCHEMAS, ATTEST_SCHEMA, build_attestation
 
 _KEY = "0" * 64
 
@@ -41,3 +41,39 @@ def test_boundary_shape_frozen(tmp_path: Path) -> None:
 def test_consumer_contract_doc_exists() -> None:
     doc = Path(__file__).resolve().parents[2] / "docs" / "contracts" / "wardline-attest-2.md"
     assert doc.is_file(), "publish the wardline-attest-2 consumer contract"
+
+
+def test_accepted_schemas_are_frozen_literals() -> None:
+    """The EMITTED tag stays v2 while the ACCEPTED set dual-reads v2+v3.
+
+    The accepted set is written as literals in source so that bumping ATTEST_SCHEMA in
+    S1 cannot silently drop v2 from it; this pin freezes both halves independently.
+    """
+    assert ATTEST_SCHEMA == "wardline-attest-2"
+    assert ACCEPTED_ATTEST_SCHEMAS == ("wardline-attest-2", "wardline-attest-3")
+    # The emitted tag must be a member of the accepted set — a builder that emitted a
+    # tag its own verifier rejects would be a self-inconsistent contract.
+    assert ATTEST_SCHEMA in ACCEPTED_ATTEST_SCHEMAS
+
+
+def test_attest_3_contract_doc_states_its_draft_terms() -> None:
+    """Pin the v3 contract's CONTENT, not its existence.
+
+    An ``is_file()`` check passes on an empty file. These are the claims a consumer
+    reads the document for: that it is a non-emitting draft, that the two verification
+    profiles are distinguished, and that the shared vector and its test-only key are
+    named. Blank any of those sections and this reds.
+    """
+    doc = Path(__file__).resolve().parents[2] / "docs" / "contracts" / "wardline-attest-3.md"
+    assert doc.is_file(), "publish the wardline-attest-3 consumer contract"
+    text = doc.read_text(encoding="utf-8")
+    for required in (
+        "wardline-attest-3",
+        "DRAFT",  # status: Wardline does not emit v3 yet
+        "Rollout Fence",  # the gate that governs when it may
+        "schema_recognized",  # the dual-read field the verifier reports
+        "signature_verified: false",  # the Warpline runtime's always-false profile
+        "tests/conformance/fixtures/wardline-attest-3.vector.json",  # the shared vector
+        "wardline-attest-3-conformance-vector-key",  # the public, test-only key
+    ):
+        assert required in text, f"wardline-attest-3.md must state {required!r}"

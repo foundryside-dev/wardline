@@ -1,0 +1,59 @@
+{
+  "payload": {
+    "attested_at": "2026-08-09",
+    "authorship_note": "HMAC attests domain-internal integrity, not third-party identity; authorship lives in git.",
+    "boundaries": [
+      {
+        "content_hash": "blake3:cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+        "qualname": "svc.fetch_order",
+        "sei": "loomweave:eid:9adc480cd5aa4d71503c19fd8b29907e",
+        "tier": "ASSURED",
+        "verdict": "clean"
+      }
+    ],
+    "commit": "ed7bfe860d83000000000000000000000000dead",
+    "declaration_counts": {
+      "contracts": 0,
+      "dependency_taint": 0,
+      "facets": 1,
+      "restoration": 0,
+      "sensitivity": 0
+    },
+    "declaration_debt": {
+      "lapsed_expiries": 0,
+      "record_only_claims": 0,
+      "stale_dependency_pins": 0
+    },
+    "declarations": [
+      {
+        "content_digest": "sha256:1212121212121212121212121212121212121212121212121212121212121212",
+        "declaration_id": "wlds1:efefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefef",
+        "kind": "facet",
+        "subject": "svc.write_audit_event",
+        "verification_class": "machine_verified"
+      }
+    ],
+    "dependency_taint_digest": null,
+    "dirty": false,
+    "grants": {
+      "strict_defaults": false,
+      "trust_dependency_taint": false,
+      "trusted_packs": []
+    },
+    "posture": {
+      "functions_analyzed": 12,
+      "inert": false,
+      "recognized_boundaries": 3
+    },
+    "ruleset_hash": "sha256:abababababababababababababababababababababababababababababababab",
+    "sei_diagnostics": [],
+    "sei_source": "loomweave",
+    "wardline_version": "1.5.0"
+  },
+  "schema": "wardline-attest-3",
+  "signature": {
+    "alg": "HMAC-SHA256",
+    "key_id": "4486a79d",
+    "value": "b3ffd116c35b7adac964e597173855195ae694fc287211fa210ce8be223fd791"
+  }
+}

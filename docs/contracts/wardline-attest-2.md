@@ -45,12 +45,40 @@ clean at a commit*. **Wardline is the trust authority; warpline never declares c
    of all non-clean outcomes.
 3. **`enrichment_reasons` triple** — the three codes warpline reports when it cannot
    assert proven-good:
-   - `not_attested` — no bundle for this commit (absent / commit mismatch).
+   - `not_attested` — no usable bundle for this commit: absent, commit mismatch, an
+     unrecognised `schema` tag, or bytes that did not arrive verified from the
+     key-holding domain.
    - `sei_unkeyed` — bundle present but `sei_source == "unavailable"`, so no boundary
      matches this SEI.
    - `verdict_unknown` — entity SEI-matched but `verdict == "unknown"`.
 4. **Signature caveat:** HMAC-SHA256 with a shared project key is tamper-evidence within
    a key-holding domain, NOT non-repudiable proof of *who* produced the bundle.
+
+## Verification profiles
+
+The two consumers of a bundle are **not** symmetric:
+
+- **The Wardline verifier (key-holding domain)** holds the shared key. It reports
+  `schema_recognized` alongside `signature_valid` and HMAC-verifies both
+  `wardline-attest-2` and `wardline-attest-3`. `schema_recognized: false` names an
+  unrecognised schema tag as the cause and forces `signature_valid: false` — an
+  unrecognised schema is not a validity verdict, and it stays distinguishable from a
+  wrong key or a tampered payload.
+- **The Warpline runtime (untrusted relay)** receives a pushed, untrusted bundle, holds
+  **no** Wardline key, **never** verifies the HMAC, and therefore **always** reports
+  `signature_verified: false`. Its work is a mechanical commit / SEI / content-hash
+  relay. A `false` there means *"not checked here"*, never *"checked and failed"*.
+
+Operationally: verify in the key-holding domain (`wardline attest . --verify
+bundle.json`), require **both** booleans true, hand the exact verified bytes onward, and
+treat the relay's result as mechanical rather than cryptographic.
+
+## Dual-read (`wardline-attest-3` staged)
+
+The verifier already **accepts** `wardline-attest-3` — see
+[`wardline-attest-3.md`](./wardline-attest-3.md), a DRAFT/S0 preview. Wardline still
+**emits** `wardline-attest-2`, and `wardline-attest-2` verifies unchanged: it stays in
+the accepted set, keeps `schema_recognized: true`, and no v2 consumer breaks.
 
 ## Versioning
 

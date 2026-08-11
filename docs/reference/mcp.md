@@ -255,7 +255,7 @@ key) and optionally re-derive it at the current tree.
 `reproduce` (`true` re-derives at the current tree), `path`, `config`,
 `cache_dir`, `trust_packs`, `trust_local_packs`, `strict_defaults`.
 
-**Returns:** `{signature_valid, reproduced, mismatches, note}`. Read-only.
+**Returns:** `{schema_recognized, signature_valid, reproduced, mismatches, note}`. Read-only.
 
 ## `file_finding`
 

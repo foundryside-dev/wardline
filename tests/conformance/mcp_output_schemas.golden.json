@@ -4303,12 +4303,17 @@
           "null"
         ]
       },
+      "schema_recognized": {
+        "description": "True iff the bundle's schema tag is one this verifier accepts (wardline-attest-2 | wardline-attest-3). False means signature_valid is necessarily false too \u2014 an unrecognised schema is not a validity verdict.",
+        "type": "boolean"
+      },
       "signature_valid": {
         "description": "True iff the recomputed HMAC over the recorded payload matches the stored signature (schema tag, alg, and key_id must all match too).",
         "type": "boolean"
       }
     },
     "required": [
+      "schema_recognized",
       "signature_valid",
       "reproduced",
       "mismatches",

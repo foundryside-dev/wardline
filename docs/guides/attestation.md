@@ -165,12 +165,19 @@ $ wardline attest src/myapp --loomweave-url http://localhost:9100 --out bundle.j
 
 ## Verifying a bundle
 
-Verification is two separable checks:
+Verification is three separable checks:
 
-1. **Signature check** — always performed, offline, requires the project key. No
+1. **Schema recognition** — `schema_recognized` reports whether the bundle's `schema`
+   tag is one this verifier accepts (`wardline-attest-2` or `wardline-attest-3`; see
+   [the v3 contract](../contracts/wardline-attest-3.md) for the dual-read). It is
+   **not** a validity verdict: an unrecognised or missing tag reports
+   `schema_recognized: false` and forces `signature_valid: false` too, so an unknown
+   schema fails closed *and* says why — distinguishable from a wrong key or a tampered
+   payload even when the bundle was correctly re-signed over its own unknown tag.
+2. **Signature check** — always performed, offline, requires the project key. No
    re-scan. Recomputes the HMAC over the *recorded* payload and compares in constant
    time. A wrong key or any tampered payload field yields `signature_valid: false`.
-2. **Reproducibility check** (`--reproduce` / `reproduce: true`) — re-derives the
+3. **Reproducibility check** (`--reproduce` / `reproduce: true`) — re-derives the
    payload at the *current* tree and compares canonical bytes. Equal → `reproduced:
    true`. A mismatch may mean the tree moved on since the bundle was produced — not
    necessarily tamper. The `note` field in the result says so explicitly.
@@ -179,6 +186,7 @@ The result object from both CLI (`attest --verify`) and MCP (`verify_attestation
 
 ```json
 {
+  "schema_recognized": true,
   "signature_valid": true,
   "reproduced": true,
   "mismatches": [],
@@ -206,16 +214,19 @@ defaults to `false`. The tool returns the result object above.
 CLI exit codes for `--verify`: `0` if `signature_valid` (and, when `--reproduce`
 is passed, also `reproduced`); `1` otherwise. So without `--reproduce` the
 reproducibility result does not affect the exit code, but with `--reproduce` a
-reproducibility mismatch yields exit `1` even when the signature is valid.
+reproducibility mismatch yields exit `1` even when the signature is valid. The rule
+needs no `schema_recognized` clause: recognition is a conjunct of `signature_valid`,
+so `signature_valid: true` already implies `schema_recognized: true`, and an
+unrecognised schema exits `1` via the signature check.
 
 ### CLI
 
 ```console
 $ wardline attest --verify bundle.json
-{"signature_valid": true, "reproduced": null, "mismatches": [], "note": "..."}
+{"schema_recognized": true, "signature_valid": true, "reproduced": null, "mismatches": [], "note": "..."}
 
 $ wardline attest --verify bundle.json --reproduce
-{"signature_valid": true, "reproduced": true, "mismatches": [], "note": "..."}
+{"schema_recognized": true, "signature_valid": true, "reproduced": true, "mismatches": [], "note": "..."}
 ```
 
 ## SEI-keying (opt-in, fail-soft)

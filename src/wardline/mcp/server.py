@@ -3529,6 +3529,12 @@ _VERIFY_ATTESTATION_OUTPUT_SCHEMA: dict[str, Any] = {
     "description": "Result of verifying an attestation bundle: signature check (always, offline) plus optional "
     "reproducibility re-derivation against the current tree.",
     "properties": {
+        "schema_recognized": {
+            "type": "boolean",
+            "description": "True iff the bundle's schema tag is one this verifier accepts (wardline-attest-2 | "
+            "wardline-attest-3). False means signature_valid is necessarily false too — an unrecognised schema is "
+            "not a validity verdict.",
+        },
         "signature_valid": {
             "type": "boolean",
             "description": "True iff the recomputed HMAC over the recorded payload matches the stored signature "
@@ -3552,7 +3558,7 @@ _VERIFY_ATTESTATION_OUTPUT_SCHEMA: dict[str, Any] = {
             "tree moved, not tamper.",
         },
     },
-    "required": ["signature_valid", "reproduced", "mismatches", "note"],
+    "required": ["schema_recognized", "signature_valid", "reproduced", "mismatches", "note"],
     "additionalProperties": False,
 }
 
@@ -3562,7 +3568,7 @@ _VERIFY_ATTESTATION_TOOL: dict[str, Any] = {
     "title": "Verify attestation bundle",
     "description": "Verify an attestation bundle's signature (offline, needs the project "
     "key) and optionally its reproducibility (reproduce=true re-derives at the current "
-    "tree). Returns {signature_valid, reproduced, mismatches, note}.",
+    "tree). Returns {schema_recognized, signature_valid, reproduced, mismatches, note}.",
     "input_schema": {
         "type": "object",
         "required": ["bundle"],
