@@ -161,14 +161,122 @@ def test_trusted_level_assured() -> None:
     assert out["m.f"] == FunctionTaint(T.ASSURED, T.ASSURED)
 
 
-def test_trusted_level_tolerates_legacy_to_level_keyword() -> None:
+def test_legacy_to_level_on_trusted_now_drops_the_seed() -> None:
+    # REVERSAL (S0, spec §4.2): the analyzer-only tolerance for the runtime-
+    # invalid `@trusted(level=..., to_level=...)` shape is gone. The runtime
+    # raises TypeError on this call; the analyzer now agrees — undeclared
+    # keyword => shape offence => no seed (and PY-WL-130 fires, rule suite).
     out = _seed(
         "from wardline.decorators import trusted\n"
         "@trusted(level='ASSURED', to_level='ASSURED')\n"
         "def f():\n"
         "    return 1\n"
     )
-    assert out["m.f"] == FunctionTaint(T.ASSURED, T.ASSURED)
+    assert out["m.f"] is None
+
+
+def test_called_external_boundary_drops_the_seed() -> None:
+    # external_boundary's runtime signature takes NO call arguments; the provider
+    # previously never inspected them (level_args=()) and seeded anyway. The
+    # shape validator closes that: a runtime-TypeError declaration never seeds.
+    for call in (
+        "external_boundary()",
+        "external_boundary(**{})",
+        "external_boundary(source='http')",
+        "external_boundary('http')",
+        "external_boundary(**KW)",
+    ):
+        out = _seed(f"from wardline.decorators import external_boundary\nKW = {{}}\n@{call}\ndef f():\n    return 1\n")
+        assert out["m.f"] is None, call
+
+
+def test_bare_external_boundary_still_seeds() -> None:
+    out = _seed("from wardline.decorators import external_boundary\n@external_boundary\ndef f():\n    return 1\n")
+    assert out["m.f"] == FunctionTaint(T.EXTERNAL_RAW, T.EXTERNAL_RAW)
+
+
+def test_malformed_sibling_never_reduces_the_error_population(tmp_path) -> None:
+    # The property that matters, and the one a seed-value assertion cannot express:
+    # dropping a malformed marker must never make a scan QUIETER than leaving it.
+    # Measured at release/2.0.0: the pre-Task-5 engine seeds this stack EXTERNAL_RAW
+    # and fires ZERO ERROR+ defects, because EXTERNAL_RAW is in RAW_ZONE and modulate()
+    # returns Severity.NONE. After Task 5 the malformed marker drops, @trusted stands
+    # alone, the tier is ASSURED, and PY-WL-101 + PY-WL-112 fire. Demoting the seed to
+    # UNKNOWN_RAW "for safety" would return it to silence — declaring trust is what
+    # SUBJECTS a function to the leak rules.
+    from wardline.core.finding import Kind, Severity
+    from wardline.core.run import run_scan
+
+    src = (
+        "import subprocess\n"
+        "from wardline.decorators import trusted, external_boundary\n"
+        "@external_boundary\n"
+        "def raw(p):\n    return p\n"
+        "@trusted(level='ASSURED')\n"
+        "@external_boundary(source='http')\n"
+        "def f(p):\n"
+        "    cmd = raw(p)\n"
+        "    subprocess.run(cmd, shell=True)\n"
+        "    return cmd\n"
+    )
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    (proj / "svc.py").write_text(src, encoding="utf-8")
+    result = run_scan(proj)
+    assert result.context is not None
+    assert result.context.project_taints["svc.f"] == T.ASSURED
+    errors = {
+        f.rule_id
+        for f in result.findings
+        if f.kind is Kind.DEFECT and f.severity in (Severity.ERROR, Severity.CRITICAL)
+    }
+    assert {"PY-WL-101", "PY-WL-112", "PY-WL-130"} <= errors
+
+
+def test_malformed_marker_alone_still_takes_no_opinion() -> None:
+    # The contribute-only-alongside-a-candidate rule, SPLIT by rev 6 (spec §4.2.1):
+    # a lone marker with a malformed SHAPE must NOT enter declared_qualnames
+    # (posture denominator stability) — a shape offence is not a value problem, so
+    # this half is unchanged. A lone marker whose LEVEL RESOLVES — including via
+    # P3 form 5 — DOES enter declared_qualnames and DOES count in the anchored
+    # posture bucket (spec §4.2.1, §11.4). The sibling below pins that half.
+    out = _seed(
+        "from wardline.decorators import trusted\n@trusted(level='ASSURED', audit=True)\ndef f():\n    return 1\n"
+    )
+    assert out["m.f"] is None
+
+
+def test_form5_module_constant_level_seeds_and_declares(tmp_path) -> None:
+    # The other half of the split above, and the posture consequence spec §4.2.1
+    # states rather than leaving to the implementer. `_SVC_LEVEL` is a single,
+    # unconditional, direct-top-level `str` binding lexically preceding a `def`
+    # that is a direct element of Module.body, read in a BUILTIN marker's LEVEL
+    # slot — P3 form 5 in full. It RESOLVES, so this function IS a recognised
+    # boundary: it seeds, it enters declared_qualnames, and it takes NO residual
+    # FACT (the FACT is for what stays unreadable, never for what resolves).
+    #
+    # run_scan/tmp_path, NOT _seed: _seed builds its own SeedContext and supplies
+    # no per-module census, and a bare Name in a LEVEL slot with no census present
+    # is a PLUMBING DEFECT the shared reader RAISES on (spec §4.2.1). Only the
+    # parse loop builds the census, so only an end-to-end scan can exercise form 5.
+    from wardline.core.run import run_scan
+
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    (proj / "svc.py").write_text(
+        "from wardline.decorators import trusted\n"
+        "_SVC_LEVEL = 'ASSURED'\n"
+        "@trusted(level=_SVC_LEVEL)\n"
+        "def f(p):\n"
+        "    return p\n",
+        encoding="utf-8",
+    )
+    result = run_scan(proj)
+    assert result.context is not None
+    # Primary assertion: the posture denominator moves, correctly.
+    assert "svc.f" in result.context.declared_qualnames
+    assert result.context.project_taints["svc.f"] == T.ASSURED
+    assert not [f for f in result.findings if f.rule_id == "WLN-ENGINE-UNREADABLE-MARKER-VALUE"]
 
 
 def test_trusted_level_static_kwargs_assured() -> None:
@@ -198,10 +306,33 @@ def test_trusted_disallowed_level_is_no_opinion() -> None:
     assert out["m.f"] is None
 
 
-def test_trusted_dynamic_level_is_no_opinion() -> None:
-    # A non-literal level (a Name) cannot be read statically -> fail-closed.
-    out = _seed("from wardline.decorators import trusted\nLV = 'ASSURED'\n@trusted(level=LV)\ndef f():\n    return 1\n")
-    assert out["m.f"] is None
+def test_module_constant_level_now_resolves_under_form5(tmp_path) -> None:
+    # REWRITE of `test_trusted_dynamic_level_is_no_opinion` (:201-204), whose
+    # premise spec §4.2.1 retires. That test read `LV = 'ASSURED'` /
+    # `@trusted(level=LV)` through `_seed` and asserted no-opinion — "a non-literal
+    # level (a Name) cannot be read statically -> fail-closed". Under P3 form 5
+    # that exact source RESOLVES (one unconditional direct-top-level `str`
+    # binding, lexically preceding a `def` that is a direct element of
+    # Module.body, in a BUILTIN LEVEL slot), so BOTH the name and the assertion
+    # invert.
+    #
+    # It also cannot stay on `_seed`: `_seed` constructs its own SeedContext with
+    # no census, and from this task's commit the shared reader RAISES on a bare
+    # `Name` in a builtin LEVEL slot with `census=None`. Left alone it would ERROR
+    # here, not merely fail. Kept as its own row rather than folded into the test
+    # above, so the reversal stays visible where the old fail-closed pin stood.
+    from wardline.core.run import run_scan
+
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    (proj / "svc.py").write_text(
+        "from wardline.decorators import trusted\nLV = 'ASSURED'\n@trusted(level=LV)\ndef f():\n    return 1\n",
+        encoding="utf-8",
+    )
+    result = run_scan(proj)
+    assert result.context is not None
+    assert result.context.project_taints["svc.f"] == T.ASSURED
+    assert "svc.f" in result.context.declared_qualnames
 
 
 def test_undecorated_is_no_opinion() -> None:

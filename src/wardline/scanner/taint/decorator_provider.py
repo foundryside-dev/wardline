@@ -21,9 +21,9 @@ from wardline.core.taints import TRUST_RANK, TaintState
 from wardline.scanner.boundary_types import BUILTIN_BOUNDARY_TYPES, BoundaryType
 from wardline.scanner.marker_reader import VOCAB_PREFIX as _VOCAB_PREFIX
 from wardline.scanner.marker_reader import WEFT_MARKERS_PREFIX as _WEFT_MARKERS_PREFIX
-from wardline.scanner.marker_reader import ModuleCensus
+from wardline.scanner.marker_reader import LevelVerdict, ModuleCensus, call_shape_offences
 from wardline.scanner.marker_reader import is_builtin_decorator_fqn as _is_builtin_decorator_fqn
-from wardline.scanner.marker_reader import level_token as _level_token
+from wardline.scanner.marker_reader import read_level as _read_level
 from wardline.scanner.marker_reader import resolve_decorator_fqn as _resolve_decorator_fqn
 from wardline.scanner.marker_reader import shadowed_builtin_roots as _shadowed_builtin_roots
 from wardline.scanner.taint.provider import FunctionTaint, SeedResult
@@ -53,93 +53,6 @@ def vocabulary_star_exports() -> dict[str, dict[str, str]]:
         _VOCAB_PREFIX: {name: f"{_VOCAB_PREFIX}.{name}" for name in REGISTRY},
         _WEFT_MARKERS_PREFIX: {name: f"{_WEFT_MARKERS_PREFIX}.{name}" for name in REGISTRY},
     }
-
-
-def _read_level(
-    deco: ast.expr,
-    arg: str,
-    *,
-    allowed: frozenset[TaintState],
-    default: TaintState | None,
-    alias_map: Mapping[str, str],
-    shadowed_roots: frozenset[str],
-    builtin: bool,
-    ignored_args: frozenset[str] = frozenset(),
-) -> TaintState | None:
-    """Read a level keyword arg from a decorator, normalised + allow-checked.
-
-    Returns ``default`` when the decorator is not called or the arg is absent;
-    ``None`` (fail-closed) when the arg is present but unreadable, an invalid
-    state, outside ``allowed``, duplicated, or mixed with malformed decorator
-    call syntax. The real level-bearing decorators are keyword-only; positional
-    args and unexpected keywords are not trusted as the default level.
-
-    ``shadowed_roots`` and ``builtin`` are this function's OWN required parameters,
-    forwarded verbatim to the shared :func:`~wardline.scanner.marker_reader.level_token`
-    — neither is captured from an enclosing scope, and ``bt`` never enters here (the
-    sole call site, inside :meth:`DecoratorTaintSourceProvider._match`, reads
-    ``bt.builtin`` and passes it in). Both are short-lived by construction: Task 5
-    deletes this whole function once the shared ``read_level`` lands with the
-    cache/version gate.
-    """
-    if not isinstance(deco, ast.Call):
-        return default
-    if deco.args:
-        return None
-    values: list[ast.expr] = []
-    for kw in deco.keywords:
-        if kw.arg is None:
-            if not isinstance(kw.value, ast.Dict):
-                return None
-            for key, value in zip(kw.value.keys, kw.value.values, strict=True):
-                if not isinstance(key, ast.Constant) or not isinstance(key.value, str):
-                    return None
-                if key.value in ignored_args:
-                    continue
-                if key.value != arg:
-                    return None
-                values.append(value)
-            continue
-        if kw.arg == arg:
-            values.append(kw.value)
-            continue
-        if kw.arg in ignored_args:
-            continue
-        return None
-    if not values:
-        return default
-    if len(values) != 1:
-        return None
-    token = _level_token(
-        values[0],
-        alias_map,
-        # PRESENT but empty: no bindings, not poisoned, no eligible reference
-        # sites — so form 5 resolves nothing and seeding is byte-identical to
-        # today, while the reader still raises on a genuine plumbing defect.
-        # Constructed INLINE, deliberately: the engine floor ships no inert
-        # census constant, because a public one is the defaulted-empty
-        # affordance spec rev 6 §4.2.1 forbids. Replaced by the real
-        # per-module census when the census task lands; this call site and
-        # PY-WL-114's in Step 3 are the ONLY two, and both are rewritten there.
-        census=ModuleCensus(values={}, poisoned=False, reference_sites=frozenset()),
-        # ``_match`` holds no entity node today (verified in source), so the
-        # provider path cannot present a reference site until Task 5 threads
-        # ``entity.node`` down. Not a permanent option.
-        reference_site=None,
-        # BOTH of these are ``_read_level``'s OWN new parameters, forwarded —
-        # not names captured from an enclosing scope. ``bt`` never enters this
-        # function; it is the ``:405`` CALL SITE, inside ``_match``, that reads
-        # ``bt.builtin`` and passes it in.
-        shadowed_roots=shadowed_roots,
-        builtin=builtin,
-    )
-    if token is None:
-        return None
-    try:
-        level = TaintState(token)
-    except ValueError:
-        return None
-    return level if level in allowed else None
 
 
 def _seed_value_identity(value: object) -> str:
@@ -252,7 +165,21 @@ class DecoratorTaintSourceProvider:
         unprovable: list[str] = []
         shadowed_roots = _shadowed_builtin_roots(ctx.project_modules)
         for deco in entity.node.decorator_list:
-            ft, unprov = self._match(deco, ctx.alias_map, shadowed_roots)
+            # PLUMBING ONLY (Task 5). The per-module census rides in on ``SeedContext``
+            # and the reference site is the decorated ``def``/``async def`` statement
+            # this entity already holds, so P3 form 5 can evaluate in the provider.
+            # ``_match``'s third verdict element — the residual ``(argument name,
+            # unparsed value)`` pairs of a BUILTIN marker's unreadable LEVEL value — is
+            # received and DISCARDED here; Task 7 Step 4.2 is the sole place
+            # ``taint_for``'s branch arms and its two ``SeedResult(...)`` constructions
+            # change to collect it.
+            ft, unprov, _unreadable_level_values = self._match(
+                deco,
+                ctx.alias_map,
+                shadowed_roots,
+                census=ctx.census,
+                reference_site=entity.node,
+            )
             if ft is not None:
                 candidates.append(ft)
             elif unprov is not None:
@@ -309,18 +236,35 @@ class DecoratorTaintSourceProvider:
         deco: ast.expr,
         alias_map: Mapping[str, str],
         shadowed_roots: frozenset[str],
-    ) -> tuple[FunctionTaint | None, str | None]:
+        *,
+        census: ModuleCensus | None,
+        reference_site: ast.stmt,
+    ) -> tuple[FunctionTaint | None, str | None, tuple[tuple[str, str], ...]]:
         """Match one decorator against the loaded boundary types. Returns:
 
-        ``(seed, None)``   — a boundary type matched and its levels proved;
-        ``(None, name)``   — a CUSTOM type matched but a required level was unreadable
-                             (fail-closed; surfaced as a FACT). Builtins return
-                             ``(None, None)`` here to stay silent (oracle-preserving);
-        ``(None, None)``   — no boundary type matched (not vocabulary — 'no opinion').
+        ``(seed, None, ())``   — a boundary type matched and its levels proved;
+        ``(None, name, ())``   — a CUSTOM type matched but a required level was
+                                 unreadable (fail-closed; surfaced as a FACT). Builtins
+                                 return ``(None, None, ...)`` here to stay silent
+                                 (oracle-preserving);
+        ``(None, None, ())``   — no boundary type matched (not vocabulary — 'no opinion').
+
+        Shape offences (``call_shape_offences``) drop the seed before any level is read —
+        so a marker that is BOTH shape-malformed and value-unreadable takes ``PY-WL-130``
+        alone and never also ``WLN-ENGINE-UNREADABLE-MARKER-VALUE``.
+
+        ``(None, None, pairs)`` — a BUILTIN marker whose ``ArgKind.LEVEL`` value stays
+        unreadable; ``pairs`` carries ``(argument name, ast.unparse(value))`` RAW, for the
+        residual FACT to normalise and truncate at emission.
+
+        ``census`` and ``reference_site`` are REQUIRED keyword parameters carrying NO
+        default: a defaulted-empty census ships the one-sided false green spec §4.2.1
+        names, and without the reference site P3 form 5 cannot evaluate its
+        lexical-precedence clause.
         """
         fqn = _resolve_decorator_fqn(deco, alias_map)
         if fqn is None:
-            return None, None
+            return None, None, ()
         # Builtin markers are security-sensitive defaults: a scanned project could
         # ship its own ``wardline/decorators`` (or ``weft_markers``) no-op shadowing
         # the real package, spoof @trusted, and suppress real taint→sink flows (a
@@ -338,34 +282,99 @@ class DecoratorTaintSourceProvider:
                     continue
             elif last != bt.canonical_name or not fqn.startswith(bt.module_prefix + "."):
                 continue
+            if bt.builtin:
+                entry = REGISTRY[bt.canonical_name]
+                required = frozenset(la.arg_name for la in bt.level_args if la.default is None)
+                if call_shape_offences(
+                    deco,
+                    call_form=entry.call_form,
+                    declared=entry.kwargs,
+                    required=required,
+                ):
+                    # Malformed builtin shape: the seed drops and the provider stays
+                    # SILENT. PY-WL-130 is the loud channel (Task 6), and it is an
+                    # ERROR, so a malformed marker cannot ship green.
+                    #
+                    # Deliberately NOT demoted to UNKNOWN_RAW when a provable sibling
+                    # marker exists. Measured at release/2.0.0: UNKNOWN_RAW is in
+                    # RAW_ZONE, modulate() returns Severity.NONE for it, and PY-WL-101
+                    # skips a declared tier in RAW_ZONE — so demoting SILENCES every
+                    # tier-gated rule on the function. Dropping the malformed marker and
+                    # letting the provable one stand is strictly louder: the motivating
+                    # stack (@trusted(level='ASSURED') over @external_boundary(source=…))
+                    # seeds EXTERNAL_RAW today and fires ZERO ERROR+ defects, whereas
+                    # after this change it seeds ASSURED and fires PY-WL-101 +
+                    # PY-WL-112 — because declaring trust is what SUBJECTS a function to
+                    # the leak rules.
+                    #
+                    # This return is ALSO the short-circuit that keeps a malformed
+                    # marker off the residual channel: the shape verdict is decided
+                    # here, BEFORE any level is read, so a marker that is both
+                    # shape-malformed and value-unreadable never reaches the reader
+                    # and never also takes WLN-ENGINE-UNREADABLE-MARKER-VALUE
+                    # (spec §4.2.1). The residual tuple is empty for that reason.
+                    return None, None, ()
+            # The `(argument name, unparsed value text)` pair spec §4.2.1 condition 4
+            # fingerprints on arrives on `LevelRead.unreadable_value` — Task 2's
+            # discriminated return type, which is THE mechanism this plan names for
+            # reaching it. The old bare `TaintState | None` answered `None` for BOTH
+            # an unreadable value and a token that WAS read and then rejected by the
+            # `allowed` check, and only the FIRST takes the residual FACT; the second
+            # is PY-WL-114's DEFECT (spec §4.2.1's READS-then-rejects row) and must
+            # never also emit a FACT. `LevelRead` is what keeps them apart, and the
+            # provider does NOT re-read the value to work it out.
             levels: dict[str, TaintState] = {}
             unreadable = False
+            unreadable_level_values: list[tuple[str, str]] = []
             for la in bt.level_args:
-                # Legacy review fixtures and older sample code sometimes supplied
-                # ``to_level`` on ``@trusted``. Treat it as inert compatibility
-                # only when the real ``level`` argument remains statically readable;
-                # genuinely unknown kwargs still fail closed.
-                ignored = frozenset({"to_level"}) if bt.canonical_name == "trusted" else frozenset()
-                lvl = _read_level(
+                read = _read_level(
                     deco,
                     la.arg_name,
+                    declared=(
+                        REGISTRY[bt.canonical_name].kwargs
+                        if bt.builtin
+                        else frozenset(item.arg_name for item in bt.level_args)
+                    ),
                     allowed=la.allowed,
                     default=la.default,
                     alias_map=alias_map,
-                    # Threaded ONE hop further rather than recomputed or replaced by
-                    # ``frozenset()``: the shared reader refuses a form-2 receiver whose
-                    # resolved root the project shadows. ``bt.builtin`` is passed for
-                    # real — hardcoding ``True`` would put custom packs on the builtin
-                    # arm and break the released custom-boundary contract.
+                    census=census,
+                    reference_site=reference_site,
                     shadowed_roots=shadowed_roots,
                     builtin=bt.builtin,
-                    ignored_args=ignored,
                 )
-                if lvl is None:
+                if read.verdict is not LevelVerdict.RESOLVED:
                     unreadable = True
+                    if read.unreadable_value is not None:
+                        # `unreadable_value` is populated ONLY on verdict UNREADABLE
+                        # AND builtin — the reader's own gate, so no caller-side
+                        # builtin test is needed or wanted here. A CUSTOM
+                        # BoundaryType therefore never contributes a pair: form 5 and
+                        # the residual FACT are both builtin-only (spec §4.2's
+                        # compatibility boundary, §4.2.1), so a custom type keeps
+                        # `(None, canonical_name)` below with an EMPTY residual tuple,
+                        # keeps WLN-ENGINE-UNPROVABLE-BOUNDARY and an UNKNOWN_RAW
+                        # seed, and is never counted on two channels. A REJECTED
+                        # verdict likewise carries no pair, on either side.
+                        #
+                        # Stored RAW. NFC normalisation and the 200-character
+                        # truncation of spec §4.2.1 condition 4 apply to the
+                        # VALUE-TEXT part only and are applied at the FACT emission
+                        # site, never here.
+                        unreadable_level_values.append(read.unreadable_value)
                     break
-                levels[la.arg_name] = lvl
+                # `LevelVerdict.RESOLVED` stays the semantic gate; this is the TYPE
+                # obligation, not a second decision. Task 2's `LevelRead` contract is
+                # that RESOLVED carries the level, but mypy performs no correlated
+                # narrowing from `verdict` onto `level`, and `[assignment]` is
+                # disabled for `tests` only, never for `src/`.
+                assert read.level is not None
+                levels[la.arg_name] = read.level
             if unreadable:
-                return None, (None if bt.builtin else bt.canonical_name)
-            return bt.seed(levels), None
-        return None, None
+                return (
+                    None,
+                    (None if bt.builtin else bt.canonical_name),
+                    tuple(unreadable_level_values),
+                )
+            return bt.seed(levels), None, ()
+        return None, None, ()

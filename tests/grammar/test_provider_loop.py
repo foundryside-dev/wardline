@@ -14,7 +14,8 @@ from wardline.core.registry import REGISTRY_VERSION
 from wardline.core.taints import TaintState
 from wardline.scanner.grammar import BoundaryType, LevelArg, default_grammar
 from wardline.scanner.index import discover_file_entities
-from wardline.scanner.taint.decorator_provider import DecoratorTaintSourceProvider
+from wardline.scanner.module_census import build_module_census
+from wardline.scanner.taint.decorator_provider import DecoratorTaintSourceProvider, vocabulary_star_exports
 from wardline.scanner.taint.provider import FunctionTaint, SeedContext
 
 _CUSTOM = BoundaryType(
@@ -111,11 +112,27 @@ def test_builtin_matches_submodule_import_path() -> None:
 def test_unprovable_builtin_does_not_signal() -> None:
     # Oracle-preserving twin: an unreadable BUILTIN level stays silent (no signal).
     provider = DecoratorTaintSourceProvider()  # builtins only
-    ent = _entity(
+    # `to_level=CFG` is a bare `Name` in a BUILTIN LEVEL slot. From Task 5's commit the
+    # provider reads through the shared reader, which RAISES on that shape when the
+    # module has NO census at all (a plumbing defect, not an input condition) — so this
+    # construction carries the module's REAL census, built by Task 3's builder over the
+    # SAME parsed tree the entity came from (`reference_sites` is node identity, so a
+    # second parse would not answer). `CFG` is unbound, so the value stays an ORDINARY
+    # unreadable and both assertions below are unchanged and still required by §4.2's
+    # compatibility boundary: a builtin's unreadable LEVEL value never takes the custom
+    # `WLN-ENGINE-UNPROVABLE-BOUNDARY` channel.
+    tree = ast.parse(
         "from wardline.decorators import trust_boundary\n@trust_boundary(to_level=CFG)\ndef f(p):\n    return p\n"
     )
+    ent = discover_file_entities(tree, module="m", path="m.py")[0]
     alias_map = {"trust_boundary": "wardline.decorators.trust_boundary"}
-    res = provider.taint_for(ent, SeedContext(module="m", alias_map=alias_map))
+    census = build_module_census(
+        tree,
+        alias_map=alias_map,
+        shadowed_roots=frozenset(),
+        star_exports=vocabulary_star_exports(),
+    )
+    res = provider.taint_for(ent, SeedContext(module="m", alias_map=alias_map, census=census))
     assert res.taint is None
     assert res.unprovable_boundaries == ()
 

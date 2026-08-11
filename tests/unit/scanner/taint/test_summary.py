@@ -40,9 +40,13 @@ def test_cache_key_changes_with_each_input() -> None:
     assert _key(scan_policy_hash="sha256:policy-b") != base
 
 
-def test_request_return_receiver_change_invalidates_sp1f_cache() -> None:
-    assert _RESOLVER_VERSION != "sp1f"
-    assert _key(resolver_version=_RESOLVER_VERSION) != _key(resolver_version="sp1f")
+def test_builtin_seeding_change_invalidates_sp1g_cache() -> None:
+    # S0 epoch pin. The call-shape validator and P3 form 5 both change BUILTIN seeding
+    # semantics while leaving the descriptor bytes and the builtin provider fingerprint
+    # untouched, so the resolver epoch is the only thing that can miss a warm pre-S0
+    # summary. One bump covers both halves: they land in the same commit.
+    assert _RESOLVER_VERSION == "sp1h"
+    assert _key(resolver_version="sp1h") != _key(resolver_version="sp1g")
 
 
 def test_cache_key_includes_module_identity() -> None:

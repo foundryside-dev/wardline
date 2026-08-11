@@ -201,6 +201,48 @@ def test_warm_cache_honours_untrusted_sources_policy_change(tmp_path) -> None:
     assert defects(az, cfg_src) == cold  # must NOT serve the stale-clean summary
 
 
+def test_warm_cache_matches_cold_for_a_malformed_builtin_marker(tmp_path) -> None:
+    # S0 cold/warm equivalence for the shape gate. `@trusted(level='ASSURED', audit=True)`
+    # carries an undeclared keyword, so the seed DROPS: the function is UNKNOWN_RAW by the
+    # L1 fallback and absent from declared_qualnames. The warm run must agree exactly — the
+    # summary cache stores `FunctionSummary` tuples only (never a `FunctionSeed`, never a
+    # `SeedResult`), and the malformed-shape verdict is re-derived from the AST on every
+    # scan, which is why no `SUMMARY_SCHEMA_VERSION` bump guards this. The `_RESOLVER_VERSION`
+    # `sp1g`->`sp1h` bump is what stops a PRE-S0 warm summary being served here.
+    from wardline.core.config import WardlineConfig
+    from wardline.core.finding import Kind
+    from wardline.scanner.analyzer import WardlineAnalyzer
+
+    src = tmp_path / "example.py"
+    src.write_text(
+        "from wardline.decorators import trusted\n@trusted(level='ASSURED', audit=True)\ndef f(p):\n    return p\n",
+        encoding="utf-8",
+    )
+
+    cfg = WardlineConfig()
+    cache = SummaryCache()
+    az = WardlineAnalyzer(summary_cache=cache)
+
+    def run():  # noqa: ANN202
+        findings = list(az.analyze([src], cfg, root=tmp_path))
+        assert az.last_context is not None
+        assert az.last_context.project_taints["example.f"] is T.UNKNOWN_RAW
+        assert "example.f" not in az.last_context.declared_qualnames
+        projection = sorted(
+            (x.rule_id, x.qualname or "", x.severity.value, x.message) for x in findings if x.kind is not Kind.METRIC
+        )
+        metrics = [x for x in findings if x.rule_id == "WLN-ENGINE-METRICS"]
+        return projection, metrics
+
+    cold, cold_metrics = run()
+    warm, warm_metrics = run()
+    assert warm == cold
+    assert cache.hits > 0
+    assert cold_metrics and warm_metrics
+    assert cold_metrics[-1].properties["cache_hit_rate"] == 0.0
+    assert warm_metrics[-1].properties["cache_hit_rate"] > 0.0
+
+
 def test_run_scan_ignores_unsigned_forged_summary_cache(tmp_path) -> None:
     import json
 

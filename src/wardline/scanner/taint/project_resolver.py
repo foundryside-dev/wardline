@@ -51,7 +51,13 @@ if TYPE_CHECKING:
 # modules must recompute rather than serve their stale-CLEAN pre-upgrade results.
 # Bumped sp1f→sp1g: make return-position request receiver types flow-sensitive, invalidating
 # summaries that could be falsely CLEAN after a later receiver rebind.
-_RESOLVER_VERSION = "sp1g"
+# Bumped sp1g→sp1h: BUILTIN seeding semantics changed in one atomic commit (S0) — the
+# registry call-shape validator now drops the seed of a malformed builtin marker, and P3
+# form 5 now resolves a module-level constant in a builtin LEVEL slot. Neither moves the
+# descriptor bytes nor the builtin provider fingerprint (REGISTRY_VERSION is unchanged at
+# "wardline-generic-2"), so this epoch is the ONLY thing that makes a warm pre-S0 summary
+# miss. One bump covers both halves because both land here together.
+_RESOLVER_VERSION = "sp1h"
 
 
 @dataclass(frozen=True, slots=True)
