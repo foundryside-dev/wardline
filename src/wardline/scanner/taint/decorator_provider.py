@@ -392,10 +392,20 @@ class DecoratorTaintSourceProvider:
                         # VALUE-TEXT part only and are applied at the FACT emission
                         # site, never here.
                         unreadable_level_values.append(read.unreadable_value)
-                    # ARITY CAP: this ``break`` leaves the levels loop on the FIRST
-                    # non-RESOLVED verdict, so the returned tuple holds AT MOST ONE pair
-                    # despite its ``tuple[tuple[str, str], ...]`` type. Do not build a
-                    # consumer that assumes it can be multi-element.
+                    # ARITY CAP, SCOPED TO ``_match``'s OWN RETURN VALUE: this ``break``
+                    # leaves the levels loop on the FIRST non-RESOLVED verdict, so the
+                    # tuple THIS CALL returns holds at most one pair despite its
+                    # ``tuple[tuple[str, str], ...]`` type.
+                    #
+                    # THE CAP STOPS HERE AND DOES NOT REACH THE PUBLIC FIELDS.
+                    # ``taint_for`` EXTENDS across the whole decorator list, so
+                    # ``SeedResult.unreadable_level_values`` and
+                    # ``FunctionSeed.unreadable_level_values`` are UNBOUNDED — measured on
+                    # this tree, ``@trusted(level=DYN)`` stacked over
+                    # ``@trust_boundary(to_level=DYN)`` yields
+                    # ``(('level', 'DYN'), ('to_level', 'DYN'))``. A consumer of those
+                    # fields MUST iterate; reading ``values[0]`` silently drops every FACT
+                    # after the first — a fail-open on this observability channel.
                     break
                 # `LevelVerdict.RESOLVED` stays the semantic gate; this is the TYPE
                 # obligation, not a second decision. Task 2's `LevelRead` contract is

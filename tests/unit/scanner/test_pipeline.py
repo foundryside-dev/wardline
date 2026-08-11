@@ -407,3 +407,32 @@ def test_provable_sibling_marker_still_carries_the_unreadable_level_value(tmp_pa
     assert seed.source == "provider"  # the provable sibling minted a seed...
     assert seed.body_taint == T.EXTERNAL_RAW
     assert seed.unreadable_level_values == (("level", "DYN"),)  # ...and the pair rode along
+
+
+def test_two_unreadable_builtin_markers_yield_two_residual_pairs(tmp_path) -> None:
+    # ARITY. ``_match``'s OWN return is capped at one pair (its levels loop breaks on the
+    # first non-RESOLVED verdict), but ``taint_for`` EXTENDS across the decorator list, so
+    # the public ``SeedResult`` / ``FunctionSeed`` field is UNBOUNDED. Task 8's emission
+    # loop iterates it and its fingerprint preimage includes the argument name, so two
+    # pairs are two distinct FACTs. A consumer that read ``values[0]`` would silently drop
+    # the second — a fail-open on this channel — and nothing else in the suite would red.
+    path = tmp_path / "m.py"
+    path.write_text(
+        "from wardline.decorators import trusted, trust_boundary\n"
+        "def get_level():\n    return 'ASSURED'\n"
+        "DYN = get_level()\n"
+        "@trusted(level=DYN)\n@trust_boundary(to_level=DYN)\ndef feed(e):\n    return e\n",
+        encoding="utf-8",
+    )
+    result = run_parse_project_stage(
+        ParseProjectInput(
+            files=(path,),
+            root=tmp_path,
+            provider=DecoratorTaintSourceProvider(),
+            config=WardlineConfig(),
+            star_exports=vocabulary_star_exports(),
+        )
+    )
+    seed = result.modules[0].seeds["m.feed"]
+    assert seed.unreadable_level_values == (("level", "DYN"), ("to_level", "DYN"))
+    assert len(seed.unreadable_level_values) == 2  # NOT capped at one — do not assume it is
