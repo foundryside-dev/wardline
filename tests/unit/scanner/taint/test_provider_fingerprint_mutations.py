@@ -2938,3 +2938,133 @@ def test_library_roots_are_kept_out_of_the_surface_by_the_distribution_gate() ->
         assert "+grammar:uncacheable-" in _fp(_bt(seed=pack["seed"])), (
             "the distribution gate is no longer load-bearing here — re-check D4's scope"
         )
+
+
+# --- Round 13: the module-NAMESPACE edge, and the residual document ---------------
+
+
+def _r13_module_hop(case: str, form: str, lvl: str) -> object:
+    """A pack MODULE (not just a function) binding the second package."""
+    impl = _dispatch_helpers(lvl, "otherpkg.impl")
+    disp = types.ModuleType("otherpkg.mod")
+    disp.__dict__["M"] = impl
+    if form == "globals":
+        disp.__dict__["for_assured"] = impl.for_assured
+    body = _DISPATCH_FORMS[form].replace("H", "M")
+    exec(compile("def pick():\n" + textwrap.indent(body, "    "), "d.py", "exec"), disp.__dict__)  # noqa: S102
+    disp.__dict__["pick"].__module__ = "otherpkg.mod"
+
+    helpers = types.ModuleType("mypack.helpers")
+    ns: dict = {"__name__": "mypack.grammar", "H": helpers}
+    if case == "A_control_helper_own_globals":
+        helpers.__dict__["pick"] = disp.__dict__["pick"]
+        exec(compile("def go():\n    return pick()\n", "hh.py", "exec"), helpers.__dict__)  # noqa: S102
+        helpers.__dict__["go"].__module__ = "mypack.helpers"
+        src = _FT + "def seed(levels):\n    return FunctionTaint(H.go(), levels['to_level'])\n"
+    elif case == "B_from_otherpkg_mod_import_pick":
+        helpers.__dict__["pick"] = disp.__dict__["pick"]
+        src = _FT + "def seed(levels):\n    return FunctionTaint(H.pick(), levels['to_level'])\n"
+    elif case == "C_from_otherpkg_import_mod":
+        helpers.__dict__["mod"] = disp
+        src = _FT + "def seed(levels):\n    return FunctionTaint(H.mod.pick(), levels['to_level'])\n"
+    else:
+        ns = {"__name__": "mypack.grammar", "sibling": disp}
+        src = _FT + "def seed(levels):\n    return FunctionTaint(sibling.pick(), levels['to_level'])\n"
+    exec(compile(src, "m.py", "exec"), ns)  # noqa: S102
+    return ns["seed"]
+
+
+_MODULE_HOP_CASES = [
+    (case, form)
+    for case in (
+        "A_control_helper_own_globals",
+        "B_from_otherpkg_mod_import_pick",
+        "C_from_otherpkg_import_mod",
+        "D_control_seed_globals",
+    )
+    for form in sorted(_DISPATCH_FORMS)
+]
+
+
+@pytest.mark.parametrize(("case", "form"), _MODULE_HOP_CASES)
+def test_module_namespace_edge_grows_the_surface(case: str, form: str) -> None:
+    """`_module_identity` never grew the surface; only `_function_identity` did.
+
+    So a pack MODULE binding the second package was invisible to the producer while the
+    consumer was still consulted on the function reached through it. B and C measured
+    COLLIDE 3/3 with `surface_roots == []`, while controls A and D fired — which is
+    exactly what hid it. This is NOT the demand-free family: `H` is named and its member
+    is demanded and expanded, so the fix was one call restricted to the same `used` set.
+    """
+    left_seed, right_seed = _r13_module_hop(case, form, "EXTERNAL_RAW"), _r13_module_hop(case, form, "ASSURED")
+    levels = {"to_level": TaintState.GUARDED}
+    assert left_seed(levels).body_taint is TaintState.EXTERNAL_RAW
+    assert right_seed(levels).body_taint is TaintState.ASSURED
+    left = _fp(_bt(seed=left_seed))
+    assert "+grammar:uncacheable-" in left, f"{case}/{form} did not fail closed"
+    assert left != _fp(_bt(seed=right_seed))
+
+
+# --- A2: the trigger set is defeated by REBINDING, pinned as known-open -----------
+
+_ALIASED_TRIGGERS = {
+    "getattr_static_as_gs": ("from inspect import getattr_static as _gs\n", "return _gs(H, 'for_' + 'assured')()\n"),
+    "import_module_as_imp": (
+        "from importlib import import_module as _imp\n",
+        "return _imp('wl_alias_helpers').for_assured()\n",
+    ),
+    "getattr_rebound_as_g": ("_g = getattr\n", "return _g(H, 'for_' + 'assured')()\n"),
+}
+
+
+@pytest.mark.parametrize("shape", sorted(_ALIASED_TRIGGERS))
+def test_aliased_triggers_are_known_open(shape: str) -> None:
+    """A2, pinned: the trigger set is matched against `co_names`, i.e. the LOCAL binding.
+
+    Rebinding defeats every entry at once — even plain `_g = getattr`. This is not one
+    more spelling to add; it is why the axis cannot be closed by names at all. Pinned as
+    KNOWN-COLLIDE so the limitation is visible in the suite rather than only in prose. If
+    this ever starts failing, the axis moved: update
+    `src/wardline/scanner/taint/PROVIDER_FINGERPRINT_RESIDUALS.md`.
+    """
+    head, body = _ALIASED_TRIGGERS[shape]
+    helper = _dispatch_helpers("EXTERNAL_RAW", "wl_alias_helpers")
+    other = _dispatch_helpers("ASSURED", "wl_alias_helpers")
+
+    def mk(mod: types.ModuleType) -> object:
+        ns: dict = {"__name__": "mypack.grammar", "H": mod}
+        src = (
+            "from wardline.core.taints import TaintState\n"
+            + head
+            + _FT
+            + "def _pick():\n"
+            + textwrap.indent(body, "    ")
+            + "def seed(levels):\n    return FunctionTaint(_pick(), levels['to_level'])\n"
+        )
+        exec(compile(src, "m.py", "exec"), ns)  # noqa: S102
+        return ns["seed"]
+
+    with pytest.MonkeyPatch.context() as patched:
+        patched.setitem(sys.modules, "wl_alias_helpers", helper)
+        left = _fp(_bt(seed=mk(helper)))
+        patched.setitem(sys.modules, "wl_alias_helpers", other)
+        right = _fp(_bt(seed=mk(other)))
+    assert "uncacheable" not in left, f"{shape} now fires — A2 narrowed, update the residual document"
+    assert left == right, f"{shape} now discriminates — A2 narrowed, update the residual document"
+
+
+def test_the_residual_document_exists_and_is_referenced() -> None:
+    """The residual list must be a durable artifact, not prose in a report that gets cleaned up.
+
+    It lives beside the code it describes and is pointed at from the module, so a
+    maintainer reading `decorator_provider.py` finds it without knowing this task existed.
+    """
+    module_path = pathlib.Path(dp.__file__)
+    doc = module_path.parent / "PROVIDER_FINGERPRINT_RESIDUALS.md"
+    assert doc.is_file(), "the durable residual document is missing"
+    text = doc.read_text(encoding="utf-8")
+    assert "not claimed closed" in text
+    for entry in ("D1", "D2", "D3", "D4", "A1", "A2", "A3", "A4"):
+        assert f"\n## {entry} " in text, f"residual {entry} is missing from the document"
+    assert "DO NOT FIX" in text, "the do-not-fix marker must survive"
+    assert doc.name in module_path.read_text(encoding="utf-8"), "the module does not point at the document"

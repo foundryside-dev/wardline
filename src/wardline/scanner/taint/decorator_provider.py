@@ -65,6 +65,12 @@ def vocabulary_star_exports() -> dict[str, dict[str, str]]:
 
 # --- Grammar digest (P8) -----------------------------------------------------
 #
+# KNOWN LIMITATIONS: see PROVIDER_FINGERPRINT_RESIDUALS.md beside this file. It is
+# the durable record of what this digest is known NOT to key, each entry carrying a
+# failure direction, its measured reachability, whether a fix is cheaper than the
+# defect, and a do-not-fix marker where one applies. Anything not on that list is
+# not claimed closed. Read it before widening or narrowing anything here.
+#
 # The digest is a full SHA-256 over CANONICAL JSON. Delimiter-joined preimages are
 # forbidden here and the reason is concrete: any join over free-form text is
 # ambiguous, so ``("a<D>b", "c")`` and ``("a", "b<D>c")`` hash identically for the
@@ -918,7 +924,7 @@ def _function_identity(fn: object, walk: _Walk, depth: int) -> dict[str, object]
     if isinstance(globals_map, dict):
         # BEFORE descending: the members expanded below are exactly where a
         # second-package dispatcher is reached, so the surface must already include it.
-        _grow_surface_roots(fn, names, globals_map, walk)
+        _grow_surface_roots(_module_root(fn), names, globals_map, walk)
     if _computed_dispatch_is_unprovable(fn, names, walk):
         # COMPUTED-NAME DISPATCH — the demand set is not statically knowable.
         #
@@ -974,10 +980,21 @@ def _function_identity(fn: object, walk: _Walk, depth: int) -> dict[str, object]
 # in a function's reachable code means the set of members it touches cannot be read off
 # its code object. ``attrgetter``/``methodcaller`` are the ``operator`` spellings of the
 # same thing and collided identically.
-# ONE deliberate enumeration pass over the language surface, not one name per round.
-# This axis has NO structural closure — no traversal enumerates "every way to resolve a
-# name at run time" — so it can only ever be an allow-list, and the honest way to close
-# it is a single pass with each entry MEASURED to collide before it is added.
+# Names whose presence means a member is resolved by a value computed at run time.
+#
+# THIS SET IS NOT — AND CANNOT BE — CLOSED AT THE CATEGORY LEVEL, and the reason is
+# structural, not a gap waiting to be filled. The set is intersected against
+# ``co_names``, which carries the LOCAL BINDING, so any rebinding escapes every entry at
+# once. Measured, all four COLLIDE:
+#
+#     from inspect import getattr_static as _gs      _gs(H, "for_" + n)()
+#     from operator import attrgetter as _ag         _ag("for_" + n)(H)
+#     from importlib import import_module as _imp    _imp("pkg." + n)
+#     _g = getattr                                   _g(H, "for_" + n)()
+#
+# So this is an ALLOW-LIST OF SPELLINGS, and what follows is the one enumeration pass
+# that closed the spellings named below — not a closed category. Every entry was measured
+# to collide, with the behaviour proven by calling both seeds, BEFORE it was added:
 #
 #   attribute by computed name : getattr, __getattribute__, vars,
 #                                operator.attrgetter / methodcaller, inspect.getattr_static
@@ -985,21 +1002,26 @@ def _function_identity(fn: object, walk: _Walk, depth: int) -> dict[str, object]
 #   MODULE by computed name    : importlib.import_module, __import__, importlib.reload
 #   arbitrary code             : eval, exec
 #
-# Computed module ACQUISITION is the one the first five rounds of this guard missed
-# entirely: `importlib.import_module("mypack.levels." + name)` inside a seed puts the
-# target on DISK, never in the object graph, so the digest cannot key it however hard it
-# walks. It is in this set precisely because the digest knows it cannot see — measured
-# with an on-disk control (two package trees, behaviour verified to differ): COLLIDE.
+# Computed module ACQUISITION is in the set for a different reason than the rest: the
+# target of ``import_module("mypack.levels." + name)`` lives on DISK and never enters the
+# object graph at all, so the digest cannot key it however hard it walks. It is here
+# because the digest KNOWS IT CANNOT SEE. Measured with an on-disk control (two package
+# trees, behaviour verified to differ) — COLLIDE. The contrast that makes the rule
+# precise: a BUILD-time computed import is safe and measured safe, because the resolved
+# target binds into the seed's closure where the digest keys it structurally.
 #
-# Note the contrast that makes this precise: a BUILD-time computed import is safe and is
-# measured safe — the factory shape of round 11 DIFFs correctly, because the resolved
-# target binds into the seed's closure where the digest keys it structurally. Only the
-# CALL-time form escapes.
+# MEASURED COLLIDING AND DELIBERATELY *NOT* ADDED — see the residual document's A2:
+#   H.__dict__["for_" + n]              ordinary; adding ``__dict__`` would fire on any
+#   sys.modules["pkg." + n]             surface function touching ``self.__dict__`` and
+#   operator.getitem(H.__dict__, …)     brick real packs permanently
+#   pkgutil.resolve_name("pkg:" + n)    uncommon; over-invalidation cost unmeasured
+# The widening cost is unmeasured and plausibly larger than the defect, so they are
+# recorded as known-open rather than closed by a guess.
 #
-# MEASURED AND DELIBERATELY EXCLUDED, because both discriminate structurally already:
-# `locals()[computed]` (the local is bound from a global the digest keys) and
-# `operator.itemgetter` (container contents are keyed). `setattr`/`delattr` mutate rather
-# than resolve. Adding those would be over-invalidation with no correctness gain.
+# MEASURED AND EXCLUDED because they already discriminate structurally, so a trigger
+# would be pure over-invalidation: ``locals()[computed]`` (the local is bound from a
+# global the digest keys) and ``operator.itemgetter`` (container contents are keyed).
+# ``setattr``/``delattr`` mutate rather than resolve.
 _COMPUTED_TRIGGER_NAMES = frozenset(
     {
         "getattr",
@@ -1104,7 +1126,7 @@ def _is_grammar_surface(fn: object, walk: _Walk) -> bool:
     return root in walk.pack_roots or root in walk.surface_roots
 
 
-def _grow_surface_roots(fn: object, names: tuple[str, ...], globals_map: dict[str, object], walk: _Walk) -> None:
+def _grow_surface_roots(owner_root: str, names: tuple[str, ...], namespace: dict[str, object], walk: _Walk) -> None:
     """Extend the grammar's surface from the SAME traversal that consults the guard.
 
     THE ASYMMETRY THIS REMOVES, stated once so it cannot recur on a fourth axis: the
@@ -1125,10 +1147,10 @@ def _grow_surface_roots(fn: object, names: tuple[str, ...], globals_map: dict[st
     The distribution gate is applied at ADD time, so a third-party root never enters the
     set in the first place.
     """
-    if not _is_grammar_surface(fn, walk):
+    if owner_root not in walk.pack_roots and owner_root not in walk.surface_roots:
         return
     for name in names:
-        member = globals_map.get(name)
+        member = namespace.get(name)
         if member is None:
             continue
         if isinstance(member, ModuleType):
@@ -1255,6 +1277,19 @@ def _module_identity(
     members: dict[str, object] = {}
     record: dict[str, object] = {"t": "module", "name": name, "members": members}
     if isinstance(namespace, dict):
+        # A MODULE NAMESPACE is an edge the producer used to be blind to. ``_module_identity``
+        # never grew the surface, so a pack module binding the second package —
+        # ``mypack.helpers: from otherpkg.mod import pick`` reached as ``H.pick()``, or
+        # ``from otherpkg import mod`` reached as ``H.mod.pick()`` — left
+        # ``surface_roots == []`` while the CONSUMER was still consulted on the function
+        # reached through it. Measured COLLIDE 3/3 on both spellings, with the controls
+        # (helper reaching via its own globals, and the seed's own globals) firing.
+        #
+        # This is NOT residual R2: the demand information exists here — ``H`` is named and
+        # its member is demanded and expanded — so the fix is this one call, restricted to
+        # the same ``used`` set the walk is already bounded by. Zero blast radius: 0 of 7
+        # libraries re-brick, because the distribution gate still rejects at add time.
+        _grow_surface_roots(name.split(".", 1)[0], tuple(sorted(set(used))), namespace, walk)
         for want in sorted(set(used)):
             if want in _MODULE_NOISE:
                 continue
