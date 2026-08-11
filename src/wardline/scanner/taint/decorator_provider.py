@@ -273,12 +273,69 @@ def _seed_value_identity(value: object, walk: _Walk | None = None, _depth: int =
     name = getattr(value, "__name__", None)
     if isinstance(module, str) and isinstance(name, str):
         return {"t": "ref", "module": module, "name": name}
-    # LAST RESORT, and the one arm that can admit a memory address into the preimage
-    # (``<Foo object at 0x…>``). That over-invalidates — a cold cache every process for
-    # a grammar that reaches such an object — which is the SAFE direction. Normalising
-    # the address away would instead make two differently-CONFIGURED instances of one
-    # class collide, which is the false green this digest exists to prevent.
-    return {"t": "repr", "v": _ADDRESS_RE.sub(" at 0x<addr>", repr(value))}
+    # INSTANCE ARM. An instance must not HIDE the class that gives it behaviour.
+    #
+    # The ordinary pack shape hoists the instantiation to module scope:
+    #
+    #     POLICY = Policy(1)
+    #     def seed(l): return FunctionTaint(POLICY.decide(l), ...)
+    #
+    # ``Policy`` is then absent from the seed's ``co_names`` — only ``POLICY`` and
+    # ``decide`` appear — so the class arm above is NEVER reached through this path.
+    # Keyed by ``repr`` alone, neither the method body nor the instance state entered
+    # the preimage, and normalising the address out of that ``repr`` made two
+    # differently-CONFIGURED instances collide outright. So the instance is keyed
+    # STRUCTURALLY: its type (through the fenced class arm, so a pack class is expanded
+    # and a stdlib one stays a name), its instance state, and its normalised ``repr``.
+    # All three, because each catches what the others miss — ``repr`` still carries the
+    # C-level content of objects with no readable ``__dict__``/``__slots__``
+    # (``functools.partial``'s target and bound arguments, for one).
+    return _expanded(value, walk, d, lambda dd: _instance_identity(value, walk, dd))
+
+
+def _slot_names(cls: type) -> list[str]:
+    """Every ``__slots__`` name declared anywhere in a type's MRO, deduped and ordered."""
+    names: list[str] = []
+    for klass in getattr(cls, "__mro__", ()):
+        declared = klass.__dict__.get("__slots__", ())
+        if isinstance(declared, str):
+            declared = (declared,)
+        for slot in declared:
+            if isinstance(slot, str) and slot not in names:
+                names.append(slot)
+    return sorted(names)
+
+
+def _safe_repr(value: object) -> str:
+    try:
+        text = repr(value)
+    except Exception:  # noqa: BLE001 — a hostile __repr__ must not break the digest
+        return "<unreprable>"
+    # A memory address is process noise, never durable information, and leaving it in
+    # made every grammar that reached such an object cold-cache on every run. The
+    # DISCRIMINATION that address appeared to provide is restored structurally by the
+    # type and state fields beside this one — the address itself never carried it.
+    return _ADDRESS_RE.sub(" at 0x<addr>", text)
+
+
+def _instance_identity(value: object, walk: _Walk, depth: int) -> dict[str, object]:
+    """Structural record for an ordinary object: its type, its state, and its repr."""
+    state: dict[str, object] = {}
+    instance_dict = getattr(value, "__dict__", None)
+    if isinstance(instance_dict, dict):
+        for key, item in instance_dict.items():
+            state[str(key)] = _seed_value_identity(item, walk, depth)
+    for slot in _slot_names(type(value)):
+        try:
+            state[slot] = _seed_value_identity(getattr(value, slot), walk, depth)
+        except AttributeError:
+            state[slot] = {"t": "unset-slot"}
+    return {
+        "t": "instance",
+        "type": _seed_value_identity(type(value), walk, depth),
+        "state": state,
+        "repr": _safe_repr(value),
+    }
 
 
 def _function_identity(fn: object, walk: _Walk, depth: int) -> dict[str, object]:

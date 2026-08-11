@@ -21,6 +21,7 @@ from wardline.scanner.taint.decorator_provider import (
     _canonical_json,
     _grammar_digest,
     _seed_identity,
+    _seed_value_identity,
 )
 from wardline.scanner.taint.provider import FunctionTaint
 
@@ -431,6 +432,149 @@ def test_wardline_and_stdlib_globals_are_keyed_by_name_not_walked() -> None:
     seed_globals = _seed_identity(_PACK_A["seed"])["globals"]
     assert seed_globals["_helper"]["kind"] == "function"
     assert seed_globals["_helper"]["globals"]["_inner_helper"]["kind"] == "function"
+
+
+# --- Module-scope INSTANCE: the seam the 34-case table did not cross ------------
+#
+# `_PACK_SRC` writes `Policy().decide(levels)`, so `Policy` lands in the seed's
+# co_names and the class arm is reached. Hoisting the instantiation to module scope
+# removes `Policy` from co_names entirely — only `POLICY` and `decide` appear — so
+# the instance BLOCKS the class. Keyed by an address-normalised `repr` alone, neither
+# the method body nor the instance state reached the preimage.
+
+_INSTANCE_SRC = (
+    "from wardline.core.taints import TaintState\n"
+    "from wardline.scanner.taint.provider import FunctionTaint\n"
+    "class Policy:\n"
+    "    def __init__(self, n):\n"
+    "        self.n = n\n"
+    "    def decide(self, levels):\n"
+    "        return TaintState.{lvl}\n"
+    "POLICY = Policy({n})\n"
+    "def seed(levels):\n"
+    "    return FunctionTaint(POLICY.decide(levels), levels['to_level'])\n"
+)
+
+
+def _instance_pack(lvl: str = "EXTERNAL_RAW", n: int = 1, lead: str = "") -> dict:
+    ns: dict = {"__name__": "mypack.grammar"}
+    exec(compile(lead + _INSTANCE_SRC.format(lvl=lvl, n=n), "mypack/grammar.py", "exec"), ns)  # noqa: S102
+    return ns
+
+
+def test_module_scope_instance_does_not_put_its_class_in_co_names() -> None:
+    """Documents the seam: the class is genuinely unreachable via ``co_names``."""
+    pack = _instance_pack()
+    assert "Policy" not in pack["seed"].__code__.co_names
+    assert set(pack["seed"].__code__.co_names) >= {"POLICY", "decide"}
+
+
+def test_module_scope_instance_class_body_change_moves_the_fingerprint() -> None:
+    a, b = _instance_pack(), _instance_pack(lvl="ASSURED")
+    assert a["seed"].__code__.co_code == b["seed"].__code__.co_code
+    assert _fp(_bt(seed=a["seed"])) != _fp(_bt(seed=b["seed"]))
+
+
+def test_module_scope_instance_state_change_moves_the_fingerprint() -> None:
+    a, b = _instance_pack(n=1), _instance_pack(n=2)
+    assert _fp(_bt(seed=a["seed"])) != _fp(_bt(seed=b["seed"]))
+
+
+def test_module_scope_instance_reformat_does_not_move_the_fingerprint() -> None:
+    a, b = _instance_pack(), _instance_pack(lead="\n\n# layout only\n")
+    assert _fp(_bt(seed=a["seed"])) == _fp(_bt(seed=b["seed"]))
+
+
+def test_instance_record_carries_type_and_state_not_just_repr() -> None:
+    record = _seed_identity(_instance_pack()["seed"])["globals"]["POLICY"]
+    assert record["t"] == "instance"
+    assert record["type"]["kind"] == "class"  # the class was expanded, not named
+    assert record["state"] == {"n": {"t": "int", "v": "1"}}
+    assert "repr" in record  # ... and repr is KEPT, for C-level state with no __dict__
+
+
+_SLOTTED_SRC = (
+    "from wardline.core.taints import TaintState\n"
+    "from wardline.scanner.taint.provider import FunctionTaint\n"
+    "class Policy:\n"
+    "    __slots__ = ('n',)\n"
+    "    def __init__(self, n):\n"
+    "        self.n = n\n"
+    "    def decide(self, levels):\n"
+    "        return TaintState.{lvl}\n"
+    "POLICY = Policy({n})\n"
+    "def seed(levels):\n"
+    "    return FunctionTaint(POLICY.decide(levels), levels['to_level'])\n"
+)
+
+
+def _slotted_pack(lvl: str = "EXTERNAL_RAW", n: int = 1) -> dict:
+    ns: dict = {"__name__": "mypack.grammar"}
+    exec(compile(_SLOTTED_SRC.format(lvl=lvl, n=n), "mypack/grammar.py", "exec"), ns)  # noqa: S102
+    return ns
+
+
+@pytest.mark.parametrize(
+    ("label", "other"),
+    [("method_body", _slotted_pack(lvl="ASSURED")), ("slot_state", _slotted_pack(n=2))],
+)
+def test_hoisted_slotted_instance_mutations_move_the_fingerprint(label: str, other: dict) -> None:
+    """Hoisted AND slotted AND method-body-only — the composition no earlier row crosses.
+
+    A slotted instance has NO ``__dict__``, so ``state`` comes entirely from
+    ``__slots__``. If the record's ``type`` field were not reached on that path, a
+    method-body change would go invisible exactly as it did before the instance arm.
+    """
+    base = _slotted_pack()
+    assert not hasattr(base["POLICY"], "__dict__")
+    assert "Policy" not in base["seed"].__code__.co_names
+    assert _fp(_bt(seed=base["seed"])) != _fp(_bt(seed=other["seed"])), label
+
+
+def test_slotted_instance_state_moves_the_fingerprint() -> None:
+    src = (
+        "from wardline.core.taints import TaintState\n"
+        "from wardline.scanner.taint.provider import FunctionTaint\n"
+        "class Policy:\n"
+        "    __slots__ = ('n',)\n"
+        "    def __init__(self, n):\n"
+        "        self.n = n\n"
+        "POLICY = Policy({n})\n"
+        "def seed(levels):\n"
+        "    return FunctionTaint(TaintState.EXTERNAL_RAW, levels['to_level'])\n"
+        "seed.__dict__['probe'] = POLICY\n"
+    )
+
+    def mk(n: int) -> dict:
+        ns: dict = {"__name__": "mypack.grammar"}
+        exec(compile(src.format(n=n), "mypack/grammar.py", "exec"), ns)  # noqa: S102
+        return ns
+
+    a, b = mk(1)["POLICY"], mk(2)["POLICY"]
+    assert not hasattr(a, "__dict__")  # slotted: state is NOT in __dict__
+    assert _canonical_json(_seed_value_identity(a)) != _canonical_json(_seed_value_identity(b))
+
+
+def test_module_scope_instance_digest_is_identical_in_a_fresh_process() -> None:
+    """The regression seam, pinned across processes.
+
+    Without address normalisation this shape produced a different digest every run
+    (measured: three processes, three digests). Without the structural instance arm it
+    collided on a class-body change. Both must hold at once.
+    """
+    here = str(pathlib.Path(__file__).parent)
+    src = (
+        "import sys;"
+        f"sys.path.insert(0, {here!r});"
+        "import test_provider_fingerprint_mutations as T;"
+        "from wardline.scanner.taint.decorator_provider import _grammar_digest as D;"
+        "print(D((T._bt(seed=T._instance_pack()['seed']),)))"
+    )
+    out = subprocess.run(  # noqa: S603
+        [sys.executable, "-c", src], capture_output=True, text=True, check=True
+    ).stdout.strip()
+    assert out == _grammar_digest((_bt(seed=_instance_pack()["seed"]),))
+    assert len(out) == 64
 
 
 def test_unknown_module_is_expanded_not_fenced_off() -> None:
