@@ -17,6 +17,7 @@ import hashlib
 import itertools
 import json
 import re
+import secrets
 import sys
 from types import CodeType, MappingProxyType, ModuleType
 from typing import TYPE_CHECKING, Any
@@ -104,7 +105,7 @@ class _Walk:
     still moves the digest, and the preimage is linear in distinct objects for real.
     """
 
-    __slots__ = ("active", "alive", "budget", "memo")
+    __slots__ = ("active", "alive", "budget", "memo", "pack_roots", "uncacheable")
 
     def __init__(self) -> None:
         # id(obj) -> the structural hash of that object's full record.
@@ -112,6 +113,11 @@ class _Walk:
         self.alive: list[object] = []
         self.active: set[int] = set()
         self.budget: int = _MAX_EXPANDED_NODES
+        # Set when the walk meets PACK code whose reachable member set it cannot prove.
+        self.uncacheable: bool = False
+        # Top-level packages the grammar's own seeds live in. The fail-closed check is
+        # scoped to these; see ``_function_identity``.
+        self.pack_roots: frozenset[str] = frozenset()
 
 
 def _canonical_json(value: object) -> str:
@@ -122,8 +128,8 @@ def _canonical_json(value: object) -> str:
 def _named(value: object) -> dict[str, object]:
     """The (module, qualname) pair for an object, as distinct slots — never joined."""
     return {
-        "module": str(getattr(value, "__module__", "") or ""),
-        "qualname": str(getattr(value, "__qualname__", None) or getattr(value, "__name__", "") or ""),
+        "module": str(_probe(value, "__module__") or ""),
+        "qualname": str(_probe(value, "__qualname__") or _probe(value, "__name__") or ""),
     }
 
 
@@ -191,7 +197,7 @@ def _code_of(value: object) -> CodeType | None:
     ``TaintState``, raising ``AttributeError`` out of ``fingerprint()`` and taking the
     whole scan down. Probe, then check the type.
     """
-    code = getattr(value, "__code__", None)
+    code = _probe(value, "__code__")
     return code if isinstance(code, CodeType) else None
 
 
@@ -239,7 +245,7 @@ def _is_structurally_opaque(value: object) -> bool:
     namespace with no ``__name__`` (the shape a dynamically built grammar takes) has
     ``__module__ is None`` and must still be expanded.
     """
-    module = getattr(value, "__module__", None)
+    module = _probe(value, "__module__")
     if not isinstance(module, str) or not module:
         return False
     return module.split(".", 1)[0] in _OPAQUE_PACKAGES
@@ -278,6 +284,35 @@ def _set_order_key(value: object) -> str:
     return _canonical_json([type(value).__name__, _named(value), _safe_repr(value)])
 
 
+def _element(build: Callable[[], object]) -> object:
+    """One MEMBER of a container, guarded on its own.
+
+    ``_contents`` guards the whole container, so one hostile member discarded every
+    sibling and collapsed the record to a single ``unreadable-contents`` marker — two
+    grammars differing only in a SURVIVING sibling then collided. Guarding per element
+    keeps every readable member and marks only the one that raised, which demotes this
+    from a collision to genuine degradation.
+    """
+    try:
+        return build()
+    except Exception:  # noqa: BLE001 — one hostile member must not cost its siblings
+        return {"t": "unreadable-element"}
+
+
+def _probe(value: object, name: str) -> object:
+    """``getattr`` that swallows EVERY exception, not just ``AttributeError``.
+
+    ``getattr(v, name, None)`` only defaults on ``AttributeError``. An ``AttrDict``
+    whose ``__getattr__`` does ``return self._d[k]`` leaks ``KeyError`` for every
+    dunder the walk probes — measured, ``KeyError: '__func__'`` straight out of
+    ``fingerprint()``. Probing is not supposed to be able to fail.
+    """
+    try:
+        return getattr(value, name, None)
+    except Exception:  # noqa: BLE001 — a probe must never break the digest
+        return None
+
+
 def _contents(build: Callable[[], object]) -> object:
     """Extract a container's CONTENTS, or degrade — never raise out of the digest.
 
@@ -298,7 +333,41 @@ def _contents(build: Callable[[], object]) -> object:
         return {"t": "unreadable-contents"}
 
 
-def _typed_shape(value: object, record: dict[str, object], walk: _Walk, depth: int) -> dict[str, object]:
+# The exact builtin types whose records are complete as CONTENTS alone. Anything else
+# reaching a shape arm is a SUBCLASS, and a subclass instance can carry per-instance
+# state the contents never show: ``collections.defaultdict``'s ``default_factory`` is
+# the measured case — flipping it from EXTERNAL_RAW to ASSURED turns default-deny into
+# default-allow and the contents are identical (both empty). The carrier already
+# exists — ``defaultdict.__reduce_ex__(2)`` puts the factory in its args tuple — so the
+# early return WAS the defect. Note the gate is EXACT-TYPE, not the fence: ``defaultdict``
+# lives in ``collections`` and is therefore fenced, so a fence-based gate would miss it.
+_TRANSPARENT_TYPES = frozenset(
+    {dict, list, tuple, set, frozenset, MappingProxyType, str, bytes, bytearray, int, float, complex}
+)
+
+
+def _subclass_state(value: object, walk: _Walk, depth: int) -> dict[str, object]:
+    """Per-instance state for a SUBCLASS of a transparent builtin; nothing otherwise."""
+    if type(value) in _TRANSPARENT_TYPES:
+        return {}
+    state: dict[str, object] = {}
+    instance_dict = _probe(value, "__dict__")
+    if isinstance(instance_dict, dict):
+        for key, item in _snapshot(instance_dict.items):
+            state[str(key)] = _element(lambda item=item: _seed_value_identity(item, walk, depth))  # type: ignore[misc]
+    for slot in _slot_names(type(value)):
+        if slot not in state:
+            state[slot] = _element(lambda slot=slot: _seed_value_identity(getattr(value, slot), walk, depth))  # type: ignore[misc]
+    return {"state": state, "reduced": _reduced_state(value, walk, depth)}
+
+
+def _typed_shape(
+    value: object,
+    record: dict[str, object],
+    walk: _Walk,
+    depth: int,
+    extra: Callable[[], dict[str, object]] | None = None,
+) -> dict[str, object]:
     """Attach the value's TYPE to a shape-matched record, unless the type is fenced.
 
     THE GENERAL FORM of every defect found in rounds 0-3: an arm that matches on
@@ -319,6 +388,11 @@ def _typed_shape(value: object, record: dict[str, object], walk: _Walk, depth: i
     cls = type(value)
     if not _is_structurally_opaque(cls):
         record["type"] = _seed_value_identity(cls, walk, depth)
+    # ``extra`` runs AFTER the type, deliberately: it reaches ``__reduce_ex__``, whose
+    # args tuple names the class, so running it first would leave ``type`` a
+    # back-reference and move the class body out of this record.
+    if extra is not None:
+        record.update(extra())
     return record
 
 
@@ -399,10 +473,16 @@ def _seed_value_identity(value: object, walk: _Walk | None = None, _depth: int =
                 "t": type(value).__name__,
                 # SNAPSHOT before recursing: expanding a member can WRITE to the
                 # container being iterated (see ``_snapshot``).
-                "v": _contents(lambda: [_seed_value_identity(v, walk, d) for v in _snapshot(lambda: value)]),
+                "v": _contents(
+                    lambda: [
+                        _element(lambda v=v: _seed_value_identity(v, walk, d))  # type: ignore[misc]
+                        for v in _snapshot(lambda: value)
+                    ]
+                ),
             },
             walk,
             d,
+            extra=lambda: _subclass_state(value, walk, d),
         )
     if isinstance(value, (frozenset, set)):
         return _typed_shape(
@@ -415,7 +495,7 @@ def _seed_value_identity(value: object, walk: _Walk | None = None, _depth: int =
                 "v": _contents(
                     lambda: sorted(
                         (
-                            _seed_value_identity(v, walk, d)
+                            _element(lambda v=v: _seed_value_identity(v, walk, d))  # type: ignore[misc]
                             for v in sorted(_snapshot(lambda: value), key=_set_order_key)
                         ),
                         key=_canonical_json,
@@ -424,6 +504,7 @@ def _seed_value_identity(value: object, walk: _Walk | None = None, _depth: int =
             },
             walk,
             d,
+            extra=lambda: _subclass_state(value, walk, d),
         )
     if isinstance(value, (dict, MappingProxyType)):
         # ``MappingProxyType`` is NOT a ``dict`` subclass, so it used to miss this arm
@@ -438,18 +519,37 @@ def _seed_value_identity(value: object, walk: _Walk | None = None, _depth: int =
             value,
             {
                 "t": type(value).__name__,
+                # INSERTION ORDER, with a positional index, and NO output sort.
+                #
+                # Sorting the pairs made key order unobservable, and key order is
+                # behaviourally LOAD-BEARING in a first-match-wins table:
+                #
+                #     FLOORS = {"assur": ASSURED, "a": EXTERNAL_RAW}
+                #     for pfx, lvl in FLOORS.items():
+                #         if name.startswith(pfx): return lvl
+                #
+                # Swapping those two keys flips the seeded level and the digest did not
+                # move. Python dicts have been insertion-ordered since 3.7, so the order
+                # is part of the value, not an artifact of iteration.
+                #
+                # KNOWN COST, accepted deliberately: a dict built at import time FROM a
+                # set inherits the degenerate ``_set_order_key`` ordering, so such a
+                # grammar may re-key between processes. Order-observability wins —
+                # over-invalidation is a cold cache, under-invalidation is a false green.
                 "v": _contents(
-                    lambda: sorted(
-                        (
-                            [_seed_value_identity(k, walk, d), _seed_value_identity(v, walk, d)]
-                            for k, v in _snapshot(value.items)
-                        ),
-                        key=_canonical_json,
-                    )
+                    lambda: [
+                        [
+                            i,
+                            _element(lambda k=k: _seed_value_identity(k, walk, d)),  # type: ignore[misc]
+                            _element(lambda v=v: _seed_value_identity(v, walk, d)),  # type: ignore[misc]
+                        ]
+                        for i, (k, v) in enumerate(_snapshot(value.items))
+                    ]
                 ),
             },
             walk,
             d,
+            extra=lambda: _subclass_state(value, walk, d),
         )
 
     # --- Structural arms: a referenced FUNCTION or CLASS is keyed by its BODY --------
@@ -465,9 +565,9 @@ def _seed_value_identity(value: object, walk: _Walk | None = None, _depth: int =
     # and ``__func__``, so tested second it matched as a bare function and its
     # ``__self__`` — the receiver holding the configuration the method reads, as in
     # ``DECIDE = Policy(EXTERNAL_RAW).decide`` — was silently dropped. Measured COLLIDE.
-    inner = getattr(value, "__func__", None)
+    inner = _probe(value, "__func__")
     if inner is not None and _has_code(inner):
-        bound_self = getattr(value, "__self__", None)
+        bound_self = _probe(value, "__self__")
         # ``wrapper`` is a NAME, and for ``staticmethod``/``classmethod``/``method``
         # (all ``builtins``, all fenced) that is all there is. A PACK's own wrapper
         # class — ``class W: def __init__(self, fn): self.__func__ = fn`` with its own
@@ -510,13 +610,13 @@ def _seed_value_identity(value: object, walk: _Walk | None = None, _depth: int =
     # ``functools.wraps`` — matched here and collapsed to the wrapped function's NAME,
     # never reaching the structural instance arm below. A name is not a body.
     if _is_structurally_opaque(value):
-        module = getattr(value, "__module__", None)
-        qualname = getattr(value, "__qualname__", None)
+        module = _probe(value, "__module__")
+        qualname = _probe(value, "__qualname__")
         ref: dict[str, object] | None = None
         if isinstance(module, str) and isinstance(qualname, str):
             ref = {"t": "ref", "module": module, "qualname": qualname}
         else:
-            name = getattr(value, "__name__", None)
+            name = _probe(value, "__name__")
             if isinstance(module, str) and isinstance(name, str):
                 ref = {"t": "ref", "module": module, "name": name}
         if ref is not None:
@@ -577,13 +677,13 @@ def _ref_bindings(value: object, walk: _Walk, depth: int) -> dict[str, object]:
     cells = _closure_identity(value, walk, depth)
     if cells:
         extra["closure"] = cells
-    defaults = getattr(value, "__defaults__", None)
+    defaults = _probe(value, "__defaults__")
     if defaults:
         extra["defaults"] = _seed_value_identity(defaults, walk, depth)
-    kwdefaults = getattr(value, "__kwdefaults__", None)
+    kwdefaults = _probe(value, "__kwdefaults__")
     if kwdefaults:
         extra["kwdefaults"] = _seed_value_identity(kwdefaults, walk, depth)
-    attrs = getattr(value, "__dict__", None)
+    attrs = _probe(value, "__dict__")
     if isinstance(attrs, dict) and attrs:
         extra["attrs"] = _seed_value_identity(attrs, walk, depth)
     # Keys are OMITTED when empty so an ordinary fenced ref stays byte-identical to
@@ -694,7 +794,7 @@ def _instance_identity(value: object, walk: _Walk, depth: int) -> dict[str, obje
     catch for anything all three miss.
     """
     state: dict[str, object] = {}
-    instance_dict = getattr(value, "__dict__", None)
+    instance_dict = _probe(value, "__dict__")
     if isinstance(instance_dict, dict):
         # SNAPSHOT: expanding a value can set another attribute on the same instance.
         for key, item in _snapshot(instance_dict.items):
@@ -717,10 +817,7 @@ def _instance_identity(value: object, walk: _Walk, depth: int) -> dict[str, obje
     # following it is what reaches the real body through an opaque wrapper. The probe
     # is guarded: ``getattr``'s default only swallows ``AttributeError``, and a
     # permissive or hostile ``__getattr__`` can raise anything at all.
-    try:
-        wrapped = getattr(value, "__wrapped__", None)
-    except Exception:  # noqa: BLE001 — a hostile __getattr__ must not break the digest
-        wrapped = None
+    wrapped = _probe(value, "__wrapped__")
     if wrapped is not None and "__wrapped__" not in state:
         state["__wrapped__"] = _seed_value_identity(wrapped, walk, depth)
     return {
@@ -758,9 +855,32 @@ def _function_identity(fn: object, walk: _Walk, depth: int) -> dict[str, object]
     """Structural record for a function: its code, its bindings, and its globals."""
     code = _code_of(fn)
     assert code is not None  # callers gate on _has_code
-    globals_map = getattr(fn, "__globals__", None)
+    globals_map = _probe(fn, "__globals__")
     globals_record: dict[str, object] = {}
     names = _reachable_names(code)
+    if _module_root(fn) in walk.pack_roots and _COMPUTED_ATTRIBUTE_BUILTINS.intersection(names):
+        # COMPUTED-NAME DISPATCH — the demand set is not statically knowable.
+        #
+        #     fn = getattr(helpers, "for_" + level.value.lower(), helpers.default)
+        #
+        # is textbook visitor dispatch, and the attribute it reaches appears in NO
+        # ``co_names``, so the demand-driven module walk cannot see it and the target's
+        # body never enters the preimage. Measured COLLIDE.
+        #
+        # The alternative — expanding the module's FULL member set — is the namespace
+        # walk that measured 207 MB and is unbounded. So this fails CLOSED instead: the
+        # grammar is marked uncacheable and its fingerprint becomes unreusable, which
+        # matches this engine's own invariant that what it cannot prove yields an honest
+        # unknown, never a false green. Bounded, and never silent in either direction.
+        #
+        # SCOPED TO THE PACK'S OWN TOP-LEVEL PACKAGES, and that scoping is not cosmetic.
+        # Applied to every transitively expanded function it fired on ``yaml``'s
+        # internals — measured, a pack that merely does ``import yaml`` went uncacheable
+        # — which would leave essentially every real pack permanently cold and destroy
+        # the feature this whole task exists to make safe. A third-party library's
+        # internal dispatch is the same under-discrimination the fence already accepts
+        # for the stdlib (residual R2/R4); the PACK's own dispatch is what is in scope.
+        walk.uncacheable = True
     if isinstance(globals_map, dict):
         for name in names:
             if name not in globals_map:
@@ -776,16 +896,27 @@ def _function_identity(fn: object, walk: _Walk, depth: int) -> dict[str, object]
         "kind": "function",
         **_named(fn),
         "code": _code_identity(code, walk, depth),
-        "defaults": _seed_value_identity(getattr(fn, "__defaults__", None), walk, depth),
-        "kwdefaults": _seed_value_identity(getattr(fn, "__kwdefaults__", None), walk, depth),
+        "defaults": _seed_value_identity(_probe(fn, "__defaults__"), walk, depth),
+        "kwdefaults": _seed_value_identity(_probe(fn, "__kwdefaults__"), walk, depth),
         "closure": _closure_identity(fn, walk, depth),
         "globals": globals_record,
         # Attributes set ON the function object. This is where a decorator parks the
         # state that IS the behaviour — ``functools.singledispatch`` keeps its
         # type -> implementation ``registry`` here, and ``functools.wraps`` its
         # ``__wrapped__``. Neither is reachable from code, closure or globals.
-        "attrs": _seed_value_identity(getattr(fn, "__dict__", None), walk, depth),
+        "attrs": _seed_value_identity(_probe(fn, "__dict__"), walk, depth),
     }
+
+
+# Builtins that turn a NAME into an attribute lookup at run time. If a function reaches
+# either, the set of members it actually uses cannot be read off its code object.
+_COMPUTED_ATTRIBUTE_BUILTINS = frozenset({"getattr", "vars"})
+
+
+def _module_root(value: object) -> str:
+    """The top-level package an object's ``__module__`` names, or ``""``."""
+    module = _probe(value, "__module__")
+    return module.split(".", 1)[0] if isinstance(module, str) and module else ""
 
 
 # Import machinery and filesystem paths in a module namespace: neither is behaviour,
@@ -899,9 +1030,13 @@ def _class_identity(cls: type, walk: _Walk, depth: int) -> dict[str, object]:
     # it — ``Policy.DEFAULT = Policy(1)`` reaches ``copyreg._slotnames``, which inserts
     # ``__slotnames__`` into this very dict mid-iteration. Round 4 filtered the key out
     # of the output and left the write, so the crash survived.
-    members = {
-        str(k): _seed_value_identity(v, walk, depth) for k, v in _snapshot(vars(cls).items) if k not in _CLASS_NOISE
-    }
+    # An ORDERED list of [index, name, record], not a dict. ``_canonical_json`` sorts
+    # dict keys, which made class-namespace order unobservable — and ``vars(cls)`` is an
+    # ordered mapping a pack can iterate first-match-wins exactly like a dict literal.
+    members = [
+        [i, str(k), _element(lambda v=v: _seed_value_identity(v, walk, depth))]  # type: ignore[misc]
+        for i, (k, v) in enumerate(m for m in _snapshot(vars(cls).items) if m[0] not in _CLASS_NOISE)
+    ]
     return {
         "kind": "class",
         **_named(cls),
@@ -957,7 +1092,8 @@ def _closure_identity(seed: object, walk: _Walk | None = None, _depth: int = 0) 
     if walk is None:
         walk = _Walk()
     items: list[dict[str, object]] = []
-    for cell in _snapshot(lambda: getattr(seed, "__closure__", None) or ()):
+    closure = _probe(seed, "__closure__")
+    for cell in _snapshot(lambda: closure if isinstance(closure, tuple) else ()):
         try:
             items.append(_seed_value_identity(cell.cell_contents, walk, _depth))
         except ValueError:
@@ -1019,7 +1155,10 @@ def _grammar_digest(boundary_types: tuple[BoundaryType, ...]) -> str:
     # expanded once and both records carry that same expansion, so the cost stays
     # linear in distinct reachable objects while every body change still moves it.
     walk = _Walk()
-    records = [
+    walk.pack_roots = frozenset(
+        root for root in (_module_root(bt.seed) for bt in boundary_types) if root and root not in _OPAQUE_PACKAGES
+    )
+    records: list[dict[str, object]] = [
         {
             "canonical_name": bt.canonical_name,
             "module_prefix": bt.module_prefix,
@@ -1041,6 +1180,11 @@ def _grammar_digest(boundary_types: tuple[BoundaryType, ...]) -> str:
         }
         for bt in boundary_types
     ]
+    if walk.uncacheable:
+        # FAIL CLOSED. A fresh token every call, so no cached summary is ever reused for
+        # a grammar whose reachable member set could not be proved. The ``uncacheable-``
+        # prefix keeps it greppable rather than hiding as an ordinary-looking digest.
+        return f"uncacheable-{secrets.token_hex(32)}"
     return hashlib.sha256(_canonical_json(records).encode("utf-8")).hexdigest()
 
 

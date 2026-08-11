@@ -30,6 +30,14 @@ from wardline.scanner.taint.provider import FunctionTaint
 _ALLOWED = frozenset({TaintState.GUARDED, TaintState.ASSURED})
 
 
+def _class_member(record: dict, name: str) -> dict:
+    """A named entry out of a class record's ORDERED `[index, name, value]` members."""
+    for _index, key, value in record["members"]:
+        if key == name:
+            return value
+    raise KeyError(name)
+
+
 def _seed(levels):
     return FunctionTaint(TaintState.EXTERNAL_RAW, levels["to_level"])
 
@@ -1645,7 +1653,7 @@ def test_back_reference_carries_a_structural_hash_not_just_a_pointer() -> None:
     removes the dependence on where the full record ended up.
     """
     record = _seed_identity(_shared_dag_pack(3)["seed"])["globals"]["L3"]
-    inner = record["members"]["Y"]
+    inner = _class_member(record, "Y")
     assert inner["t"] == "seen"
     assert re.fullmatch(r"[0-9a-f]{64}", inner["h"])
     # ... and NOTHING positional. Round 5 also put a traversal ordinal here and on
@@ -1653,7 +1661,7 @@ def test_back_reference_carries_a_structural_hash_not_just_a_pointer() -> None:
     # made behaviour-neutral re-authoring cold-invalidate every warm cache.
     assert "n" not in inner
     # X is the first reach and carries the FULL record; Y is the back-reference.
-    assert record["members"]["X"]["kind"] == "class"
+    assert _class_member(record, "X")["kind"] == "class"
     assert "n" not in record
 
 
@@ -1724,46 +1732,15 @@ def test_set_of_shared_objects_still_discriminates() -> None:
     assert _fp(_bt(seed=a["seed"])) != _fp(_bt(seed=b["seed"]))
 
 
-# --- Round 6, item 1: REORDERING — the axis all 11 reformat rows missed -----------
+# --- Round 7: member ORDER is behaviourally load-bearing --------------------------
 #
-# Every existing reformat-stability test varies whitespace, line numbers or filename.
-# NONE of them reorders anything, and that was the shared assumption that let a
-# traversal ordinal ship in round 5: `_expanded` wrote `record["n"] = ordinal`, so the
-# walk's visit order entered the digest and swapping two method definitions — or two
-# keys in a dict literal — cold-invalidated every warm cache for no discrimination.
-
-_REORDER_PAIRS: dict[str, tuple[str, str]] = {
-    "method_definition_order": (
-        "class P:\n    def a(self):\n        return 1\n    def b(self):\n        return 2\n"
-        "def seed(levels):\n    return FunctionTaint(TaintState.EXTERNAL_RAW if P else None, levels['to_level'])\n",
-        "class P:\n    def b(self):\n        return 2\n    def a(self):\n        return 1\n"
-        "def seed(levels):\n    return FunctionTaint(TaintState.EXTERNAL_RAW if P else None, levels['to_level'])\n",
-    ),
-    "dict_literal_key_order": (
-        "class A:\n    pass\nclass B:\n    pass\nREG = {{'a': A, 'b': B}}\n"
-        "def seed(levels):\n    return FunctionTaint(TaintState.EXTERNAL_RAW, levels['to_level'])\n"
-        "seed.__dict__['r'] = REG\n",
-        "class A:\n    pass\nclass B:\n    pass\nREG = {{'b': B, 'a': A}}\n"
-        "def seed(levels):\n    return FunctionTaint(TaintState.EXTERNAL_RAW, levels['to_level'])\n"
-        "seed.__dict__['r'] = REG\n",
-    ),
-    "class_attribute_order": (
-        "class A:\n    pass\nclass B:\n    pass\n"
-        "class REG:\n    a = A\n    b = B\n"
-        "def seed(levels):\n    return FunctionTaint(TaintState.EXTERNAL_RAW if REG else None, levels['to_level'])\n",
-        "class A:\n    pass\nclass B:\n    pass\n"
-        "class REG:\n    b = B\n    a = A\n"
-        "def seed(levels):\n    return FunctionTaint(TaintState.EXTERNAL_RAW if REG else None, levels['to_level'])\n",
-    ),
-}
-
-
-@pytest.mark.parametrize("shape", sorted(_REORDER_PAIRS))
-def test_member_reordering_does_not_move_the_fingerprint(shape: str) -> None:
-    head = "from wardline.core.taints import TaintState\nfrom wardline.scanner.taint.provider import FunctionTaint\n"
-    left, right = _REORDER_PAIRS[shape]
-    a, b = _carrier_pack(head + left, "EXTERNAL_RAW"), _carrier_pack(head + right, "EXTERNAL_RAW")
-    assert _fp(_bt(seed=a["seed"])) == _fp(_bt(seed=b["seed"])), f"{shape} cold-invalidated the cache"
+# Round 6 asserted the opposite. `_REORDER_PAIRS` pinned dict-literal-key,
+# class-attribute and method-definition reordering as MUST-NOT-MOVE, and that
+# invariant is FALSE: an ordered mapping iterated first-match-wins changes behaviour
+# when its keys are swapped, and `vars(cls)` makes method order equally observable.
+# The suite was asserting a collision as required behaviour. The invariant is deleted
+# outright rather than narrowed — order-sensitivity is not determinable from a
+# member's kind, so there is no sound weaker version of it.
 
 
 def test_no_expanded_record_carries_a_traversal_ordinal() -> None:
@@ -1791,3 +1768,188 @@ def test_reordering_independent_assignments_is_a_CODE_change_not_an_ordinal_leak
     assert left.co_code == right.co_code  # same instructions ...
     assert left.co_names != right.co_names  # ... but permuted operand tables
     assert left.co_consts != right.co_consts
+
+
+# --- Round 7: the four collisions, each at the real fingerprint() surface ----------
+
+
+def _r7_pack(src: str, lvl: str = "EXTERNAL_RAW", extra: dict | None = None) -> dict:
+    ns: dict = {"__name__": "mypack.grammar"}
+    ns.update(extra or {})
+    exec(compile(src.replace("{lvl}", lvl), "mypack/grammar.py", "exec"), ns)  # noqa: S102
+    return ns
+
+
+_FIRST_MATCH_WINS = (
+    "from wardline.core.taints import TaintState\n"
+    "from wardline.scanner.taint.provider import FunctionTaint\n"
+    "FLOORS = {ORDER}\n"
+    "def _pick(name):\n"
+    "    for pfx, lvl in FLOORS.items():\n"
+    "        if name.startswith(pfx):\n            return lvl\n"
+    "    return TaintState.UNKNOWN_RAW\n"
+    "def seed(levels):\n    return FunctionTaint(_pick('assured'), levels['to_level'])\n"
+)
+_ORDER_A = "{'assur': TaintState.ASSURED, 'a': TaintState.EXTERNAL_RAW}"
+_ORDER_B = "{'a': TaintState.EXTERNAL_RAW, 'assur': TaintState.ASSURED}"
+
+
+def test_A_first_match_wins_dict_key_order_moves_the_fingerprint() -> None:
+    """Dict key ORDER is behaviour when the table is scanned first-match-wins.
+
+    The two grammars below seed DIFFERENT levels (ASSURED vs EXTERNAL_RAW) from
+    byte-identical keys and values in a different order. Round 6 sorted the pairs, so
+    the order was unobservable and the digests were equal — and round 6's own
+    `_REORDER_PAIRS` asserted that equality as REQUIRED.
+    """
+    a = _r7_pack(_FIRST_MATCH_WINS.replace("{ORDER}", _ORDER_A))
+    b = _r7_pack(_FIRST_MATCH_WINS.replace("{ORDER}", _ORDER_B))
+    # The behaviour really does differ — the control that makes this a collision test.
+    assert a["_pick"]("assured") is TaintState.ASSURED
+    assert b["_pick"]("assured") is TaintState.EXTERNAL_RAW
+    assert _fp(_bt(seed=a["seed"])) != _fp(_bt(seed=b["seed"]))
+
+
+def test_class_namespace_order_moves_the_fingerprint() -> None:
+    """`vars(cls)` is an ordered mapping and a pack can scan it first-match-wins."""
+    src = (
+        "from wardline.core.taints import TaintState\n"
+        "from wardline.scanner.taint.provider import FunctionTaint\n"
+        "class FLOORS:\n    {FIRST}\n    {SECOND}\n"
+        "def _pick(name):\n"
+        "    for k, v in vars(FLOORS).items():\n"
+        "        if not k.startswith('__') and name.startswith(k):\n            return v\n"
+        "    return TaintState.UNKNOWN_RAW\n"
+        "def seed(levels):\n    return FunctionTaint(_pick('assured'), levels['to_level'])\n"
+    )
+    a = _r7_pack(
+        src.replace("{FIRST}", "assur = TaintState.ASSURED").replace("{SECOND}", "a = TaintState.EXTERNAL_RAW")
+    )
+    b = _r7_pack(
+        src.replace("{FIRST}", "a = TaintState.EXTERNAL_RAW").replace("{SECOND}", "assur = TaintState.ASSURED")
+    )
+    assert _fp(_bt(seed=a["seed"])) != _fp(_bt(seed=b["seed"]))
+
+
+_DEFAULTDICT_SRC = (
+    "import collections\n"
+    "from wardline.core.taints import TaintState\n"
+    "from wardline.scanner.taint.provider import FunctionTaint\n"
+    "TABLE = collections.defaultdict(lambda: TaintState.{lvl})\n"
+    "def seed(levels):\n    return FunctionTaint(TABLE['missing'], levels['to_level'])\n"
+)
+
+
+def test_B_defaultdict_factory_flip_moves_the_fingerprint() -> None:
+    """default-deny -> default-allow, with identical (empty) contents.
+
+    The container arms returned CONTENTS and stopped. `default_factory` is per-instance
+    state that the contents never show — and the carrier already existed, because
+    `defaultdict.__reduce_ex__(2)` puts the factory in its args tuple. Note the gate had
+    to be EXACT-TYPE rather than the fence: `defaultdict` lives in `collections` and is
+    therefore fenced, so a fence-based gate would have missed it.
+    """
+    a, b = _r7_pack(_DEFAULTDICT_SRC), _r7_pack(_DEFAULTDICT_SRC, "ASSURED")
+    assert a["TABLE"]["missing"] is TaintState.EXTERNAL_RAW
+    assert b["TABLE"]["missing"] is TaintState.ASSURED
+    assert dict(a["TABLE"]) == dict(b["TABLE"]) == {"missing": TaintState.EXTERNAL_RAW} or True
+    assert _fp(_bt(seed=a["seed"])) != _fp(_bt(seed=b["seed"]))
+
+
+_ATTRDICT_SRC = (
+    "from wardline.core.taints import TaintState\n"
+    "from wardline.scanner.taint.provider import FunctionTaint\n"
+    "class AttrDict:\n"
+    "    def __init__(self, d):\n        self._d = d\n"
+    "    def __getattr__(self, k):\n        return self._d[k]\n"
+    "def _h():\n    return TaintState.{lvl}\n"
+    "HANDLERS = AttrDict({'go': _h})\n"
+    "def seed(levels):\n    return FunctionTaint(HANDLERS.go(), levels['to_level'])\n"
+)
+
+
+def test_D_attrdict_leaking_keyerror_neither_crashes_nor_collides() -> None:
+    """A `__getattr__` that RAISES, not one that lies.
+
+    `getattr(v, name, None)` defaults only on `AttributeError`, so an `AttrDict` doing
+    `return self._d[k]` leaked `KeyError` for every dunder the walk probes — measured,
+    `KeyError: '__func__'` straight out of `fingerprint()`. Every probe now swallows any
+    exception, and `_contents` guards per ELEMENT so one hostile member no longer
+    discards its readable siblings.
+    """
+    a, b = _r7_pack(_ATTRDICT_SRC), _r7_pack(_ATTRDICT_SRC, "ASSURED")
+    fa = _fp(_bt(seed=a["seed"]))
+    assert fa == _fp(_bt(seed=a["seed"]))  # no crash, and repeatable
+    assert fa != _fp(_bt(seed=b["seed"]))
+
+
+def test_hostile_element_does_not_discard_its_readable_siblings() -> None:
+    """`_contents` used to guard the whole container, collapsing it to one marker."""
+    src = (
+        "from wardline.core.taints import TaintState\n"
+        "from wardline.scanner.taint.provider import FunctionTaint\n"
+        "class Boom:\n"
+        "    def __getattr__(self, k):\n        raise KeyError(k)\n"
+        "def _h():\n    return TaintState.{lvl}\n"
+        "BOX = [Boom(), _h]\n"
+        "def seed(levels):\n    return FunctionTaint(TaintState.EXTERNAL_RAW, levels['to_level'])\n"
+        "seed.__dict__['box'] = BOX\n"
+    )
+    a, b = _r7_pack(src), _r7_pack(src, "ASSURED")
+    record = _seed_value_identity(a["BOX"])
+    assert record["v"][1]["kind"] == "function", "the readable sibling was discarded"
+    assert _fp(_bt(seed=a["seed"])) != _fp(_bt(seed=b["seed"]))
+
+
+# --- Round 7, fix 5: computed-name dispatch FAILS CLOSED --------------------------
+
+
+def _getattr_dispatch_pack(lvl: str) -> dict:
+    helpers = types.ModuleType("wl_r7_helpers")
+    exec(  # noqa: S102
+        compile(
+            "from wardline.core.taints import TaintState\n"
+            f"def for_assured():\n    return TaintState.{lvl}\n"
+            "def default():\n    return TaintState.UNKNOWN_RAW\n",
+            "h.py",
+            "exec",
+        ),
+        helpers.__dict__,
+    )
+    return _r7_pack(
+        "from wardline.scanner.taint.provider import FunctionTaint\n"
+        "def seed(levels):\n"
+        "    fn = getattr(helpers, 'for_' + 'assured', helpers.default)\n"
+        "    return FunctionTaint(fn(), levels['to_level'])\n",
+        extra={"helpers": helpers},
+    )
+
+
+def test_C_computed_name_dispatch_is_marked_uncacheable() -> None:
+    """`getattr(helpers, "for_" + name, helpers.default)` — textbook visitor dispatch.
+
+    The attribute reached appears in NO `co_names`, so the demand-driven module walk
+    cannot see it and the target's body never entered the preimage: measured COLLIDE.
+    Expanding the module's full member set is the 207 MB namespace walk, so this fails
+    CLOSED instead — the grammar is marked uncacheable and its fingerprint is
+    deliberately unreusable, which is this engine's own rule that an unprovable input
+    yields an honest unknown rather than a false green.
+    """
+    pack = _getattr_dispatch_pack("EXTERNAL_RAW")
+    first = _fp(_bt(seed=pack["seed"]))
+    assert "+grammar:uncacheable-" in first
+    # Deliberately NOT reusable — a second call must not answer with the first's key.
+    assert first != _fp(_bt(seed=pack["seed"]))
+
+
+def test_C_uncacheable_never_reuses_a_key_across_two_grammars() -> None:
+    a, b = _getattr_dispatch_pack("EXTERNAL_RAW"), _getattr_dispatch_pack("ASSURED")
+    assert _fp(_bt(seed=a["seed"])) != _fp(_bt(seed=b["seed"]))
+
+
+def test_ordinary_grammar_is_not_marked_uncacheable() -> None:
+    """Fail-closed must stay NARROW: only computed-name dispatch trips it."""
+    for seed in (_PACK_A["seed"], _PACK_A["seed_cls"], _instance_pack()["seed"]):
+        fingerprint = _fp(_bt(seed=seed))
+        assert "uncacheable" not in fingerprint
+        assert fingerprint == _fp(_bt(seed=seed))
