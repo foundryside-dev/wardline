@@ -68,7 +68,7 @@ def test_trusted_early_returning_raw_before_later_clean_reassignment_fires(tmp_p
             "@external_boundary\ndef read_raw(p):\n    return p\n",
             "svc.py": "from wardline.decorators import trusted\n"
             "from io import read_raw\n"
-            "@trusted(level='ASSURED', to_level='ASSURED')\n"
+            "@trusted(level='ASSURED')\n"
             "def leaky(p, cond):\n"
             "    x = read_raw(p)\n"
             "    if cond:\n"

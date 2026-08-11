@@ -174,7 +174,7 @@ def test_101_fires_after_for_target_rebind(tmp_path: Path) -> None:
     hits = _vault_101(
         tmp_path,
         """
-        @trusted(level='ASSURED', to_level='ASSURED')
+        @trusted(level='ASSURED')
         def f():
             v = Vault()
             for v in junklib.items():
@@ -190,7 +190,7 @@ def test_101_fires_after_with_target_rebind(tmp_path: Path) -> None:
     hits = _vault_101(
         tmp_path,
         """
-        @trusted(level='ASSURED', to_level='ASSURED')
+        @trusted(level='ASSURED')
         def f():
             v = Vault()
             with junklib.ctx() as v:
@@ -206,7 +206,7 @@ def test_101_fires_after_walrus_rebind(tmp_path: Path) -> None:
     hits = _vault_101(
         tmp_path,
         """
-        @trusted(level='ASSURED', to_level='ASSURED')
+        @trusted(level='ASSURED')
         def f():
             v = Vault()
             if (v := junklib.one()):
@@ -222,7 +222,7 @@ def test_101_fires_after_tuple_unpack_rebind(tmp_path: Path) -> None:
     hits = _vault_101(
         tmp_path,
         """
-        @trusted(level='ASSURED', to_level='ASSURED')
+        @trusted(level='ASSURED')
         def f():
             v = Vault()
             v, w = junklib.pair()
@@ -280,7 +280,7 @@ def test_walrus_constructor_rebind_keeps_type_precision(tmp_path: Path) -> None:
     hits = _vault_101(
         tmp_path,
         """
-        @trusted(level='ASSURED', to_level='ASSURED')
+        @trusted(level='ASSURED')
         def f():
             if (v := Vault()):
                 pass
@@ -330,7 +330,7 @@ def test_nested_local_helper_validating_raw_is_not_a_101_fp(tmp_path: Path) -> N
     findings = _scan(
         tmp_path,
         """
-        @trusted(level='ASSURED', to_level='ASSURED')
+        @trusted(level='ASSURED')
         def f(p):
             def clean(x):
                 return 1
@@ -348,7 +348,7 @@ def test_nested_local_helper_returning_raw_still_fires_101(tmp_path: Path) -> No
     findings = _scan(
         tmp_path,
         """
-        @trusted(level='ASSURED', to_level='ASSURED')
+        @trusted(level='ASSURED')
         def f(p):
             def passthrough(x):
                 return x
@@ -382,7 +382,7 @@ def test_recursive_lambda_binding_does_not_skip_later_trust_boundary_check(tmp_p
     findings = _scan(
         tmp_path,
         """
-        @trusted(level='ASSURED', to_level='ASSURED')
+        @trusted(level='ASSURED')
         def f(p):
             cb = lambda x: cb(x)
             if False:
