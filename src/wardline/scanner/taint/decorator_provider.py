@@ -1345,9 +1345,25 @@ def _class_identity(cls: type, walk: _Walk, depth: int) -> dict[str, object]:
     # An ORDERED list of [index, name, record], not a dict. ``_canonical_json`` sorts
     # dict keys, which made class-namespace order unobservable — and ``vars(cls)`` is an
     # ordered mapping a pack can iterate first-match-wins exactly like a dict literal.
+    # A CLASS NAMESPACE is the third producer, and the one round 13 did not check. A pack
+    # class binding the second package — ``pick = staticmethod(_p)``, a plain
+    # ``pick = _p``, or a second-package BASE class — left ``surface_roots`` short while
+    # the consumer was still consulted on the method reached through it. Measured COLLIDE
+    # 9/9 across three bindings x three dispatch forms.
+    #
+    # SCOPED TO ``used``, exactly as the module hop is: ``used`` here is the set this
+    # record actually expands — the class's own namespace plus its bases — rather than
+    # anything reachable from it. That bound is what keeps a vendored or metadata-less
+    # dependency PARKED on a pack class from widening the surface further than the
+    # members this record already walks.
+    own = _snapshot(vars(cls).items)
+    demanded: dict[str, object] = {str(k): v for k, v in own if k not in _CLASS_NOISE}
+    for index, base in enumerate(getattr(cls, "__bases__", ())):
+        demanded[f"__base__{index}"] = base
+    _grow_surface_roots(_module_root(cls), tuple(sorted(demanded)), demanded, walk)
     members = [
         [i, str(k), _element(lambda v=v: _seed_value_identity(v, walk, depth))]  # type: ignore[misc]
-        for i, (k, v) in enumerate(m for m in _snapshot(vars(cls).items) if m[0] not in _CLASS_NOISE)
+        for i, (k, v) in enumerate(m for m in own if m[0] not in _CLASS_NOISE)
     ]
     return {
         "kind": "class",

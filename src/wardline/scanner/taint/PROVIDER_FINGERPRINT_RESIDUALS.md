@@ -81,24 +81,52 @@ is not less true, but it is less recently checked — do not trust the list unif
   live → `surface_roots == []`; gate neutered → `['charset_normalizer', 'requests',
   'urllib3']`, `['attr', 'attrs', 'idna', 'jsonschema', 'referencing', 'rpds']`, and all
   four go uncacheable. The correctness of the library cases rests entirely here.
+* **A dependency parked on a pack class is the same direction.** Since the class
+  namespace now feeds the producer, a library object held as a class attribute
+  contributes its root. Measured: under installed metadata all three of `click`,
+  `requests`, `jsonschema` stay cacheable; with the root carrying **no** metadata all
+  three go uncacheable. Bounded by scoping the growth to the members the class record
+  already expands, but the direction is real. Pinned by
+  `test_dependency_parked_on_a_pack_class_is_the_D4_direction`.
 * **Fix cheaper than the defect?** Unknown. A location-based test was built and measured
   working in an earlier round and deliberately not retained.
 
-## A1 — reach: modules bound where there is no demand information
+## A1 — reach: bindings the producer cannot turn into a demand set
 
 * **Direction:** UNDER-DISCRIMINATION. **Reach:** live but uncommon. **Freshness:** fresh.
-* **Covered:** a module reached through any function's or module's **globals/namespace**,
-  at any depth, bound either as a module or as one of its members.
-* **Not covered:** a module reached *only* through a **closure cell, a plain list, or a
-  class attribute**. Measured: 18 of 30 cells collide, pinned as known-collide in
-  `test_seed_reach_axis_behaves_as_classified`.
-* **Why:** for these bindings the module is never *visited* — the name is not in
-  `co_names`, so `_module_identity` never runs and there is no demand set to drive it.
-* **Fix cheaper than the defect?** **No, for these cells specifically.** Expanding a
+
+The surface-root producer runs at three sites — a function's `__globals__`, a module
+namespace, and a class namespace. What it needs from a binding is a **root name**. The
+line between closed and open is therefore *whether the thing that dispatches is ever
+visited*, not what kind of container held it:
+
+**CLOSED — the producer only needed a root name, and the fix was one call each:**
+
+| binding | closed in |
+|---|---|
+| module or member in any function's globals, at any depth | producer/consumer unification |
+| a pack **module namespace** binding the second package (`from otherpkg.mod import pick`, `from otherpkg import mod`) | module-namespace site |
+| a pack **class namespace** binding a **function** (`pick = _p`, `pick = staticmethod(_p)`) or a second-package **base class** | class-namespace site |
+
+**OPEN — the dispatching function is never *visited*, so no root name would help:**
+
+| binding | measured |
+|---|---|
+| a module reached only through a **closure cell** | collides |
+| a module reached only through a **plain list** | collides |
+| a module held as a **class attribute** | collides |
+
+For the open rows the module's member is never expanded: the name is not in any
+`co_names`, so `_module_identity` never runs and there is no demand set to drive it. 18 of
+30 cells, pinned in `test_seed_reach_axis_behaves_as_classified`; the class-attribute case
+is pinned separately in `test_class_attribute_holding_a_MODULE_is_still_open`.
+
+* **Fix cheaper than the defect?** **No — for the OPEN rows only.** Expanding a
   demand-free module's full member set is the namespace walk that measured **207 MB**.
-  ⚠️ **Do not generalise this sentence.** It is true of the closure/container family only.
-  The *module-hop* family — a pack module binding the second package — has demand
-  information and was closed by one call with zero blast radius.
+* ⚠️ **Do not generalise that sentence.** It was previously written across the whole
+  entry and stopped a maintainer looking at the closeable half twice. A binding whose
+  member is already visited — a function, a base class — needs only a root name, and each
+  such case has cost one call with zero blast radius.
 
 ## A2 — trigger names: an allow-list of spellings, not a closed category
 
@@ -201,6 +229,19 @@ is not less true, but it is less recently checked — do not trust the list unif
 * **Direction:** UNDER-DISCRIMINATION. **Freshness:** inherited.
 * Collides, but `core/config.py:198` always `import_module`s a pack, so a loaded grammar
   always has a module. Recorded for completeness.
+
+## A11 — the module-chain depth cap is reported as a cycle
+
+* **Direction:** UNDER-DISCRIMINATION. **Reach:** exotic. **Freshness:** fresh.
+* `_module_identity` returns `{"t": "module", "name": …, "cycle": True}` for **both**
+  `key in seen` *and* `depth > _MAX_VALUE_DEPTH`. The depth cap therefore drops every
+  member and is mislabelled as a reference cycle, so two grammars differing only below
+  the cap collide. Measured: a 70-deep module chain collides with verified differing
+  behaviour; a 3-deep chain discriminates.
+* A4 lists the `depth-capped` marker, but this arm never emits it.
+* **Fix cheaper than the defect?** The distinction is one marker, but emitting it moves
+  every digest that has ever hit the cap. Documented rather than fixed, at exotic reach.
+* Pinned by `test_module_chain_depth_cap_is_reported_as_a_cycle`.
 
 ---
 

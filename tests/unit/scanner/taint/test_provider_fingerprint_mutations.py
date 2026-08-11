@@ -3007,13 +3007,21 @@ def test_module_namespace_edge_grows_the_surface(case: str, form: str) -> None:
 
 # --- A2: the trigger set is defeated by REBINDING, pinned as known-open -----------
 
+# (aliased head/body, UNALIASED head/body). The unaliased half is the CONTROL: without
+# it this pin would also pass on a harness that cannot trigger at all.
 _ALIASED_TRIGGERS = {
-    "getattr_static_as_gs": ("from inspect import getattr_static as _gs\n", "return _gs(H, 'for_' + 'assured')()\n"),
-    "import_module_as_imp": (
-        "from importlib import import_module as _imp\n",
-        "return _imp('wl_alias_helpers').for_assured()\n",
+    "getattr_static_as_gs": (
+        ("from inspect import getattr_static as _gs\n", "return _gs(H, 'for_' + 'assured')()\n"),
+        ("import inspect\n", "return inspect.getattr_static(H, 'for_' + 'assured')()\n"),
     ),
-    "getattr_rebound_as_g": ("_g = getattr\n", "return _g(H, 'for_' + 'assured')()\n"),
+    "import_module_as_imp": (
+        ("from importlib import import_module as _imp\n", "return _imp('wl_alias_helpers').for_assured()\n"),
+        ("import importlib\n", "return importlib.import_module('wl_alias_helpers').for_assured()\n"),
+    ),
+    "getattr_rebound_as_g": (
+        ("_g = getattr\n", "return _g(H, 'for_' + 'assured')()\n"),
+        ("", "return getattr(H, 'for_' + 'assured')()\n"),
+    ),
 }
 
 
@@ -3027,28 +3035,38 @@ def test_aliased_triggers_are_known_open(shape: str) -> None:
     this ever starts failing, the axis moved: update
     `src/wardline/scanner/taint/PROVIDER_FINGERPRINT_RESIDUALS.md`.
     """
-    head, body = _ALIASED_TRIGGERS[shape]
+    aliased, unaliased = _ALIASED_TRIGGERS[shape]
     helper = _dispatch_helpers("EXTERNAL_RAW", "wl_alias_helpers")
     other = _dispatch_helpers("ASSURED", "wl_alias_helpers")
 
-    def mk(mod: types.ModuleType) -> object:
-        ns: dict = {"__name__": "mypack.grammar", "H": mod}
-        src = (
-            "from wardline.core.taints import TaintState\n"
-            + head
-            + _FT
-            + "def _pick():\n"
-            + textwrap.indent(body, "    ")
-            + "def seed(levels):\n    return FunctionTaint(_pick(), levels['to_level'])\n"
-        )
-        exec(compile(src, "m.py", "exec"), ns)  # noqa: S102
-        return ns["seed"]
+    def fingerprints(head: str, body: str) -> tuple[str, str]:
+        def mk(mod: types.ModuleType) -> object:
+            ns: dict = {"__name__": "mypack.grammar", "H": mod}
+            src = (
+                "from wardline.core.taints import TaintState\n"
+                + head
+                + _FT
+                + "def _pick():\n"
+                + textwrap.indent(body, "    ")
+                + "def seed(levels):\n    return FunctionTaint(_pick(), levels['to_level'])\n"
+            )
+            exec(compile(src, "m.py", "exec"), ns)  # noqa: S102
+            return ns["seed"]
 
-    with pytest.MonkeyPatch.context() as patched:
-        patched.setitem(sys.modules, "wl_alias_helpers", helper)
-        left = _fp(_bt(seed=mk(helper)))
-        patched.setitem(sys.modules, "wl_alias_helpers", other)
-        right = _fp(_bt(seed=mk(other)))
+        with pytest.MonkeyPatch.context() as patched:
+            patched.setitem(sys.modules, "wl_alias_helpers", helper)
+            first = _fp(_bt(seed=mk(helper)))
+            patched.setitem(sys.modules, "wl_alias_helpers", other)
+            second = _fp(_bt(seed=mk(other)))
+        return first, second
+
+    # CONTROL FIRST: the same mechanism, UNALIASED, must fire AND discriminate. Without
+    # it this pin would pass just as happily on a harness that cannot trigger at all.
+    control_left, control_right = fingerprints(*unaliased)
+    assert "+grammar:uncacheable-" in control_left, f"{shape} control did not fire — the harness is inert"
+    assert control_left != control_right, f"{shape} control did not discriminate — the harness is inert"
+
+    left, right = fingerprints(*aliased)
     assert "uncacheable" not in left, f"{shape} now fires — A2 narrowed, update the residual document"
     assert left == right, f"{shape} now discriminates — A2 narrowed, update the residual document"
 
@@ -3064,7 +3082,177 @@ def test_the_residual_document_exists_and_is_referenced() -> None:
     assert doc.is_file(), "the durable residual document is missing"
     text = doc.read_text(encoding="utf-8")
     assert "not claimed closed" in text
-    for entry in ("D1", "D2", "D3", "D4", "A1", "A2", "A3", "A4"):
+    expected = ["D1", "D2", "D3", "D4", *[f"A{n}" for n in range(1, 12)]]
+    for entry in expected:
         assert f"\n## {entry} " in text, f"residual {entry} is missing from the document"
+    assert "\n## Retired\n" in text, "the Retired section must survive"
     assert "DO NOT FIX" in text, "the do-not-fix marker must survive"
+    # Freshness is what stops the list being trusted uniformly; it must not be dropped.
+    assert "inherited" in text and "fresh" in text, "the fresh/inherited split must survive"
     assert doc.name in module_path.read_text(encoding="utf-8"), "the module does not point at the document"
+
+
+# --- Round 14: the CLASS namespace, the third producer ----------------------------
+
+
+def _r14_otherpkg(form: str, lvl: str) -> types.ModuleType:
+    """otherpkg.mod exposing pick() and a Base whose method dispatches."""
+    impl = _dispatch_helpers(lvl, "otherpkg.impl")
+    mod = types.ModuleType("otherpkg.mod")
+    mod.__dict__["M"] = impl
+    if form == "globals":
+        mod.__dict__["for_assured"] = impl.for_assured
+    body = _DISPATCH_FORMS[form].replace("H", "M")
+    src = "def pick():\n" + textwrap.indent(body, "    ")
+    src += "class Base:\n    def pick(self):\n" + textwrap.indent(body, "        ")
+    exec(compile(src, "d.py", "exec"), mod.__dict__)  # noqa: S102
+    mod.__dict__["pick"].__module__ = "otherpkg.mod"
+    mod.__dict__["Base"].__module__ = "otherpkg.mod"
+    return mod
+
+
+def _r14_class_ns(case: str, form: str, lvl: str) -> object:
+    other = _r14_otherpkg(form, lvl)
+    ns: dict = {"__name__": "mypack.grammar"}
+    if case == "staticmethod_in_class_body":
+        ns["_p"] = other.__dict__["pick"]
+        src = _FT + "class Reg:\n    pick = staticmethod(_p)\ndef seed(levels):\n"
+        src += "    return FunctionTaint(Reg.pick(), levels['to_level'])\n"
+    elif case == "plain_class_body_binding":
+        ns["_p"] = other.__dict__["pick"]
+        src = _FT + "class Reg:\n    pick = _p\ndef seed(levels):\n"
+        src += "    return FunctionTaint(Reg.pick(), levels['to_level'])\n"
+    else:
+        ns["Base"] = other.__dict__["Base"]
+        src = _FT + "class Reg(Base):\n    pass\ndef seed(levels):\n"
+        src += "    return FunctionTaint(Reg().pick(), levels['to_level'])\n"
+    exec(compile(src, "m.py", "exec"), ns)  # noqa: S102
+    return ns["seed"]
+
+
+_CLASS_NS_CASES = [
+    (case, form)
+    for case in ("staticmethod_in_class_body", "plain_class_body_binding", "second_package_base_class")
+    for form in sorted(_DISPATCH_FORMS)
+]
+
+
+@pytest.mark.parametrize(("case", "form"), _CLASS_NS_CASES)
+def test_class_namespace_edge_grows_the_surface(case: str, form: str) -> None:
+    """The third namespace producer — the one the module-hop round did not check.
+
+    `_grow_surface_roots` had two call sites (function globals, module namespace) and a
+    class body is neither. Measured COLLIDE 9/9 across three bindings x three dispatch
+    forms, with behaviour verified by calling both seeds. Scoped to the members this
+    record already expands (`vars(cls)` minus noise, plus `__bases__`), so a dependency
+    parked on a pack class cannot widen the surface past what is already walked.
+    """
+    left_seed, right_seed = _r14_class_ns(case, form, "EXTERNAL_RAW"), _r14_class_ns(case, form, "ASSURED")
+    levels = {"to_level": TaintState.GUARDED}
+    assert left_seed(levels).body_taint is TaintState.EXTERNAL_RAW
+    assert right_seed(levels).body_taint is TaintState.ASSURED
+    left = _fp(_bt(seed=left_seed))
+    assert "+grammar:uncacheable-" in left, f"{case}/{form} did not fail closed"
+    assert left != _fp(_bt(seed=right_seed))
+
+
+def test_class_attribute_holding_a_MODULE_is_still_open() -> None:
+    """A1's split, pinned on the open side.
+
+    A class attribute holding a FUNCTION or a BASE CLASS is closeable and closed — the
+    producer needs only a root name. A class attribute holding a MODULE is not: `pick`
+    is never visited, because there is no demand set to drive `_module_identity`. Pinned
+    so the two halves cannot be conflated again.
+    """
+    impl = _dispatch_helpers("EXTERNAL_RAW", "otherpkg.impl")
+    other_impl = _dispatch_helpers("ASSURED", "otherpkg.impl")
+
+    def mk(dispatch_impl: types.ModuleType) -> object:
+        mod = types.ModuleType("otherpkg.mod")
+        mod.__dict__["M"] = dispatch_impl
+        exec(  # noqa: S102
+            compile(
+                "def pick():\n" + textwrap.indent(_DISPATCH_FORMS["getattr"].replace("H", "M"), "    "), "d.py", "exec"
+            ),
+            mod.__dict__,
+        )
+        mod.__dict__["pick"].__module__ = "otherpkg.mod"
+        ns: dict = {"__name__": "mypack.grammar", "MOD": mod}
+        src = _FT + "class Reg:\n    mod = MOD\ndef seed(levels):\n"
+        src += "    return FunctionTaint(Reg.mod.pick(), levels['to_level'])\n"
+        exec(compile(src, "m.py", "exec"), ns)  # noqa: S102
+        return ns["seed"]
+
+    left_seed, right_seed = mk(impl), mk(other_impl)
+    levels = {"to_level": TaintState.GUARDED}
+    assert left_seed(levels).body_taint is TaintState.EXTERNAL_RAW
+    assert right_seed(levels).body_taint is TaintState.ASSURED
+    left = _fp(_bt(seed=left_seed))
+    assert "uncacheable" not in left
+    assert left == _fp(_bt(seed=right_seed)), "A1's module half closed — update the residual document"
+
+
+@pytest.mark.parametrize("module_name", ["click", "requests", "jsonschema"])
+def test_dependency_parked_on_a_pack_class_is_the_D4_direction(
+    module_name: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The direction the class-namespace growth opens, measured rather than assumed.
+
+    A library object parked on a pack class contributes its root to the surface. Under
+    installed metadata the distribution gate rejects it and the pack stays warm; with the
+    root carrying NO metadata — vendored, zip-imported, local tree — it is read as the
+    pack's own and the pack goes cold. That is residual D4's over-invalidation direction,
+    not a new class, and the `used`-scoping bounds it to members already walked.
+    """
+    module = pytest.importorskip(module_name)
+    attribute = {"click": "Command", "requests": "Session", "jsonschema": "Draft7Validator"}[module_name]
+    pack = _r7_pack(
+        "from wardline.core.taints import TaintState\n" + _FT + "class Reg:\n    CLIENT = DEP\n"
+        "def seed(levels):\n"
+        "    return FunctionTaint(TaintState.EXTERNAL_RAW if Reg.CLIENT else None, levels['to_level'])\n",
+        extra={"DEP": getattr(module, attribute)},
+    )
+    assert "uncacheable" not in _fp(_bt(seed=pack["seed"])), f"{module_name} bricked under real metadata"
+    monkeypatch.setattr(dp, "_PACKAGE_DISTRIBUTIONS", {"mypack": ("acme-trustpack",)})
+    assert "+grammar:uncacheable-" in _fp(_bt(seed=pack["seed"])), (
+        f"{module_name} no longer bricks without metadata — D4 shrank, update the residual document"
+    )
+
+
+def test_module_chain_depth_cap_is_reported_as_a_cycle() -> None:
+    """A11, pinned: `_module_identity` reports the DEPTH CAP as `cycle` and drops members.
+
+    Both `key in seen` and `depth > _MAX_VALUE_DEPTH` return the same record, so a deep
+    module chain silently loses everything below the cap and is mislabelled as a
+    reference cycle. Exotic reach, and the fix moves digests, so it is documented rather
+    than fixed.
+    """
+
+    def chain(depth: int, lvl: str) -> object:
+        leaf = types.ModuleType("otherpkg.leaf")
+        exec(  # noqa: S102
+            compile(
+                f"from wardline.core.taints import TaintState\ndef val():\n    return TaintState.{lvl}\n",
+                "l.py",
+                "exec",
+            ),
+            leaf.__dict__,
+        )
+        current = leaf
+        for index in range(depth):
+            wrapper = types.ModuleType(f"chain.m{index}")
+            wrapper.__dict__["nxt"] = current
+            current = wrapper
+        ns: dict = {"__name__": "mypack.grammar", "H": current}
+        expression = "H" + ".nxt" * depth + ".val()"
+        exec(  # noqa: S102
+            compile(
+                _FT + f"def seed(levels):\n    return FunctionTaint({expression}, levels['to_level'])\n", "m.py", "exec"
+            ),
+            ns,
+        )
+        return ns["seed"]
+
+    assert _fp(_bt(seed=chain(3, "EXTERNAL_RAW"))) != _fp(_bt(seed=chain(3, "ASSURED")))
+    deep_left, deep_right = _fp(_bt(seed=chain(70, "EXTERNAL_RAW"))), _fp(_bt(seed=chain(70, "ASSURED")))
+    assert deep_left == deep_right, "A11 closed — the depth cap now discriminates; update the residual document"
