@@ -4,11 +4,23 @@ Known, measured limitations of `_grammar_digest` in `decorator_provider.py` — 
 key over a project's custom trust grammar.
 
 **Anything not on this list is not claimed closed.** This document records what is known
-to be wrong, not what has been proven right. It was produced by a fifteen-round
+to be wrong, not what has been proven right. It was produced by a sixteen-round
 adversarial hardening programme; the working notes behind each entry are in the task-13
 report under `.superpowers/sdd/2026-08-09-s0-hardening-and-consumer-prep/`, but that
 workspace is temporary — **this file is the durable artifact** and is written to be
 actionable without it.
+
+## The one thing to know first
+
+> **The guard is consulted on every visited function but can only ever answer from that
+> function's own top-level package name. Any state that makes that name unavailable — no
+> `__module__`, or a distribution gate that reads it as someone else's — silently turns
+> the fail-closed guard off rather than failing closed.**
+
+That single sentence unifies A1, A2 and D4, and it is the shape every remaining
+under-discrimination in this document takes. The empty-root case is now handled
+explicitly (`_is_grammar_surface` returns True for a rootless function); the
+foreign-read case is **not**, and is D4.
 
 ## How to read an entry
 
@@ -48,12 +60,15 @@ is not less true, but it is less recently checked — do not trust the list unif
 * **Direction:** OPERATIONAL. **Freshness:** inherited (not re-measured since it was found).
 * Every scan of a D1-affected pack writes a summary-cache entry under a key nothing will
   ever read. Unbounded disk growth.
+* **This grows with D1.** Every widening of the guard — the trigger-name pass, visit-point
+  growth, failing closed on the empty root — makes more grammars uncacheable, and each one
+  writes one more orphan per scan.
 * **Fix cheaper than the defect?** Yes — suppress the write on the uncacheable path, or
   sweep. Not done here because it lives outside the two files this work could touch.
 
 ## D3 — the object graph re-keys itself
 
-* **Direction:** OVER-INVALIDATION. **Reach:** the primary agent surface. **Freshness:** inherited (rode a passing suite in the final round).
+* **Direction:** OVER-INVALIDATION. **Reach:** the primary agent surface. **Freshness:** **fresh** (re-measured — five fresh processes, five distinct digests).
 * `cached_property`, memo dicts, PEP-562 lazy imports, `WeakSet` — and the digest's own
   traversal — mutate the graph when the grammar is *used*, so a long-lived `wardline mcp`
   never warms the cache for a pack that memoises anything.
@@ -70,9 +85,14 @@ is not less true, but it is less recently checked — do not trust the list unif
   whether a top-level package is the pack's own or a third-party library. Nothing
   structural separates `import otherpkg.mod as sibling` from `import yaml as Y`; the
   packaging metadata is the only available signal.
-* **Under-discriminates** when a pack ships its own second package as a *separate*
-  distribution (measured: 8/8 collide), and when the grammar itself is not installed while
-  the second package is. `core/config.py` constrains neither layout.
+* **Under-discriminates, and it is silent TWICE.** A root read as foreign never joins the
+  surface, so the guard cannot fire *inside* it either — the dispatcher is invisible to
+  the very mechanism meant to fail closed on it. Measured, four ways: same distribution
+  fails closed; **separate distributions COLLIDE**; **grammar uninstalled while the second
+  package is installed COLLIDES**; neither installed fails closed. `core/config.py`
+  constrains neither layout. Pinned by `test_foreign_read_root_is_silent_twice`.
+* This is the surviving instance of the sentence at the top of this document: the gate
+  makes the package name unavailable, and the guard turns off rather than failing closed.
 * **Over-invalidates** for a library with no metadata — vendored, zip-imported, or a local
   source tree. Measured: with the grammar installed and the library root carrying no
   metadata, `click.Command`, `rich.console.Console`, `requests.Session` and
@@ -133,8 +153,21 @@ so no root name would help. 18 of 30 cells, pinned by
 * **Fix cheaper than the defect?** **No — for the OPEN row only.** Expanding a
   demand-free module's full member set is the namespace walk that measured **207 MB**.
 * ⚠️ **Do not generalise that sentence past the open row.** This entry has over-claimed
-  four times; each time the claim moved with a fix without being re-derived. It must be
-  re-measured every round, not edited.
+  **five** times; each time the claim moved with a fix without being re-derived. It must be
+  **re-measured every round, not edited** — and note that it was this very ⚠️ that caused
+  the empty-root case below to be looked for.
+
+**A third exclusion — the construction is not unconditional.** "Producer and consumer are
+symmetric by construction" holds only for a function that HAS a top-level package name.
+Growth keys on `_module_root(fn)`, so a function with **no `__module__`** — the shape an
+`exec`-ed helper takes — is outside the construction entirely. It is handled by a separate
+explicit rule (`_is_grammar_surface` returns True for an empty root) rather than by the
+construction, and that rule is what makes it fail closed. Measured before the rule: the
+rootless helper COLLIDED while the same helper as an ordinary `def` fired. Pinned by
+`test_dispatcher_with_no_module_fails_closed`; the absence of a live over-trigger is
+pinned by `test_no_installed_library_names_a_trigger_from_a_rootless_object` (census: 45
+rootless code-bearing objects across the dependency set, all in `attr`/`attrs`, **zero**
+naming a trigger).
 
 ## A2 — trigger names: an allow-list of spellings, not a closed category
 

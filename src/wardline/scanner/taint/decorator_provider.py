@@ -967,8 +967,13 @@ def _function_identity(fn: object, walk: _Walk, depth: int) -> dict[str, object]
         # uncacheable; that would leave essentially every real pack permanently cold.
         # The root-scoped form that replaced it was a FAIL-OPEN: a
         # ``functools.partial`` seed left the root set empty and silently disabled the
-        # guard for the whole grammar. Keying on a non-fenced MODULE being reachable
-        # keeps ``yaml`` cacheable AND leaves no empty case to fail open.
+        # guard for the whole grammar. Keying on what is in reach keeps ``yaml``
+        # cacheable.
+        #
+        # CORRECTED: this comment used to claim it "leaves no empty case to fail open".
+        # That was false — a function with NO ``__module__`` has no root to key on at
+        # all, and both growth and this guard skipped it silently. ``_is_grammar_surface``
+        # now fails CLOSED on the empty root; see its docstring.
         walk.uncacheable = True
     if isinstance(globals_map, dict):
         for name in names:
@@ -1142,8 +1147,22 @@ def _is_foreign_distribution(root: str, pack_roots: frozenset[str]) -> bool:
 
 
 def _is_grammar_surface(fn: object, walk: _Walk) -> bool:
-    """Is this function part of the grammar's own surface (its roots, or a grown one)?"""
+    """Is this function part of the grammar's own surface (its roots, or a grown one)?
+
+    THE EMPTY ROOT FAILS CLOSED, and it is the one hole the visit-point construction did
+    NOT remove. The guard can only ever answer from a function's own top-level package
+    name; a function with no ``__module__`` — the shape an ``exec``-ed helper takes — has
+    none, so growth skips it and this test would read ``""`` as "not ours" and stay
+    silent. The fence does not catch it either: ``_is_structurally_opaque`` deliberately
+    returns False for an absent ``__module__``, because an unknown module is not a
+    versioned-elsewhere module. Measured with the pack root installed: an ``exec``-ed
+    helper doing ``getattr(H, "for_" + n)()`` COLLIDED while the same helper as an
+    ordinary ``def`` failed closed. Not exotic — an ordinary ``import jsonschema`` pack
+    visits 5 rootless functions and ``attr``/``attrs`` expose 45.
+    """
     root = _module_root(fn)
+    if not root:
+        return True
     return root in walk.pack_roots or root in walk.surface_roots
 
 

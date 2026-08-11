@@ -3329,3 +3329,119 @@ def test_list_held_dependency_is_the_D4_direction(module_name: str, monkeypatch:
     assert "+grammar:uncacheable-" in _fp(_bt(seed=pack["seed"])), (
         f"{module_name} no longer bricks without metadata — D4 shrank, update the residual document"
     )
+
+
+# --- Round 16: the empty root, and the foreign-read root --------------------------
+#
+# EVERY dispatch fixture in this module explicitly assigns `fn.__module__`
+# (`_make_dispatcher`, `_r11_dispatcher`, `_r13_module_hop`, `_r14_otherpkg`). That is
+# what all 90+ matrix cells assumed, and it is why a function with NO `__module__`
+# survived fifteen rounds and a 48-row cross-product. Fifth occurrence of the shape.
+
+
+def _rootless_pack(rootless: bool, lvl: str) -> object:
+    """The dispatching helper as an `exec`'d function with no `__name__`, or as a plain def."""
+    helper = _dispatch_helpers(lvl, "otherpkg.impl")
+    dispatch = "fn = getattr(H, 'for_' + 'assured', H.default)\nreturn fn()\n"
+    helper_ns: dict = {"H": helper}
+    if not rootless:
+        helper_ns["__name__"] = "mypack.helpers"
+    exec(compile("def pick():\n" + textwrap.indent(dispatch, "    "), "x.py", "exec"), helper_ns)  # noqa: S102
+    ns: dict = {"__name__": "mypack.grammar", "pick": helper_ns["pick"]}
+    exec(  # noqa: S102
+        compile(_FT + "def seed(levels):\n    return FunctionTaint(pick(), levels['to_level'])\n", "m.py", "exec"),
+        ns,
+    )
+    return ns["seed"]
+
+
+@pytest.mark.parametrize("rootless", [False, True], ids=["ordinary_def_control", "no_dunder_module"])
+def test_dispatcher_with_no_module_fails_closed(rootless: bool) -> None:
+    """The guard can only answer from a function's own top-level package name.
+
+    A function with no `__module__` has none, so growth skipped it and
+    `_is_grammar_surface` read `""` as "not ours" and stayed silent — while
+    `_is_structurally_opaque` deliberately returns False for an absent `__module__`, so
+    the fence did not catch it either. Measured COLLIDE with the pack root installed.
+    Not exotic: an ordinary `import jsonschema` pack visits 5 rootless functions, and
+    `attr`/`attrs` expose 45.
+    """
+    left_seed, right_seed = _rootless_pack(rootless, "EXTERNAL_RAW"), _rootless_pack(rootless, "ASSURED")
+    levels = {"to_level": TaintState.GUARDED}
+    assert left_seed(levels).body_taint is TaintState.EXTERNAL_RAW
+    assert right_seed(levels).body_taint is TaintState.ASSURED
+    left = _fp(_bt(seed=left_seed))
+    assert "+grammar:uncacheable-" in left, "the empty root failed OPEN"
+    assert left != _fp(_bt(seed=right_seed))
+
+
+def test_no_installed_library_names_a_trigger_from_a_rootless_object() -> None:
+    """Failing closed on the empty root has no live over-trigger instance.
+
+    Census across the pack's own dependency set: the rootless code-bearing objects that
+    exist are `attr`/`attrs` descriptors, and none of them names a trigger. If this ever
+    fails, failing closed on the empty root has started bricking a real library and D1's
+    reach must be re-measured.
+    """
+    offenders: list[str] = []
+    for top in ("attr", "attrs", "jsonschema", "click", "rich", "requests", "yaml"):
+        module = pytest.importorskip(top)
+        seen: set[int] = set()
+        stack = [module]
+        while stack and len(seen) < 300:
+            current = stack.pop()
+            if id(current) in seen:
+                continue
+            seen.add(id(current))
+            try:
+                items = list(vars(current).items())
+            except Exception:  # noqa: BLE001, S112
+                continue
+            for _name, value in items:
+                if isinstance(value, types.ModuleType):
+                    if str(getattr(value, "__name__", "")).split(".")[0] == top:
+                        stack.append(value)
+                    continue
+                candidates = [value]
+                if isinstance(value, type):
+                    try:
+                        candidates = list(vars(value).values())
+                    except Exception:  # noqa: BLE001, S112
+                        continue
+                for candidate in candidates:
+                    code = dp._code_of(candidate)
+                    if (
+                        code is not None
+                        and not dp._module_root(candidate)
+                        and dp._COMPUTED_TRIGGER_NAMES.intersection(dp._reachable_names(code))
+                    ):
+                        offenders.append(f"{top}:{getattr(candidate, '__qualname__', '?')}")
+    assert offenders == [], f"rootless objects naming a trigger: {offenders}"
+
+
+_FOREIGN_ROOT_CASES = {
+    "same_distribution": ({"mypack": ("acme",), "otherpkg": ("acme",)}, True),
+    "separate_distributions": ({"mypack": ("acme",), "otherpkg": ("other",)}, False),
+    "grammar_uninstalled_second_package_installed": ({"otherpkg": ("other",)}, False),
+    "neither_installed": ({}, True),
+}
+
+
+@pytest.mark.parametrize("case", sorted(_FOREIGN_ROOT_CASES))
+def test_foreign_read_root_is_silent_twice(case: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    """D4's UNDER-discrimination direction, which the entry framed only as cost.
+
+    A root read as foreign is silent twice over: it never joins the surface, so the
+    guard cannot fire inside it either. The two `False` rows below are live
+    under-discrimination pinned as known-collide, not merely a cold cache.
+    """
+    distributions, should_fire = _FOREIGN_ROOT_CASES[case]
+    monkeypatch.setattr(dp, "_PACKAGE_DISTRIBUTIONS", distributions)
+    left_seed = _r11_seed("module_in_globals", "getattr", "bare", "EXTERNAL_RAW")
+    right_seed = _r11_seed("module_in_globals", "getattr", "bare", "ASSURED")
+    left, right = _fp(_bt(seed=left_seed)), _fp(_bt(seed=right_seed))
+    if should_fire:
+        assert "+grammar:uncacheable-" in left, f"{case} stopped failing closed"
+    else:
+        assert "uncacheable" not in left
+        assert left == right, f"{case} now discriminates — D4 narrowed, update the residual document"
