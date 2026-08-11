@@ -548,3 +548,48 @@ def test_py_wl_110_carries_a_contradiction_and_a_match_specimen():
     assert matches, "PY-WL-110 has no interaction: match clean sentinel"
     assert all(e.label == harness.TRUE_POSITIVE and e.section == "fixtures" for e in contradictions)
     assert all(e.label == harness.FALSE_POSITIVE and e.section == "sentinels" for e in matches)
+
+
+# --- checks that previously had NO standing test (review finding, Task 10) -------------
+
+
+def test_manifest_rejects_empty_path_key(tmp_path, monkeypatch):
+    # The `not path` half of the non-empty-string guard. Without it an empty key resolves
+    # to the section ROOT (a directory), which fails later with a misleading
+    # "no such fixture" instead of naming the real defect.
+    bad = _scratch_manifest(
+        tmp_path,
+        "fixtures:\n  '':\n    - {rule_id: PY-WL-106, qualname: \"x.f\", label: TRUE_POSITIVE}\n",
+    )
+    monkeypatch.setattr(harness, "MANIFEST_PATH", bad)
+    with pytest.raises(ValueError, match="non-empty string"):
+        harness.load_manifest()
+
+
+def test_manifest_rejects_a_file_name_reused_across_scan_roots(tmp_path, monkeypatch):
+    # The reconciliation key is ROOT-RELATIVE, so one file name in both roots would make
+    # two distinct specimens collide onto one key and silently reconcile against the
+    # wrong ground truth.
+    bad = _scratch_manifest(
+        tmp_path,
+        "fixtures:\n  deser_sink.py:\n"
+        '    - {rule_id: PY-WL-106, qualname: "deser_sink.loads_untrusted", label: TRUE_POSITIVE}\n'
+        "sentinels:\n  deser_sink.py:\n"
+        '    - {rule_id: PY-WL-106, qualname: "other.thing", label: FALSE_POSITIVE}\n',
+    )
+    monkeypatch.setattr(harness, "MANIFEST_PATH", bad)
+    with pytest.raises(ValueError, match="reused across scan roots"):
+        harness.load_manifest()
+
+
+def test_manifest_rejects_a_true_positive_row_in_the_sentinels_section(tmp_path, monkeypatch):
+    # sentinels/ is the clean-shape root: a TRUE_POSITIVE row there would assert the
+    # engine SHOULD fire on a file whose whole purpose is that it stays silent.
+    bad = _scratch_manifest(
+        tmp_path,
+        "sentinels:\n  clean_exec_const.py:\n"
+        '    - {rule_id: PY-WL-107, qualname: "clean_exec_const.const_eval", label: TRUE_POSITIVE}\n',
+    )
+    monkeypatch.setattr(harness, "MANIFEST_PATH", bad)
+    with pytest.raises(ValueError, match="must be FALSE_POSITIVE"):
+        harness.load_manifest()
