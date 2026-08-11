@@ -77,6 +77,17 @@ wardline.yaml
 # CI-only assembled Pages tree (www root + docs/)
 publish/
 
-# Developer config / local tooling — not part of the solution
-.claude/
+# Developer config / local tooling — not part of the solution.
+# Listed entry-by-entry rather than as a bare `.claude/` because git cannot
+# re-include a path whose parent directory is excluded, and one skill below is
+# a tracked project artifact (PDR-0022).
+.claude/*
 .agents/
+
+# The vacuity catalogue is hand-authored project process, not tool-managed
+# local config: PDR-0022 sites it here at project scope, and it has to survive
+# a fresh clone. Everything else under .claude/skills/ is tool-installed
+# (filigree/loomweave/wardline) and stays ignored.
+!.claude/skills/
+.claude/skills/*
+!.claude/skills/reviewing-for-vacuity/

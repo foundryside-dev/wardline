@@ -58,6 +58,12 @@ ceremony. Track that qualitatively; it is not instrumented and should not preten
 - The 5-round guard and the stopping rule are also saved to project memory
   (`feedback_review_loop_guards`), because the ledger they were derived from is deleted at plan
   close.
+- **The catalogue is version-controlled, despite living under `.claude/`.** That directory is
+  otherwise ignored as local tooling config, so the skill is re-included by an explicit
+  `.gitignore` negation (`.claude/skills/*` + `!.claude/skills/reviewing-for-vacuity/`). Every
+  other skill under `.claude/skills/` is tool-installed by `filigree`/`loomweave`/`wardline` and
+  stays ignored. Without this the catalogue would survive plan close but not a fresh clone —
+  which is the same failure mode that ruled out leaving the heuristics in review transcripts.
 - Standing cost: an independent assessor per five rounds, plus catalogue maintenance. Accepted by
   the owner explicitly — *"the capability is important"*.
 - **A process failure this session belongs on the record.** A subagent ran `git checkout` and
