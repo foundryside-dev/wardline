@@ -15,6 +15,8 @@ from __future__ import annotations
 import ast
 import hashlib
 import json
+import re
+import sys
 from types import CodeType, ModuleType
 from typing import TYPE_CHECKING
 
@@ -31,7 +33,7 @@ from wardline.scanner.marker_reader import shadowed_builtin_roots as _shadowed_b
 from wardline.scanner.taint.provider import FunctionTaint, SeedResult
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Callable, Mapping
 
     from wardline.scanner.index import Entity
     from wardline.scanner.taint.provider import SeedContext
@@ -69,10 +71,35 @@ def vocabulary_star_exports() -> dict[str, dict[str, str]]:
 
 # Recursion guard for pathological / self-referential values reachable through a
 # seed's globals or defaults. Set far above anything a real trust grammar reaches
-# (measured maximum on this tree: 3), so a capped record is never mistaken for
-# discrimination — if this ever trips, the digest UNDER-discriminates and the cap
-# must rise rather than the record be accepted.
-_MAX_VALUE_DEPTH = 24
+# (measured maximum on this tree: 7 for a pack whose seed calls a module-level
+# helper that touches wardline's own classes), so a capped record is never mistaken
+# for discrimination — if either guard trips, the digest UNDER-discriminates and the
+# guard must rise rather than the record be accepted.
+_MAX_VALUE_DEPTH = 64
+# Ceiling on how many distinct objects one digest may structurally expand. Two
+# orders of magnitude above the measured worst case (180 objects, <1 ms) — a safety
+# valve against a seed that reaches a pathological object graph, never a routine cap.
+_MAX_EXPANDED_NODES = 20_000
+
+
+class _Walk:
+    """Traversal state for one ``_grammar_digest`` call.
+
+    A referenced global may reference back (``seed`` → ``_helper`` → ``seed``) and one
+    object may be reachable by many paths, so the walk needs both cycle detection and
+    memoization: ``active`` breaks cycles, ``memo`` makes the cost linear in the number
+    of DISTINCT reachable objects rather than exponential in the paths to them.
+    ``alive`` pins every memoized object for the duration so CPython cannot recycle an
+    ``id()`` underneath the memo.
+    """
+
+    __slots__ = ("active", "alive", "budget", "memo")
+
+    def __init__(self) -> None:
+        self.memo: dict[int, dict[str, object]] = {}
+        self.alive: list[object] = []
+        self.active: set[int] = set()
+        self.budget: int = _MAX_EXPANDED_NODES
 
 
 def _canonical_json(value: object) -> str:
@@ -80,13 +107,90 @@ def _canonical_json(value: object) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
 
 
-def _seed_value_identity(value: object, _depth: int = 0) -> dict[str, object]:
+def _named(value: object) -> dict[str, object]:
+    """The (module, qualname) pair for an object, as distinct slots — never joined."""
+    return {
+        "module": str(getattr(value, "__module__", "") or ""),
+        "qualname": str(getattr(value, "__qualname__", None) or getattr(value, "__name__", "") or ""),
+    }
+
+
+def _expanded(value: object, walk: _Walk, depth: int, build: Callable[[int], dict[str, object]]) -> dict[str, object]:
+    """Memoized, cycle-safe, budgeted structural expansion of one object."""
+    key = id(value)
+    cached = walk.memo.get(key)
+    if cached is not None:
+        return cached
+    if key in walk.active:
+        # A reference cycle. The back-edge carries the NAME only; the object's own
+        # structure is already being expanded higher up this same path, so the
+        # structure is in the preimage exactly once and a body change still moves it.
+        return {"t": "cycle", **_named(value)}
+    if walk.budget <= 0:
+        return {"t": "budget-exhausted", **_named(value)}
+    walk.budget -= 1
+    walk.active.add(key)
+    try:
+        record = build(depth)
+    finally:
+        walk.active.discard(key)
+    walk.alive.append(value)
+    walk.memo[key] = record
+    return record
+
+
+def _has_code(value: object) -> bool:
+    return getattr(value, "__code__", None) is not None
+
+
+# Top-level packages whose bodies are NOT part of a pack's declaration identity and
+# are therefore keyed by name, not structure:
+#
+#  * the standard library and builtins — these change only with the interpreter, which
+#    is not the grammar, and walking them is what made the digest process-UNSTABLE
+#    (measured: ``object.__new__`` and ``dataclasses.Field``'s ``_MISSING_TYPE``
+#    sentinels both repr with a memory address, so every custom grammar got a fresh
+#    digest every run — the exact cold-cache symptom this task removed elsewhere);
+#  * ``wardline`` itself — already versioned into the SAME summary-cache key by
+#    ``_RESOLVER_VERSION``, ``REGISTRY_VERSION`` and the summary schema version, so
+#    re-keying it here buys nothing and costs a 2.9 MiB preimage.
+#
+# Everything else — the pack's own modules AND any third-party helper library it
+# imports — is expanded structurally.
+_OPAQUE_PACKAGES = frozenset({"builtins", "wardline"}) | frozenset(sys.stdlib_module_names)
+
+# CPython's default ``object.__repr__`` idiom. A memory address is process noise, never
+# durable information about a value, so it is normalised out of the last-resort arm;
+# matching " at 0x…" rather than bare "0x…" keeps genuine hex literals in a repr
+# (``Mask(bits=0xFF)``) discriminating.
+_ADDRESS_RE = re.compile(r" at 0x[0-9a-fA-F]+")
+
+
+def _is_structurally_opaque(value: object) -> bool:
+    """True when an object's BODY is out of scope for a grammar's identity.
+
+    The fence names the packages whose bodies are versioned SOMEWHERE ELSE. An absent
+    or empty ``__module__`` names nothing, so it is NOT opaque: an unknown module is
+    not a versioned-elsewhere module, and defaulting it to "keyed by name" would fail
+    OPEN — precisely the hole this pass exists to close. A function ``exec``-ed into a
+    namespace with no ``__name__`` (the shape a dynamically built grammar takes) has
+    ``__module__ is None`` and must still be expanded.
+    """
+    module = getattr(value, "__module__", None)
+    if not isinstance(module, str) or not module:
+        return False
+    return module.split(".", 1)[0] in _OPAQUE_PACKAGES
+
+
+def _seed_value_identity(value: object, walk: _Walk | None = None, _depth: int = 0) -> dict[str, object]:
     """A JSON-serializable, type-TAGGED identity record for one Python value.
 
     Every record carries its type tag ``t``, so ``"1"`` (a str) and ``1`` (an int)
     can never produce the same record, and no value's encoding can be confused with
     another's by concatenation.
     """
+    if walk is None:
+        walk = _Walk()
     if _depth > _MAX_VALUE_DEPTH:
         return {"t": "depth-capped"}
     d = _depth + 1
@@ -103,8 +207,8 @@ def _seed_value_identity(value: object, _depth: int = 0) -> dict[str, object]:
     if isinstance(value, FunctionTaint):
         return {
             "t": "function_taint",
-            "body": _seed_value_identity(value.body_taint, d),
-            "return": _seed_value_identity(value.return_taint, d),
+            "body": _seed_value_identity(value.body_taint, walk, d),
+            "return": _seed_value_identity(value.return_taint, walk, d),
         }
     if isinstance(value, bool):
         return {"t": "bool", "v": value}
@@ -124,19 +228,43 @@ def _seed_value_identity(value: object, _depth: int = 0) -> dict[str, object]:
         # accepted canonical form: it embeds the object's memory ADDRESS and its
         # source filename/first line, so it is simultaneously unstable across
         # processes and sensitive to pure layout.
-        return {"t": "code", "v": _code_identity(value, d)}
+        return {"t": "code", "v": _code_identity(value, walk, d)}
     if isinstance(value, ModuleType):
         return {"t": "module", "v": str(getattr(value, "__name__", ""))}
     if isinstance(value, (tuple, list)):
-        return {"t": type(value).__name__, "v": [_seed_value_identity(v, d) for v in value]}
+        return {"t": type(value).__name__, "v": [_seed_value_identity(v, walk, d) for v in value]}
     if isinstance(value, (frozenset, set)):
-        items = [_seed_value_identity(v, d) for v in value]
+        items = [_seed_value_identity(v, walk, d) for v in value]
         items.sort(key=_canonical_json)
         return {"t": type(value).__name__, "v": items}
     if isinstance(value, dict):
-        pairs = [[_seed_value_identity(k, d), _seed_value_identity(v, d)] for k, v in value.items()]
+        pairs = [[_seed_value_identity(k, walk, d), _seed_value_identity(v, walk, d)] for k, v in value.items()]
         pairs.sort(key=_canonical_json)
         return {"t": "dict", "v": pairs}
+
+    # --- Structural arms: a referenced FUNCTION or CLASS is keyed by its BODY --------
+    #
+    # Keying a referenced global by ``module.qualname`` alone is a measured cache-
+    # poisoning hole, and it is the LIVE path: a production pack loads as a real
+    # importable module, so `def seed(levels): return _helper(levels)` is the ordinary
+    # shape. Under a name-only key, editing `_helper` to return ASSURED instead of
+    # EXTERNAL_RAW leaves the digest byte-identical and a warm cache answers the new
+    # grammar with the old grammar's verdicts. The body has to be in the preimage.
+    if _has_code(value) and not _is_structurally_opaque(value):
+        return _expanded(value, walk, d, lambda dd: _function_identity(value, walk, dd))
+    if isinstance(value, type) and not _is_structurally_opaque(value):
+        return _expanded(value, walk, d, lambda dd: _class_identity(value, walk, dd))
+    # staticmethod / classmethod / bound method wrappers around a real function.
+    inner = getattr(value, "__func__", None)
+    if inner is not None and _has_code(inner):
+        return {"t": "wrapped_function", "wrapper": type(value).__name__, "v": _seed_value_identity(inner, walk, d)}
+    if isinstance(value, property):
+        return {
+            "t": "property",
+            "fget": _seed_value_identity(value.fget, walk, d),
+            "fset": _seed_value_identity(value.fset, walk, d),
+            "fdel": _seed_value_identity(value.fdel, walk, d),
+        }
 
     module = getattr(value, "__module__", None)
     qualname = getattr(value, "__qualname__", None)
@@ -145,19 +273,71 @@ def _seed_value_identity(value: object, _depth: int = 0) -> dict[str, object]:
     name = getattr(value, "__name__", None)
     if isinstance(module, str) and isinstance(name, str):
         return {"t": "ref", "module": module, "name": name}
-    return {"t": "repr", "v": repr(value)}
+    # LAST RESORT, and the one arm that can admit a memory address into the preimage
+    # (``<Foo object at 0x…>``). That over-invalidates — a cold cache every process for
+    # a grammar that reaches such an object — which is the SAFE direction. Normalising
+    # the address away would instead make two differently-CONFIGURED instances of one
+    # class collide, which is the false green this digest exists to prevent.
+    return {"t": "repr", "v": _ADDRESS_RE.sub(" at 0x<addr>", repr(value))}
 
 
-def _code_identity(code: CodeType, _depth: int = 0) -> dict[str, object]:
+def _function_identity(fn: object, walk: _Walk, depth: int) -> dict[str, object]:
+    """Structural record for a function: its code, its bindings, and its globals."""
+    code = fn.__code__  # type: ignore[attr-defined]
+    globals_map = getattr(fn, "__globals__", None)
+    globals_record: dict[str, object] = {}
+    if isinstance(globals_map, dict):
+        for name in code.co_names:
+            globals_record[name] = (
+                _seed_value_identity(globals_map[name], walk, depth) if name in globals_map else {"t": "missing-global"}
+            )
+    return {
+        "kind": "function",
+        **_named(fn),
+        "code": _code_identity(code, walk, depth),
+        "defaults": _seed_value_identity(getattr(fn, "__defaults__", None), walk, depth),
+        "kwdefaults": _seed_value_identity(getattr(fn, "__kwdefaults__", None), walk, depth),
+        "closure": _closure_identity(fn, walk, depth),
+        "globals": globals_record,
+    }
+
+
+def _class_identity(cls: type, walk: _Walk, depth: int) -> dict[str, object]:
+    """Structural record for a class: its own namespace, plus its bases.
+
+    ``vars(cls)`` carries the method bodies (each expanded through the function arm
+    above) AND the class-level data a seed's behaviour can turn on. ``__bases__`` is
+    walked so a change to an INHERITED method also moves the digest — ``vars`` is
+    own-dict only.
+
+    ``__firstlineno__`` is dropped: since 3.13 CPython stores the class's source line
+    in its namespace, and it is exactly the layout noise ``_code_identity`` excludes —
+    left in, moving a class down a file would cold-invalidate every warm cache.
+    """
+    members = {str(k): _seed_value_identity(v, walk, depth) for k, v in vars(cls).items() if k != "__firstlineno__"}
+    return {
+        "kind": "class",
+        **_named(cls),
+        "members": members,
+        "bases": [_seed_value_identity(b, walk, depth) for b in getattr(cls, "__bases__", ())],
+    }
+
+
+def _code_identity(code: CodeType, walk: _Walk | None = None, _depth: int = 0) -> dict[str, object]:
     """Structural normalization of a code object — behaviour in, layout out.
 
     IN: bytecode, constants (recursively, including nested code objects), referenced
     names, argument/local/free/cell variable names, arity and flags.
+    Also IN: ``co_exceptiontable``. Since 3.11 the ``try``/``except`` handler ranges
+    live there and are NOT a pure function of ``co_code``, so a change confined to
+    exception-handler extents would otherwise be invisible.
     OUT: ``co_filename``, ``co_firstlineno``, ``co_linetable``, ``co_positions`` and
     ``co_stacksize`` — the first four are pure source-layout noise (re-indenting or
     adding a comment must not cold-invalidate every warm cache) and the fifth is a
     function of the bytecode that is already keyed.
     """
+    if walk is None:
+        walk = _Walk()
     return {
         "argcount": code.co_argcount,
         "posonlyargcount": code.co_posonlyargcount,
@@ -167,7 +347,8 @@ def _code_identity(code: CodeType, _depth: int = 0) -> dict[str, object]:
         "name": code.co_name,
         "qualname": getattr(code, "co_qualname", code.co_name),
         "bytecode": code.co_code.hex(),
-        "consts": [_seed_value_identity(c, _depth + 1) for c in code.co_consts],
+        "exceptiontable": bytes(getattr(code, "co_exceptiontable", b"")).hex(),
+        "consts": [_seed_value_identity(c, walk, _depth + 1) for c in code.co_consts],
         "names": list(code.co_names),
         "varnames": list(code.co_varnames),
         "freevars": list(code.co_freevars),
@@ -175,23 +356,25 @@ def _code_identity(code: CodeType, _depth: int = 0) -> dict[str, object]:
     }
 
 
-def _closure_identity(seed: object) -> list[dict[str, object]]:
+def _closure_identity(seed: object, walk: _Walk | None = None, _depth: int = 0) -> list[dict[str, object]]:
     """Identity records for a seed's closure CELL CONTENTS, in ``co_freevars`` order.
 
     Two seeds built by the same factory share bytecode, ``co_freevars`` and
     everything else structural — only the captured VALUES differ, so the cell
     contents are the sole discriminator.
     """
+    if walk is None:
+        walk = _Walk()
     items: list[dict[str, object]] = []
     for cell in getattr(seed, "__closure__", None) or ():
         try:
-            items.append(_seed_value_identity(cell.cell_contents))
+            items.append(_seed_value_identity(cell.cell_contents, walk, _depth))
         except ValueError:
             items.append({"t": "empty-cell"})
     return items
 
 
-def _seed_identity(seed: object) -> dict[str, object]:
+def _seed_identity(seed: object, walk: _Walk | None = None) -> dict[str, object]:
     """A JSON-structured identity record for a boundary type's seed callable.
 
     For a Python function/lambda, keys on module and qualname as DISTINCT fields
@@ -199,7 +382,9 @@ def _seed_identity(seed: object) -> dict[str, object]:
     normalized code structure, defaults, closure cell contents, and the identities of
     referenced globals. Bytecode alone is not enough: ``return SAFE_SEED`` and
     ``return RAW_SEED`` can share ``co_code``/``co_consts`` while differing only by
-    ``co_names`` or the value bound to that name.
+    ``co_names`` or the value bound to that name — and a referenced global that is
+    itself a function or class is keyed by its BODY, not its name, so editing a
+    module-level helper the seed calls moves the digest.
 
     For a non-function callable (no ``__code__``) this DELIBERATELY falls back to
     ``repr``, which for a plain instance embeds its memory address. Keying on the
@@ -208,30 +393,15 @@ def _seed_identity(seed: object) -> dict[str, object]:
     digest exists to prevent. Over-invalidating (a changed seed → a different
     identity → a cold re-scan) is strictly safe; under-invalidating is a false green.
     """
-    code = getattr(seed, "__code__", None)
-    if code is None:
+    if walk is None:
+        walk = _Walk()
+    if not _has_code(seed):
         return {
             "kind": "opaque",
             "qualname": str(getattr(seed, "__qualname__", "")),
             "repr": repr(seed),
         }
-    globals_map = getattr(seed, "__globals__", None)
-    globals_record: dict[str, object] = {}
-    if isinstance(globals_map, dict):
-        for name in code.co_names:
-            globals_record[name] = (
-                _seed_value_identity(globals_map[name]) if name in globals_map else {"t": "missing-global"}
-            )
-    return {
-        "kind": "function",
-        "module": str(getattr(seed, "__module__", "") or ""),
-        "qualname": str(getattr(seed, "__qualname__", None) or getattr(seed, "__name__", "") or ""),
-        "code": _code_identity(code),
-        "defaults": _seed_value_identity(getattr(seed, "__defaults__", None)),
-        "kwdefaults": _seed_value_identity(getattr(seed, "__kwdefaults__", None)),
-        "closure": _closure_identity(seed),
-        "globals": globals_record,
-    }
+    return _function_identity(seed, walk, 0)
 
 
 def _grammar_digest(boundary_types: tuple[BoundaryType, ...]) -> str:
@@ -244,6 +414,10 @@ def _grammar_digest(boundary_types: tuple[BoundaryType, ...]) -> str:
     seed identity. Returns 64 lowercase hex characters — a full, untruncated SHA-256
     over compact key-sorted canonical JSON.
     """
+    # ONE walk for the whole grammar: a helper shared by two boundary types is
+    # expanded once and both records carry that same expansion, so the cost stays
+    # linear in distinct reachable objects while every body change still moves it.
+    walk = _Walk()
     records = [
         {
             "canonical_name": bt.canonical_name,
@@ -262,7 +436,7 @@ def _grammar_digest(boundary_types: tuple[BoundaryType, ...]) -> str:
                 }
                 for la in bt.level_args
             ],
-            "seed": _seed_identity(bt.seed),
+            "seed": _seed_identity(bt.seed, walk),
         }
         for bt in boundary_types
     ]
