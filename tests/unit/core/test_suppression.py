@@ -3,12 +3,12 @@ from __future__ import annotations
 import hashlib
 from datetime import UTC, date, datetime
 
-from wardline.core.baseline import Baseline
+from wardline.core.baseline import Baseline, build_baseline_document
 from wardline.core.finding import ENGINE_PATH, Finding, Kind, Location, Severity, SuppressionState
 from wardline.core.judge_types import JudgeTransport
 from wardline.core.judged import JudgedFP, JudgedSet
-from wardline.core.suppression import apply_suppressions, gate_trips
-from wardline.core.waivers import WaiverSet, parse_waivers
+from wardline.core.suppression import SEVERITY_ORDER, apply_suppressions, gate_trips
+from wardline.core.waivers import Waiver, WaiverSet, parse_waivers
 
 _FP_A = "a" * 64
 _FP_B = "b" * 64
@@ -206,3 +206,49 @@ def test_gate_ignores_suppressed_and_nondefect_and_none() -> None:
     assert gate_trips(baselined, Severity.ERROR) is False  # suppressed ignored
     assert gate_trips([_defect(_FP_A, kind=Kind.FACT)], Severity.INFO) is False  # non-defect ignored
     assert gate_trips([_defect(_FP_A, sev=Severity.NONE)], Severity.INFO) is False  # NONE never gates
+
+
+def _residual_fact(fp: str) -> Finding:
+    return Finding(
+        rule_id="WLN-ENGINE-UNREADABLE-MARKER-VALUE",
+        message="m",
+        severity=Severity.NONE,
+        kind=Kind.FACT,
+        location=Location(path="src/m.py", line_start=2),
+        fingerprint=fp,
+    )
+
+
+def test_residual_fact_survives_a_baseline_and_a_waiver_on_its_own_fingerprint() -> None:
+    # Soundness condition 3 (spec §4.2.1). A GUARD, not a feature: the property is
+    # already met by the Kind.DEFECT short-circuit above resolve_identity. This test
+    # is what reds if that short-circuit is ever refactored away.
+    #
+    # The claim is exactly this wide and no wider: a waiver — or a hand-authored
+    # baseline row — naming this fingerprint CAN be written (add_waiver validates the
+    # fingerprint format and never sees a Finding; a loaded baseline is a bare set of
+    # fingerprints that kind-checks nothing) and is simply INERT. Constructing BOTH is
+    # the point of the test.
+    fact = _residual_fact(_FP_A)
+    baseline = Baseline(frozenset({_FP_A}))
+    waivers = WaiverSet([Waiver(fingerprint=_FP_A, reason="attempt to silence the fact")])
+    (out,) = apply_suppressions([fact], baseline, waivers, today=_TODAY)
+    assert out is fact  # passed through untouched — not even a `replace` copy
+    assert out.suppressed is SuppressionState.ACTIVE
+    assert out.severity is Severity.NONE and out.kind is Kind.FACT
+
+
+def test_residual_fact_is_never_generated_into_a_baseline_document() -> None:
+    # The other half of condition 3, and the correction to the withdrawn §11.2 borrow:
+    # a Kind.FACT is not "compared and reported" in a baseline document — it is ABSENT
+    # from it, because build_baseline_document filters through _is_baselineable_finding,
+    # which admits only Kind.DEFECT. The claim is GENERATION, not authorship: a
+    # hand-authored row naming this fingerprint loads fine and is inert, which is what
+    # the sibling test above pins. Pinning the shipped mechanism here stops anyone
+    # "fixing" condition 3 by adding a section the code structurally forbids.
+    assert build_baseline_document([_residual_fact(_FP_A)])["entries"] == []
+
+
+def test_residual_fact_never_participates_in_the_gate() -> None:
+    assert Severity.NONE not in SEVERITY_ORDER
+    assert gate_trips([_residual_fact(_FP_A)], Severity.INFO) is False

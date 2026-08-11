@@ -72,3 +72,16 @@ def test_every_builtin_rule_ships_both_example_kinds(cls: type) -> None:
     # Forcing function: a rule with no working violation/clean example is undocumented.
     assert cls.metadata.examples_violation, f"{cls.rule_id} has no examples_violation"
     assert cls.metadata.examples_clean, f"{cls.rule_id} has no examples_clean"
+
+
+@pytest.mark.parametrize(("rule_id", "snippet"), _CLEAN_CASES)
+def test_clean_example_never_ships_an_unreadable_level_value(tmp_path: Path, rule_id: str, snippet: str) -> None:
+    # Over ALL kinds, deliberately: WLN-ENGINE-UNREADABLE-MARKER-VALUE is
+    # Severity.NONE + Kind.FACT, so the sibling test's Kind.DEFECT filter cannot
+    # see it. A clean exemplar carrying an unreadable builtin LEVEL value teaches
+    # agents that a fail-open construct is exemplary — the trap this plan removed
+    # one rule over, and the one clause of rev 3.4's disposition that still stands.
+    fired = {f.rule_id for f in _scan(tmp_path, snippet)}
+    assert "WLN-ENGINE-UNREADABLE-MARKER-VALUE" not in fired, (
+        f"{rule_id} clean example carries an unreadable builtin LEVEL value: {snippet!r}"
+    )

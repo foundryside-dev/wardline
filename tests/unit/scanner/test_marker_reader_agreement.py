@@ -566,3 +566,184 @@ def test_read_level_refuses_a_positional_argument_on_a_custom_marker(src: str) -
     assert read.verdict is LevelVerdict.UNREADABLE
     assert read.level is None
     assert read.unreadable_value is None
+
+
+# --- P9's BOTH-SIDES receipt for P3 form 5 -----------------------------------------
+# The unit table above is a supplementary check: its census is HAND-BUILT, which spec
+# rev 6 §4.2.1 refuses as evidence for P9. THIS is the half that lands the property —
+# every row driven through the analyser's OWN construction path, asserting BOTH sides
+# of the SAME scan: the RULE side (PY-WL-114 / WLN-ENGINE-UNREADABLE-MARKER-VALUE,
+# each present or absent) and the PROVIDER side (``declared_qualnames``). A one-sided
+# reader disagrees on at least one row here.
+#
+# It could not be written before this commit: the rows need BOTH Task 3's census (which
+# makes the RESOLVES-versus-None split well-defined) and Task 8's residual FACT (which
+# makes the provider's refusal observable on the rule side). This is the first commit at
+# which both exist.
+
+_AG = "from wardline.decorators import trusted\n"
+_AG_TB = "from wardline.decorators import trust_boundary\n"
+_FACT_ID = "WLN-ENGINE-UNREADABLE-MARKER-VALUE"
+
+# (src, qualname, in declared_qualnames, residual FACT fires, PY-WL-114 fires).
+# Ids MATCH ``FORM5_CASES``' for the ten rows it carries, so each unit row and its
+# end-to-end twin are greppable as a pair. The invalid-token row has NO unit twin and
+# takes its own id — ``FORM5_CASES`` parametrises ``level_token``, which READS
+# ``'ASURED'`` successfully, so that row's discriminating behaviour is a ``read_level``
+# allow-check outcome rather than a ``level_token`` verdict and cannot be expressed as a
+# ``FORM5_CASES`` entry. That is expected, not a dropped row.
+_FORM5_AGREEMENT = [
+    pytest.param(
+        _AG + "_SVC_LEVEL = 'ASSURED'\n@trusted(level=_SVC_LEVEL)\ndef f(p):\n    return p\n",
+        "svc.f",
+        True,
+        False,
+        False,
+        id="bound",
+    ),
+    pytest.param(
+        _AG + "@trusted(level=_SVC_LEVEL)\ndef f(p):\n    return p\n",
+        "svc.f",
+        False,
+        True,
+        False,
+        id="unbound",
+    ),
+    pytest.param(
+        _AG + "_SVC_LEVEL = 'ASSURED'\nclass C:\n"
+        "    @trusted(level=_SVC_LEVEL)\n    def f(self, p):\n        return p\n",
+        "svc.C.f",
+        False,
+        True,
+        False,
+        id="method reference site",
+    ),
+    pytest.param(
+        _AG + "from typing import TYPE_CHECKING\n_SVC_LEVEL = 'ASSURED'\nif TYPE_CHECKING:\n"
+        "    @trusted(level=_SVC_LEVEL)\n    def f(p):\n        return p\n",
+        "svc.f",
+        False,
+        True,
+        False,
+        id="conditional def reference site",
+    ),
+    pytest.param(
+        _AG + "import sys\n_SVC_LEVEL = 'ASSURED'\nif sys.platform == 'win32':\n"
+        "    _SVC_LEVEL = 'INTEGRAL'\n@trusted(level=_SVC_LEVEL)\ndef f(p):\n    return p\n",
+        "svc.f",
+        False,
+        True,
+        False,
+        id="two-occurrence census",
+    ),
+    pytest.param(
+        _AG + "_SVC_LEVEL = 'ASSURED'\ndef g():\n    global _SVC_LEVEL\n"
+        "@trusted(level=_SVC_LEVEL)\ndef f(p):\n    return p\n",
+        "svc.f",
+        False,
+        True,
+        False,
+        id="global-declared name",
+    ),
+    pytest.param(
+        _AG + "from unknownpkg import *\n_SVC_LEVEL = 'ASSURED'\n@trusted(level=_SVC_LEVEL)\ndef f(p):\n    return p\n",
+        "svc.f",
+        False,
+        True,
+        False,
+        id="star-import poisoned module",
+    ),
+    # Added beyond spec §4.2.1's eight: LEXICAL PRECEDENCE. The qualifying single
+    # binding sits BELOW the decorated ``def``, so form 5's fifth conjunct refuses it.
+    # A reader missing that conjunct MINTS A SEED here — the dangerous direction.
+    pytest.param(
+        _AG + "@trusted(level=_SVC_LEVEL)\ndef f(p):\n    return p\n_SVC_LEVEL = 'ASSURED'\n",
+        "svc.f",
+        False,
+        True,
+        False,
+        id="binding after the def",
+    ),
+    # Added beyond the eight: a POSITIVE ``to_level=``. The mechanism is
+    # argument-name-agnostic, so without this row a later narrowing of form 5 to
+    # ``@trusted`` ships green.
+    pytest.param(
+        _AG_TB + "_SVC_LEVEL = 'ASSURED'\n@trust_boundary(to_level=_SVC_LEVEL)\ndef f(p):\n    return p\n",
+        "svc.f",
+        True,
+        False,
+        False,
+        id="to_level resolving",
+    ),
+    # THE INVALID-TOKEN ROW — the only shape on which a one-sided reader disagrees, and
+    # the row that would have caught the rule-side plumbing gap Task 3 Step 4(c) closes.
+    # ``'ASURED'`` is bound once, unconditionally, at module top level and read on a
+    # module-body ``def``: form 5 in full, so the name->token hop SUCCEEDS and the
+    # allow-check then rejects it. That is spec §4.2.1's READS-then-rejects row —
+    # PY-WL-114's DEFECT and NEVER also the residual FACT — and the seed still drops.
+    pytest.param(
+        _AG + "_SVC_LEVEL = 'ASURED'\n@trusted(level=_SVC_LEVEL)\ndef f(p):\n    return p\n",
+        "svc.f",
+        False,
+        False,
+        True,
+        id="invalid token read then rejected",
+    ),
+]
+
+
+@pytest.mark.parametrize(("src", "qualname", "declared", "fact", "wl114"), _FORM5_AGREEMENT)
+def test_form5_agreement(tmp_path: Path, src: str, qualname: str, declared: bool, fact: bool, wl114: bool) -> None:
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    (proj / "svc.py").write_text(src, encoding="utf-8")
+    result = run_scan(proj)
+    assert result.context is not None
+    # PROVIDER side.
+    assert (qualname in result.context.declared_qualnames) is declared
+    # RULE side, both channels, on the SAME scan.
+    assert bool([f for f in result.findings if f.rule_id == _FACT_ID]) is fact
+    assert bool([f for f in result.findings if f.rule_id == "PY-WL-114"]) is wl114
+
+
+def test_form5_agreement_custom_boundary_type_level_arg(tmp_path: Path) -> None:
+    # THE DRIVER CARVE-OUT the specification site names, and a mandated row of the list
+    # like any other. ``run_scan`` accepts no grammar (src/wardline/core/run.py:301-317)
+    # and a test is never a reason to widen its signature, so this ONE row is built with
+    # ``build_analyzer(grammar=default_grammar().extend(...))`` and reads
+    # ``analyzer.last_context``, which ``result.context`` is not. This is NOT a "repair a
+    # reader" escalation: there is no cross-reader disagreement here — both readers agree
+    # the custom side is not form 5.
+    #
+    # The binding QUALIFIES in every respect (single, unconditional, module top level,
+    # lexically first, module-body ``def``). It still does not resolve, because form 5
+    # and the residual FACT are BOTH builtin-only: the custom side keeps its released
+    # WLN-ENGINE-UNPROVABLE-BOUNDARY channel and its fail-closed UNKNOWN_RAW seed, and
+    # never also the residual FACT — one unreadable value, exactly one channel.
+    from wardline.core.config import WardlineConfig
+    from wardline.scanner.analyzer import build_analyzer
+    from wardline.scanner.grammar import BoundaryType, LevelArg, default_grammar
+    from wardline.scanner.taint.provider import FunctionTaint
+
+    custom = BoundaryType(
+        canonical_name="sanitized",
+        module_prefix="myproj.trust",
+        group=1,
+        level_args=(LevelArg("to_level", frozenset({TaintState.GUARDED, TaintState.ASSURED}), None),),
+        seed=lambda lv: FunctionTaint(TaintState.EXTERNAL_RAW, lv["to_level"]),
+        builtin=False,
+    )
+    f = tmp_path / "svc.py"
+    f.write_text(
+        "import myproj.trust\n_SVC_LEVEL = 'ASSURED'\n"
+        "@myproj.trust.sanitized(to_level=_SVC_LEVEL)\ndef f(p):\n    return p\n",
+        encoding="utf-8",
+    )
+    analyzer = build_analyzer(grammar=default_grammar().extend(boundary_types=(custom,)))
+    findings = analyzer.analyze([f], WardlineConfig(), root=tmp_path)
+    assert [x for x in findings if x.rule_id == "WLN-ENGINE-UNPROVABLE-BOUNDARY"]
+    assert not [x for x in findings if x.rule_id == _FACT_ID]
+    assert not [x for x in findings if x.rule_id == "PY-WL-114"]
+    assert analyzer.last_context is not None
+    assert "svc.f" not in analyzer.last_context.declared_qualnames
+    assert analyzer.last_context.project_taints["svc.f"] is TaintState.UNKNOWN_RAW

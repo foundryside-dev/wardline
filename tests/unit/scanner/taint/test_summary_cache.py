@@ -243,6 +243,54 @@ def test_warm_cache_matches_cold_for_a_malformed_builtin_marker(tmp_path) -> Non
     assert warm_metrics[-1].properties["cache_hit_rate"] > 0.0
 
 
+def test_warm_cache_re_derives_the_unreadable_level_value_fact(tmp_path) -> None:
+    # The residual FACT is re-derived by the parse pass's UNCONDITIONAL seeding on every
+    # scan, warm or cold, exactly as WLN-ENGINE-UNPROVABLE-BOUNDARY is: `parse_project`'s
+    # loop runs `seed_function_taints` for every discovered module and consults the summary
+    # cache only to populate `dirty_modules`, and the emission loop iterates an UNSERIALISED
+    # `FunctionSeed` field inside that same loop. A "the constant did not move" assertion
+    # would NOT protect this — it would not catch someone serialising the carrier to fix a
+    # cache bug they imagined. The `__dataclass_fields__` equality below is what would.
+    from wardline.core.config import WardlineConfig
+    from wardline.scanner.analyzer import WardlineAnalyzer
+
+    src = tmp_path / "example.py"
+    src.write_text(
+        "from wardline.decorators import trusted\n"
+        "def get_level():\n    return 'ASSURED'\n"
+        "@trusted(level=get_level())\ndef f(p):\n    return p\n",
+        encoding="utf-8",
+    )
+
+    cfg = WardlineConfig()
+    cache = SummaryCache()
+    az = WardlineAnalyzer(summary_cache=cache)
+
+    def facts() -> list[str]:
+        findings = list(az.analyze([src], cfg, root=tmp_path))
+        return [x.fingerprint for x in findings if x.rule_id == "WLN-ENGINE-UNREADABLE-MARKER-VALUE"]
+
+    cold = facts()
+    warm = facts()
+    assert len(cold) == 1
+    assert warm == cold  # same COUNT and the same fingerprint, warm as cold
+    assert cache.hits > 0  # ...and the second run really was warm
+
+    # §4.3's no-serialised-state clause, made checkable rather than asserted. The carrier
+    # is unserialised, never reaches `FunctionSummary`, and `SUMMARY_SCHEMA_VERSION` does
+    # not move. The field-set equality is the one that reds if someone serialises it.
+    assert SUMMARY_SCHEMA_VERSION == 1
+    assert set(FunctionSummary.__dataclass_fields__) == {
+        "fqn",
+        "body_taint",
+        "return_taint",
+        "taint_source",
+        "unresolved_calls",
+        "schema_version",
+        "cache_key",
+    }
+
+
 def test_run_scan_ignores_unsigned_forged_summary_cache(tmp_path) -> None:
     import json
 

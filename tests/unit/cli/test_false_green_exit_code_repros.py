@@ -35,3 +35,23 @@ def test_hole1_malformed_marker_call_trips_the_gate(tmp_path: Path) -> None:
     )
     result = CliRunner().invoke(cli, ["scan", str(proj), "--fail-on", "ERROR"])
     assert result.exit_code == 1, result.output
+
+
+def test_hole3_unreadable_level_value_trips_the_gate(tmp_path: Path) -> None:
+    # wardline-2b2a6cddfa: a DRY refactor of the level to a module constant used to
+    # drop the seed SILENTLY — the function left declared_qualnames, every
+    # tier-modulated rule went quiet, and the gate exited 0 on a real leak. P3 form 5
+    # resolves it (Task 5), so PY-WL-101 fires and the gate trips. The assertion is on
+    # the literal PROCESS EXIT CODE, which is what PRD-0003 criterion 1 reads; a
+    # finding that exists without tripping the gate is the very failure being closed.
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    (proj / "svc.py").write_text(
+        "from wardline.decorators import external_boundary, trusted\n"
+        "_SVC_LEVEL = 'INTEGRAL'\n"
+        "@external_boundary\ndef read_raw(p):\n    return p\n"
+        "@trusted(level=_SVC_LEVEL)\ndef leaky(p):\n    return read_raw(p)\n",
+        encoding="utf-8",
+    )
+    result = CliRunner().invoke(cli, ["scan", str(proj), "--fail-on", "ERROR"])
+    assert result.exit_code == 1, result.output

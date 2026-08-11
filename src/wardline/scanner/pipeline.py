@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 import hashlib
+import unicodedata
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -327,6 +328,43 @@ def run_parse_project_stage(stage_input: ParseProjectInput) -> ParseProjectOutpu
                         fingerprint=_fp("WLN-ENGINE-UNKNOWN-MARKER", ent.qualname, marker),
                         qualname=ent.qualname,
                         properties={"marker": marker, "reason": "unrecognised_vocabulary"},
+                    )
+                )
+            # ITERATE THE WHOLE TUPLE. ``_match``'s own return is capped at one pair by
+            # its ``break``, but ``taint_for`` EXTENDS across the decorator list, so this
+            # field is UNBOUNDED — measured, ``@trusted(level=DYN)`` over
+            # ``@trust_boundary(to_level=DYN)`` yields two pairs. Reading ``[0]`` would
+            # silently drop every FACT after the first: a fail-open on the very
+            # observability channel this loop exists to provide.
+            for arg_name, value_text in fn_seed.unreadable_level_values:
+                # NFC + 200-char truncation apply to the VALUE TEXT ONLY, before it
+                # becomes a part — never to the joined preimage. The same key is the
+                # message text, the property and the fingerprint's fourth part, so
+                # output and identity cannot drift apart.
+                value_key = unicodedata.normalize("NFC", value_text)[:200]
+                parse_findings.append(
+                    Finding(
+                        rule_id="WLN-ENGINE-UNREADABLE-MARKER-VALUE",
+                        message=(
+                            f"{ent.qualname}: builtin marker argument {arg_name}={value_key} "
+                            f"is not statically readable — no seed taken, so this function is "
+                            f"NOT in the declared set (P3 form 5 does not reach this shape)"
+                        ),
+                        severity=Severity.NONE,
+                        kind=Kind.FACT,
+                        location=ent.location,
+                        fingerprint=_fp(
+                            "WLN-ENGINE-UNREADABLE-MARKER-VALUE",
+                            ent.qualname,
+                            arg_name,
+                            value_key,
+                        ),
+                        qualname=ent.qualname,
+                        properties={
+                            "argument": arg_name,
+                            "value": value_key,
+                            "reason": "unreadable_level_value",
+                        },
                     )
                 )
 

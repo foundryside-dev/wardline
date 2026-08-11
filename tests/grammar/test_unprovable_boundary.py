@@ -3,8 +3,10 @@
 An agent-defined boundary the engine cannot prove (a required level unreadable)
 seeds the fail-closed ``UNKNOWN_RAW`` AND emits an observable
 ``WLN-ENGINE-UNPROVABLE-BOUNDARY`` FACT — never a silent false-green. The same
-shape on a BUILTIN boundary stays silent (no FACT), preserving the byte-identity
-oracle (design spec §4).
+shape on a BUILTIN boundary never takes THAT channel (spec §4.2's compatibility
+boundary, which preserves the byte-identity oracle); under revision 6 it is not
+silent either — it takes ``WLN-ENGINE-UNREADABLE-MARKER-VALUE`` instead, its own
+builtin-only residual FACT. Two channels, never both on one site.
 """
 
 from __future__ import annotations
@@ -70,7 +72,16 @@ def test_provable_custom_emits_no_fact(tmp_path) -> None:
 
 
 def test_unprovable_builtin_emits_no_fact(tmp_path) -> None:
-    # Oracle-preserving twin: an unreadable BUILTIN level stays silent (no FACT).
+    # The name is about the UNPROVABLE-BOUNDARY channel and stays accurate: an
+    # unreadable BUILTIN level never takes the CUSTOM channel. Revision 6 does not
+    # merely leave that true, it REQUIRES it (spec §4.2's compatibility boundary) —
+    # one unreadable value takes exactly one channel, so no site is reported or
+    # counted twice.
+    #
+    # What revision 6 DOES change is the other half: the builtin channel is no longer
+    # silence. The unreadable value now takes WLN-ENGINE-UNREADABLE-MARKER-VALUE
+    # (Severity.NONE, Kind.FACT), asserted positively below so this test pins the
+    # SPLIT rather than half of it.
     f = tmp_path / "m.py"
     f.write_text(
         "from wardline.decorators import trust_boundary\n@trust_boundary(to_level=CFG)\ndef g(p):\n    return p\n"
@@ -78,3 +89,8 @@ def test_unprovable_builtin_emits_no_fact(tmp_path) -> None:
     analyzer = build_analyzer()  # builtins only
     findings = analyzer.analyze([f], WardlineConfig(), root=tmp_path)
     assert not [x for x in findings if x.rule_id == _RULE_ID]
+    residual = [x for x in findings if x.rule_id == "WLN-ENGINE-UNREADABLE-MARKER-VALUE"]
+    assert len(residual) == 1
+    assert residual[0].kind is Kind.FACT
+    assert residual[0].severity is Severity.NONE
+    assert residual[0].properties["argument"] == "to_level"
