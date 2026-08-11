@@ -85,10 +85,22 @@ class SeedResult:
     PROVABLE decorator, ``taint`` is dragged to the fail-closed ``UNKNOWN_RAW`` meet
     (the provider must not let the provable one silently over-trust the function) and
     the unprovable names are still reported here.
+
+    ``unknown_markers`` carries the resolved FQNs of vocabulary-rooted decorators this
+    engine does not recognise — surfaced as ``WLN-ENGINE-UNKNOWN-MARKER`` FACTs. Builtin
+    malformed-CALL loudness lives in PY-WL-130 (a rule), so builtins still never appear
+    in ``unprovable_boundaries``. ``unreadable_level_values`` carries ``(argument name,
+    ast.unparse(value node))`` for every BUILTIN ``ArgKind.LEVEL`` value the shared reader
+    could not read after P3 form 5 — surfaced as ``WLN-ENGINE-UNREADABLE-MARKER-VALUE``
+    FACTs. It is builtin-only: a CUSTOM boundary's unreadable level value stays in
+    ``unprovable_boundaries``, so no site is reported on two channels. Neither field is
+    serialised — the summary cache stores ``FunctionSummary`` tuples only.
     """
 
     taint: FunctionTaint | None
     unprovable_boundaries: tuple[str, ...] = ()
+    unknown_markers: tuple[str, ...] = ()
+    unreadable_level_values: tuple[tuple[str, str], ...] = ()
 
 
 @runtime_checkable

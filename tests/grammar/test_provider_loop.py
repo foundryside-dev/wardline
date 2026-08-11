@@ -110,7 +110,10 @@ def test_builtin_matches_submodule_import_path() -> None:
 
 
 def test_unprovable_builtin_does_not_signal() -> None:
-    # Oracle-preserving twin: an unreadable BUILTIN level stays silent (no signal).
+    # Oracle-preserving twin: what an unreadable BUILTIN level stays silent ON is the
+    # CUSTOM `WLN-ENGINE-UNPROVABLE-BOUNDARY` channel — §4.2's compatibility boundary.
+    # The builtin channel is `WLN-ENGINE-UNREADABLE-MARKER-VALUE`, carried up as the
+    # residual `(argument name, unparsed value)` pair asserted at the end of this test.
     provider = DecoratorTaintSourceProvider()  # builtins only
     # `to_level=CFG` is a bare `Name` in a BUILTIN LEVEL slot. From Task 5's commit the
     # provider reads through the shared reader, which RAISES on that shape when the
@@ -135,6 +138,7 @@ def test_unprovable_builtin_does_not_signal() -> None:
     res = provider.taint_for(ent, SeedContext(module="m", alias_map=alias_map, census=census))
     assert res.taint is None
     assert res.unprovable_boundaries == ()
+    assert res.unreadable_level_values == (("to_level", "CFG"),)
 
 
 def test_fingerprint_builtin_is_legacy_string() -> None:

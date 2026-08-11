@@ -32,13 +32,25 @@ class FunctionSeed:
     ``unprovable_boundaries`` carries the ``canonical_name``\\ s of every matched-but-
     unprovable *custom* boundary type (Track 2 T2.4), which the analyzer turns into a
     ``WLN-ENGINE-UNPROVABLE-BOUNDARY`` FACT each. Empty for builtins and for any
-    function with no such match (the common case)."""
+    function with no such match (the common case).
+
+    ``unknown_markers`` carries the resolved FQNs of vocabulary-rooted decorators this
+    engine does not recognise — surfaced as ``WLN-ENGINE-UNKNOWN-MARKER`` FACTs. Builtin
+    malformed-CALL loudness lives in PY-WL-130 (a rule), so builtins still never appear
+    in ``unprovable_boundaries``. ``unreadable_level_values`` carries ``(argument name,
+    ast.unparse(value node))`` for every BUILTIN ``ArgKind.LEVEL`` value the shared reader
+    could not read after P3 form 5 — surfaced as ``WLN-ENGINE-UNREADABLE-MARKER-VALUE``
+    FACTs. It is builtin-only: a CUSTOM boundary's unreadable level value stays in
+    ``unprovable_boundaries``, so no site is reported on two channels. Neither field is
+    serialised — the summary cache stores ``FunctionSummary`` tuples only."""
 
     qualname: str
     body_taint: TaintState
     return_taint: TaintState
     source: Literal["provider", "default"]
     unprovable_boundaries: tuple[str, ...] = ()
+    unknown_markers: tuple[str, ...] = ()
+    unreadable_level_values: tuple[tuple[str, str], ...] = ()
 
 
 def seed_function_taints(
@@ -64,6 +76,8 @@ def seed_function_taints(
                 return_taint=_FALLBACK,
                 source="default",
                 unprovable_boundaries=res.unprovable_boundaries,
+                unknown_markers=res.unknown_markers,
+                unreadable_level_values=res.unreadable_level_values,
             )
         else:
             seeds[entity.qualname] = FunctionSeed(
@@ -72,5 +86,7 @@ def seed_function_taints(
                 return_taint=declared.return_taint,
                 source="provider",
                 unprovable_boundaries=res.unprovable_boundaries,
+                unknown_markers=res.unknown_markers,
+                unreadable_level_values=res.unreadable_level_values,
             )
     return seeds

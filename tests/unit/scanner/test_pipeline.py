@@ -294,3 +294,116 @@ def test_census_reaches_a_rule_on_the_analysers_real_construction_path(tmp_path)
     result = run_scan(tmp_path)
     assert result.context is not None
     assert result.context.entities["svc.f"].node in result.context.module_censuses["svc"].reference_sites
+
+
+def test_config_source_override_preserves_unknown_markers(tmp_path) -> None:
+    # The configured-source override (the FunctionSeed reconstruction below the
+    # seeding call) must PRESERVE the observability channels, not void them.
+    path = tmp_path / "m.py"
+    path.write_text(
+        "import weft_markers\n@weft_markers.audit_record\ndef feed(e):\n    return e\n",
+        encoding="utf-8",
+    )
+    result = run_parse_project_stage(
+        ParseProjectInput(
+            files=(path,),
+            root=tmp_path,
+            provider=DecoratorTaintSourceProvider(),
+            config=WardlineConfig(untrusted_sources=("m.feed",)),
+            star_exports=vocabulary_star_exports(),
+        )
+    )
+    seed = result.modules[0].seeds["m.feed"]
+    assert seed.body_taint == T.EXTERNAL_RAW  # the directive took effect...
+    assert seed.unknown_markers == ("weft_markers.audit_record",)  # ...channel intact
+
+
+def test_config_source_override_preserves_unprovable_boundaries(tmp_path) -> None:
+    # Pre-existing bug closed by the same edit: the reconstruction hardcoded
+    # unprovable_boundaries=() — a config-declared source that ALSO carried an
+    # unprovable CUSTOM boundary lost its WLN-ENGINE-UNPROVABLE-BOUNDARY FACT.
+    from wardline.scanner.boundary_types import BUILTIN_BOUNDARY_TYPES, BoundaryType, LevelArg
+    from wardline.scanner.taint.provider import FunctionTaint
+
+    custom = BoundaryType(
+        "sanitized",
+        "myproj.trust",
+        1,
+        (LevelArg("to_level", frozenset({T.GUARDED, T.ASSURED}), None),),
+        lambda lv: FunctionTaint(T.EXTERNAL_RAW, lv["to_level"]),
+    )
+    path = tmp_path / "m.py"
+    path.write_text(
+        "import myproj.trust\n@myproj.trust.sanitized(to_level=CFG)\ndef feed(e):\n    return e\n",
+        encoding="utf-8",
+    )
+    result = run_parse_project_stage(
+        ParseProjectInput(
+            files=(path,),
+            root=tmp_path,
+            provider=DecoratorTaintSourceProvider(boundary_types=BUILTIN_BOUNDARY_TYPES + (custom,)),
+            config=WardlineConfig(untrusted_sources=("m.feed",)),
+            star_exports=vocabulary_star_exports(),
+        )
+    )
+    seed = result.modules[0].seeds["m.feed"]
+    assert seed.body_taint == T.EXTERNAL_RAW
+    assert seed.unprovable_boundaries == ("sanitized",)
+
+
+def test_config_source_override_preserves_unreadable_level_values(tmp_path) -> None:
+    # Spec §4.2.1 soundness condition 1: the residual FACT must NOT be voided by
+    # configuration. The override block is a wholesale FunctionSeed reconstruction,
+    # so without this test the third channel can be dropped from it and nothing reds.
+    # DYN has a CALL right-hand side, which form 5 explicitly refuses, so the value
+    # stays unreadable; the recorded value text is ast.unparse of the LEVEL slot's
+    # own node ('DYN'), never the binding's right-hand side.
+    path = tmp_path / "m.py"
+    path.write_text(
+        "from wardline.decorators import trusted\n"
+        "def get_level():\n    return 'ASSURED'\n"
+        "DYN = get_level()\n"
+        "@trusted(level=DYN)\ndef feed(e):\n    return e\n",
+        encoding="utf-8",
+    )
+    result = run_parse_project_stage(
+        ParseProjectInput(
+            files=(path,),
+            root=tmp_path,
+            provider=DecoratorTaintSourceProvider(),
+            config=WardlineConfig(untrusted_sources=("m.feed",)),
+            star_exports=vocabulary_star_exports(),
+        )
+    )
+    seed = result.modules[0].seeds["m.feed"]
+    assert seed.body_taint == T.EXTERNAL_RAW  # the directive took effect...
+    assert seed.unreadable_level_values == (("level", "DYN"),)  # ...channel intact
+
+
+def test_provable_sibling_marker_still_carries_the_unreadable_level_value(tmp_path) -> None:
+    # NOT the config-override path: this pins the OTHER FunctionSeed constructor. When a
+    # provable marker co-occurs with a builtin whose LEVEL value is unreadable, the seed
+    # takes the source="provider" branch of seed_function_taints — and the residual pair
+    # must survive that branch too. Without this the pair is only ever observed on the
+    # taint-is-None branch, and dropping the field from the provider branch reds nothing.
+    path = tmp_path / "m.py"
+    path.write_text(
+        "from wardline.decorators import external_boundary, trusted\n"
+        "def get_level():\n    return 'ASSURED'\n"
+        "DYN = get_level()\n"
+        "@external_boundary\n@trusted(level=DYN)\ndef feed(e):\n    return e\n",
+        encoding="utf-8",
+    )
+    result = run_parse_project_stage(
+        ParseProjectInput(
+            files=(path,),
+            root=tmp_path,
+            provider=DecoratorTaintSourceProvider(),
+            config=WardlineConfig(),
+            star_exports=vocabulary_star_exports(),
+        )
+    )
+    seed = result.modules[0].seeds["m.feed"]
+    assert seed.source == "provider"  # the provable sibling minted a seed...
+    assert seed.body_taint == T.EXTERNAL_RAW
+    assert seed.unreadable_level_values == (("level", "DYN"),)  # ...and the pair rode along

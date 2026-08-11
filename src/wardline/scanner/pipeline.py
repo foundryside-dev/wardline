@@ -195,12 +195,22 @@ def run_parse_project_stage(stage_input: ParseProjectInput) -> ParseProjectOutpu
                     # The seed below IS the directive taking effect — record the match
                     # so the analyzer's unused-source diagnostic does not contradict it.
                     matched_config_sources.add(ent.qualname)
+                    original = seeds[ent.qualname]
                     seeds[ent.qualname] = FunctionSeed(
                         qualname=ent.qualname,
                         body_taint=TaintState.EXTERNAL_RAW,
                         return_taint=TaintState.EXTERNAL_RAW,
                         source="provider",
-                        unprovable_boundaries=(),
+                        # The directive overrides the TAINT, never the observability
+                        # channels. ALL THREE survive it — an unprovable custom boundary,
+                        # an unknown marker, and an unreadable BUILTIN LEVEL value on a
+                        # config-declared source each still surface their FACT. This is a
+                        # WHOLESALE reconstruction: any field NOT named here is erased, so
+                        # a fourth channel added later must be added here in the same
+                        # change (spec §4.2.1, soundness condition 1).
+                        unprovable_boundaries=original.unprovable_boundaries,
+                        unknown_markers=original.unknown_markers,
+                        unreadable_level_values=original.unreadable_level_values,
                     )
         except (SyntaxError, UnicodeDecodeError, OSError) as exc:
             # A discovered-but-unparseable file is a GATE-ELIGIBLE ERROR DEFECT, not a
@@ -300,6 +310,23 @@ def run_parse_project_stage(stage_input: ParseProjectInput) -> ParseProjectOutpu
                         fingerprint=_fp("WLN-ENGINE-UNPROVABLE-BOUNDARY", ent.qualname, boundary),
                         qualname=ent.qualname,
                         properties={"boundary": boundary, "reason": "arg_unreadable"},
+                    )
+                )
+            for marker in fn_seed.unknown_markers:
+                parse_findings.append(
+                    Finding(
+                        rule_id="WLN-ENGINE-UNKNOWN-MARKER",
+                        message=(
+                            f"{ent.qualname}: decorator @{marker} is Wardline vocabulary this "
+                            f"engine does not recognise — no opinion taken (newer weft-markers "
+                            f"than wardline?)"
+                        ),
+                        severity=Severity.NONE,
+                        kind=Kind.FACT,
+                        location=ent.location,
+                        fingerprint=_fp("WLN-ENGINE-UNKNOWN-MARKER", ent.qualname, marker),
+                        qualname=ent.qualname,
+                        properties={"marker": marker, "reason": "unrecognised_vocabulary"},
                     )
                 )
 

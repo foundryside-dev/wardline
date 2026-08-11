@@ -44,12 +44,13 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import Enum
 
-from wardline.core.registry import MarkerCallForm
+from wardline.core.registry import REGISTRY, MarkerCallForm
 from wardline.core.taints import TaintState
 
 VOCAB_PREFIX = "wardline.decorators"
 WEFT_MARKERS_PREFIX = "weft_markers"
 _TAINTSTATE_FQN = "wardline.core.taints.TaintState"
+_VOCAB_PREFIXES: tuple[str, ...] = (VOCAB_PREFIX, WEFT_MARKERS_PREFIX)
 
 # The top-level import roots of every BUILTIN marker module — the set
 # ``shadowed_builtin_roots`` intersects, and therefore the set that decides which roots
@@ -527,6 +528,38 @@ def is_builtin_decorator_fqn(fqn: str, canonical_name: str, module_prefix: str) 
     if module_prefix == VOCAB_PREFIX:
         exports.add(f"{module_prefix}.trust.{canonical_name}")
     return fqn in exports
+
+
+def unknown_vocabulary_marker(
+    deco: ast.expr,
+    alias_map: Mapping[str, str],
+    shadowed_roots: frozenset[str],
+) -> str | None:
+    """The resolved FQN iff *deco* is vocabulary-rooted but not a recognised export.
+
+    Vocabulary-rooted = the FQN sits strictly under ``wardline.decorators`` or
+    ``weft_markers``. Exact known exports (the REGISTRY names) are excluded —
+    those are recognised markers whose malformed CALLS are PY-WL-130's concern.
+    Shadow-rejected roots are excluded (builtin matching is off wholesale under
+    a shadow). This is the new-markers-old-wardline observability hook:
+    ``@weft_markers.audit_record`` on a wardline that predates facets resolves
+    here instead of vanishing. Known FN, by design: a name arriving via
+    ``from weft_markers import *`` that is NOT a current REGISTRY key stays
+    unresolved in the alias map (``vocabulary_star_exports`` maps only known
+    names) and cannot be attributed to the vocabulary.
+    """
+    fqn = resolve_decorator_fqn(deco, alias_map)
+    if fqn is None:
+        return None
+    if fqn.split(".")[0] in shadowed_roots:
+        return None
+    if not any(fqn.startswith(prefix + ".") for prefix in _VOCAB_PREFIXES):
+        return None
+    for name in REGISTRY:
+        for prefix in _VOCAB_PREFIXES:
+            if is_builtin_decorator_fqn(fqn, name, prefix):
+                return None
+    return fqn
 
 
 def shadowed_builtin_roots(project_modules: frozenset[str]) -> frozenset[str]:

@@ -21,7 +21,7 @@ from wardline.core.taints import TRUST_RANK, TaintState
 from wardline.scanner.boundary_types import BUILTIN_BOUNDARY_TYPES, BoundaryType
 from wardline.scanner.marker_reader import VOCAB_PREFIX as _VOCAB_PREFIX
 from wardline.scanner.marker_reader import WEFT_MARKERS_PREFIX as _WEFT_MARKERS_PREFIX
-from wardline.scanner.marker_reader import LevelVerdict, ModuleCensus, call_shape_offences
+from wardline.scanner.marker_reader import LevelVerdict, ModuleCensus, call_shape_offences, unknown_vocabulary_marker
 from wardline.scanner.marker_reader import is_builtin_decorator_fqn as _is_builtin_decorator_fqn
 from wardline.scanner.marker_reader import read_level as _read_level
 from wardline.scanner.marker_reader import resolve_decorator_fqn as _resolve_decorator_fqn
@@ -163,17 +163,18 @@ class DecoratorTaintSourceProvider:
     def taint_for(self, entity: Entity, ctx: SeedContext) -> SeedResult:
         candidates: list[FunctionTaint] = []
         unprovable: list[str] = []
+        unknown: list[str] = []
+        unreadable_levels: list[tuple[str, str]] = []
         shadowed_roots = _shadowed_builtin_roots(ctx.project_modules)
         for deco in entity.node.decorator_list:
-            # PLUMBING ONLY (Task 5). The per-module census rides in on ``SeedContext``
-            # and the reference site is the decorated ``def``/``async def`` statement
-            # this entity already holds, so P3 form 5 can evaluate in the provider.
-            # ``_match``'s third verdict element — the residual ``(argument name,
-            # unparsed value)`` pairs of a BUILTIN marker's unreadable LEVEL value — is
-            # received and DISCARDED here; Task 7 Step 4.2 is the sole place
-            # ``taint_for``'s branch arms and its two ``SeedResult(...)`` constructions
-            # change to collect it.
-            ft, unprov, _unreadable_level_values = self._match(
+            # The per-module census rides in on ``SeedContext`` and the reference site is
+            # the decorated ``def``/``async def`` statement this entity already holds, so
+            # P3 form 5 can evaluate in the provider.
+            #
+            # ``_match``'s argument list and its THREE-element verdict are Task 5
+            # Step 3's; that step governs the exact spelling. This step changes only
+            # the unpacking and adds the fourth arm below.
+            ft, unprov, unreadable = self._match(
                 deco,
                 ctx.alias_map,
                 shadowed_roots,
@@ -183,12 +184,36 @@ class DecoratorTaintSourceProvider:
             if ft is not None:
                 candidates.append(ft)
             elif unprov is not None:
+                # A CUSTOM BoundaryType's unreadable level value stays HERE: it keeps
+                # WLN-ENGINE-UNPROVABLE-BOUNDARY and its UNKNOWN_RAW seed and NEVER
+                # enters the residual list. One unreadable value takes exactly one
+                # channel, which is what keeps decorator_coverage from counting the
+                # same site twice (spec §4.2.1, soundness condition 5).
                 unprovable.append(unprov)
+            else:
+                marker = unknown_vocabulary_marker(deco, ctx.alias_map, shadowed_roots)
+                if marker is not None:
+                    unknown.append(marker)
+                elif unreadable:
+                    # FOURTH ARM — a BUILTIN marker whose ArgKind.LEVEL value the shared
+                    # reader could not read after P3 form 5. Mutually exclusive with the
+                    # unknown probe by construction, not by precedence: the marker
+                    # resolved to an exact REGISTRY export, so unknown_vocabulary_marker
+                    # returned None for it. The population is what SURVIVES the shape
+                    # gate — Task 5 runs call_shape_offences BEFORE the levels loop, so a
+                    # shape-malformed marker drops its seed with no level read and takes
+                    # PY-WL-130, never this arm.
+                    unreadable_levels.extend(unreadable)
         if not candidates:
             # No proven seed. Any matched-but-unreadable CUSTOM boundaries are surfaced
             # (T2.4) and the L1 fallback seeds UNKNOWN_RAW (source="default", not
             # anchored — there is no usable declaration). Builtins never set ``unprov``.
-            return SeedResult(taint=None, unprovable_boundaries=tuple(unprovable))
+            return SeedResult(
+                taint=None,
+                unprovable_boundaries=tuple(unprovable),
+                unknown_markers=tuple(unknown),
+                unreadable_level_values=tuple(unreadable_levels),
+            )
         # A proven seed exists. If an unprovable CUSTOM boundary ALSO matched, it must
         # not be silently over-trusted by the provable one (a false-green): add an
         # UNKNOWN_RAW contribution so the least-trusted-per-field meet below drags the
@@ -203,7 +228,12 @@ class DecoratorTaintSourceProvider:
         # independent (the per-field max does not depend on candidate order).
         body = max((ft.body_taint for ft in candidates), key=lambda t: TRUST_RANK[t])
         ret = max((ft.return_taint for ft in candidates), key=lambda t: TRUST_RANK[t])
-        return SeedResult(taint=FunctionTaint(body, ret), unprovable_boundaries=tuple(unprovable))
+        return SeedResult(
+            taint=FunctionTaint(body, ret),
+            unprovable_boundaries=tuple(unprovable),
+            unknown_markers=tuple(unknown),
+            unreadable_level_values=tuple(unreadable_levels),
+        )
 
     def fingerprint(self) -> str:
         # Builtin-only grammar keeps TODAY's EXACT string (cache/baseline stability —
@@ -362,6 +392,10 @@ class DecoratorTaintSourceProvider:
                         # VALUE-TEXT part only and are applied at the FACT emission
                         # site, never here.
                         unreadable_level_values.append(read.unreadable_value)
+                    # ARITY CAP: this ``break`` leaves the levels loop on the FIRST
+                    # non-RESOLVED verdict, so the returned tuple holds AT MOST ONE pair
+                    # despite its ``tuple[tuple[str, str], ...]`` type. Do not build a
+                    # consumer that assumes it can be multi-element.
                     break
                 # `LevelVerdict.RESOLVED` stays the semantic gate; this is the TYPE
                 # obligation, not a second decision. Task 2's `LevelRead` contract is
