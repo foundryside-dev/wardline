@@ -16,6 +16,8 @@ from wardline.core.safe_paths import read_source_bytes
 from wardline.core.taints import TaintState
 from wardline.scanner.ast_primitives import build_import_alias_map
 from wardline.scanner.index import Entity, discover_class_qualnames, discover_file_entities
+from wardline.scanner.marker_reader import ModuleCensus, shadowed_builtin_roots
+from wardline.scanner.module_census import build_module_census
 from wardline.scanner.taint.function_level import FunctionSeed, seed_function_taints
 from wardline.scanner.taint.project_resolver import _RESOLVER_VERSION, ModuleInput
 from wardline.scanner.taint.provider import SeedContext, TaintSourceProvider
@@ -44,6 +46,10 @@ class ParsedFile:
     alias_map: dict[str, str]
     class_qualnames: frozenset[str]
     source_sha256: str
+    # The module's form-5 binding census, built ONCE below and handed to BOTH
+    # readers — the provider through ``SeedContext``, the rule side through
+    # ``AnalysisContext.module_censuses`` (gathered, never rebuilt, by the analyzer).
+    census: ModuleCensus
 
 
 @dataclass(frozen=True, slots=True)
@@ -111,6 +117,7 @@ def run_parse_project_stage(stage_input: ParseProjectInput) -> ParseProjectOutpu
         is not None
     )
     provider_fingerprint = _provider_fingerprint_for_project(stage_input.provider, project_modules)
+    shadowed_roots = shadowed_builtin_roots(project_modules)  # loop-invariant
 
     for path in stage_input.files:
         relpath = path.relative_to(root).as_posix() if path.is_relative_to(root) else path.as_posix()
@@ -162,9 +169,25 @@ def run_parse_project_stage(stage_input: ParseProjectInput) -> ParseProjectOutpu
                 is_package=is_pkg_file,
                 star_exports=stage_input.star_exports,
             )
+            # THE SINGLE BUILD. This is the only place in the engine where the tree,
+            # the alias map and the star-export map are all in hand at once, so form 5
+            # gets exactly ONE evaluation point (spec §4.2.1). The same object below
+            # reaches ``SeedContext`` and ``ParsedFile`` — one census per module, never
+            # two.
+            census = build_module_census(
+                tree,
+                alias_map=alias_map,
+                shadowed_roots=shadowed_roots,
+                star_exports=stage_input.star_exports,
+            )
             seeds = seed_function_taints(
                 entities,
-                ctx=SeedContext(module=module, alias_map=alias_map, project_modules=project_modules),
+                ctx=SeedContext(
+                    module=module,
+                    alias_map=alias_map,
+                    project_modules=project_modules,
+                    census=census,
+                ),
                 provider=stage_input.provider,
             )
             for ent in entities:
@@ -256,6 +279,7 @@ def run_parse_project_stage(stage_input: ParseProjectInput) -> ParseProjectOutpu
                 alias_map=alias_map,
                 class_qualnames=classes,
                 source_sha256=source_sha256,
+                census=census,  # the SAME object the provider received above
             )
         )
         for ent in entities:

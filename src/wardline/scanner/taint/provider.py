@@ -22,6 +22,7 @@ from typing import Protocol, runtime_checkable
 
 from wardline.core.taints import TaintState
 from wardline.scanner.index import Entity
+from wardline.scanner.marker_reader import ModuleCensus
 
 
 @dataclass(frozen=True, slots=True)
@@ -41,6 +42,23 @@ class SeedContext:
     module: str
     alias_map: Mapping[str, str] = field(default_factory=dict)
     project_modules: frozenset[str] = field(default_factory=frozenset)
+    # The module's form-5 binding census, or None when this construction does not
+    # seed from decorators (the trivial default provider's tests). None is the
+    # ABSENT sentinel and is NOT an empty census: asked to resolve a bare `Name` in
+    # a builtin LEVEL slot with no census at all, the shared reader RAISES, because
+    # that is a plumbing defect rather than an input condition — and the raise is
+    # BUILTIN-ONLY: on a custom `BoundaryType` a bare `Name` is an ordinary unreadable
+    # `None`, because form 5 cannot resolve there and no census could change that.
+    # On the provider side there is no per-rule isolation to land on; verified in
+    # source, the raise is caught by the parse loop's bare `except Exception` per-file
+    # isolation handler (pipeline.py:244 — the SyntaxError/UnicodeDecodeError/OSError
+    # guard at pipeline.py:205 is a different handler and never sees it), which emits a
+    # WLN-ENGINE-FILE-FAILED ERROR DEFECT and drops the file from the analysed set. That
+    # is gate-eligible on the unsuppressed population, so a baseline row or waiver
+    # annotates it without clearing the secure gate — the plumbing hole cannot be read
+    # green. A defaulted EMPTY census would instead convert that plumbing hole into an
+    # ordinary unreadable — silently, on every module.
+    census: ModuleCensus | None = None
 
 
 @dataclass(frozen=True, slots=True)

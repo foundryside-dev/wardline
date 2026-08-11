@@ -6,10 +6,13 @@ from __future__ import annotations
 import textwrap
 from pathlib import Path
 
+import pytest
+
 from wardline.core.config import WardlineConfig
 from wardline.core.finding import Kind, Severity
 from wardline.scanner.analyzer import WardlineAnalyzer
-from wardline.scanner.rules.invalid_decorator_level import InvalidDecoratorLevel
+from wardline.scanner.marker_reader import alias_map_for_qualname
+from wardline.scanner.rules.invalid_decorator_level import InvalidDecoratorLevel, _owning_module
 
 
 def _analyze(tmp_path: Path, src: str) -> tuple[WardlineAnalyzer, object]:
@@ -300,3 +303,99 @@ def test_stacked_identical_decorators_have_distinct_fingerprints(tmp_path) -> No
     assert len(findings) == 2, "both invalid decorators must be reported"
     fps = {f.fingerprint for f in findings}
     assert len(fps) == 2, "two distinct findings must not share a fingerprint (collision)"
+
+
+def test_form5_resolvable_invalid_token_now_fires(tmp_path) -> None:
+    # THE ONE VERDICT THAT MOVES when PY-WL-114 stops being form-5-blind. Until the
+    # rule read the REAL per-module census it was handed an inert one, so a bare
+    # ``Name`` in a builtin LEVEL slot resolved nothing and the typo was SILENTLY
+    # SKIPPED — the fail-open direction, and the rule half of the one-sided widening
+    # spec §4.2.1 names as a silent false green.
+    #
+    # ``_SVC_LEVEL`` satisfies form 5 in full: a BUILTIN marker, a reference site that
+    # is a ``def`` DIRECTLY in ``Module.body``, exactly one qualifying unconditional
+    # module-scope binding, lexically preceding the decorated ``def``. It resolves to
+    # ``'ASURED'``, which is READ-then-rejected — PY-WL-114's DEFECT.
+    #
+    # ``_analyze`` runs the real ``WardlineAnalyzer.analyze``, so ``module_censuses``
+    # is populated on the ANALYSER'S OWN construction path, not by a hand-built
+    # context. The assertion is deliberately RULE-SIDE ONLY: the provider does not
+    # resolve form 5 until the seeding task, so a ``declared_qualnames`` assertion
+    # here would be a stale cross-reader claim. Both readers are asserted together,
+    # on one scan, by ``test_form5_agreement``'s invalid-token row in the task that
+    # owns it.
+    _, ctx = _analyze(
+        tmp_path,
+        """
+        from wardline.decorators import trusted
+
+        _SVC_LEVEL = 'ASURED'
+
+        @trusted(level=_SVC_LEVEL)
+        def f(p):
+            return p
+        """,
+    )
+    assert [(f.rule_id, f.qualname) for f in InvalidDecoratorLevel().check(ctx)] == [("PY-WL-114", "m.f")]
+
+
+def test_form5_on_a_method_is_keyed_by_the_owning_module_not_a_qualname_split(tmp_path) -> None:
+    # THE KEYING PIN. ``AnalysisContext.module_censuses`` is keyed by MODULE, and a
+    # naive ``qualname.rsplit('.', 1)[0]`` yields ``m.C`` for the method ``m.C.method``
+    # — a MISS. A miss is the ABSENT sentinel, so the shared reader RAISES on
+    # legitimate code, which the analyser turns into a gate-eligible
+    # WLN-ENGINE-RULE-FAILED: fail-loud-and-WRONG on precisely the method shape spec
+    # §4.2.1 spends a paragraph refusing.
+    #
+    # Correct longest-owning-module keying gives census-PRESENT, and the method's
+    # ``def`` is not a direct element of ``Module.body``, so it is an ineligible
+    # reference site -> ``None`` -> ordinary unreadable -> silence.
+    #
+    # ONE resolution serves BOTH module-keyed lookups (the alias map and the census),
+    # so the fixture pins the shared key from the side that is observable: ``bad``
+    # carries a plain string typo and MUST fire, which it can only do if the method's
+    # alias map resolved through the same longest-owning-module key the census lookup
+    # uses. Under a naive split both lookups miss together and this assertion reds.
+    # ``form5`` then adds the census half: silence, and — load-bearing — no RAISE.
+    _, ctx = _analyze(
+        tmp_path,
+        """
+        from wardline.decorators import trusted
+
+        _SVC_LEVEL = 'ASURED'
+
+        class C:
+            @trusted(level='ASURED')
+            def bad(self, p):
+                return p
+
+            @trusted(level=_SVC_LEVEL)
+            def form5(self, p):
+                return p
+        """,
+    )
+    assert [(f.rule_id, f.qualname) for f in InvalidDecoratorLevel().check(ctx)] == [("PY-WL-114", "m.C.bad")]
+
+
+@pytest.mark.parametrize(
+    ("qualname", "alias_maps"),
+    [
+        ("m.C.method", {"m": {"t": "wardline.decorators.trusted"}}),  # the method shape
+        ("pkg.sub.mod.f", {"pkg": {"a": "pkg.a"}, "pkg.sub.mod": {"b": "pkg.b"}}),  # longest owner wins
+        ("pkg.mod", {"pkg.mod": {"x": "pkg.x"}}),  # qualname IS a module name
+        ("other.f", {"pkg": {"x": "pkg.x"}}),  # no owner at all
+        ("pkgx.f", {"pkg": {"x": "pkg.x"}}),  # prefix-without-dot is NOT an owner
+        ("m.f", {}),  # no modules at all
+    ],
+)
+def test_owning_module_key_agrees_with_the_engine_floor_alias_map_lookup(qualname, alias_maps) -> None:
+    # THE MIRROR ANTI-DRIFT PIN. This rule stopped calling the engine floor's
+    # ``alias_map_for_qualname`` when it started needing the module KEY (the helper
+    # returns the MAP), so ``_owning_module`` + a ``.get`` now stands in for it here
+    # while ``contradictory_trust.py`` still calls the helper. Without this pin, a
+    # future change to ``alias_map_for_qualname``'s resolution would be picked up by
+    # one rule and silently missed by the other. Deriving the map through
+    # ``_owning_module``'s key must give the shipped helper's answer, exactly.
+    mod_name = _owning_module(qualname, alias_maps)
+    derived = alias_maps.get(mod_name, {}) if mod_name is not None else {}
+    assert derived == alias_map_for_qualname(qualname, alias_maps)

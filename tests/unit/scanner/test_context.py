@@ -106,6 +106,44 @@ def test_context_deep_freezes_nested_mappings_and_source_dicts() -> None:
     assert ctx.function_call_site_taints["m.f"][123]["x"] == T.INTEGRAL
 
 
+def test_context_module_censuses_is_a_read_only_view() -> None:
+    # The class freezes every mapping field; an unfrozen one is a hole in the
+    # read-only-view guarantee. The OUTER map is proxied by ``__post_init__`` and the
+    # INNER ``values`` map by the census builder — ``_freeze_value`` returns a
+    # non-Mapping value unchanged, so a ``ModuleCensus`` passes through the context's
+    # freeze opaque and its inner dict would otherwise stay mutable.
+    import ast as _ast
+
+    from wardline.scanner.module_census import build_module_census
+
+    census = build_module_census(
+        _ast.parse('X = "ASSURED"\n'),
+        alias_map={},
+        shadowed_roots=frozenset(),
+        star_exports={},
+    )
+    source = {"m": census}
+    ctx = AnalysisContext(
+        project_taints={},
+        project_return_taints={},
+        function_var_taints={},
+        function_return_taints={},
+        function_return_callee={},
+        entities={},
+        taint_provenance={},
+        module_censuses=source,
+    )
+
+    with pytest.raises(TypeError):
+        ctx.module_censuses["other"] = census  # type: ignore[index]
+    with pytest.raises(TypeError):
+        ctx.module_censuses["m"].values["X"] = None  # type: ignore[index]
+
+    source["other"] = census
+    assert set(ctx.module_censuses) == {"m"}
+    assert ctx.module_censuses["m"].values["X"].token == "ASSURED"
+
+
 def test_registry_rule_cannot_mutate_nested_context_for_later_rules() -> None:
     finding = Finding(
         rule_id="X",

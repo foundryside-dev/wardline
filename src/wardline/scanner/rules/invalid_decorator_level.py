@@ -18,12 +18,14 @@ from wardline.core.registry import REGISTRY
 from wardline.core.taints import TaintState
 from wardline.scanner.boundary_types import BUILTIN_BOUNDARY_TYPES
 
-# ``ModuleCensus`` is a CLASS, so ruff's isort (``order-by-type``, the default) sorts it
-# ahead of every lowercase function name — NOT into alphabetical position among them. It
-# is imported because ``check`` below CONSTRUCTS one for its ``level_token`` call; without
-# it that call is a NameError on the first level read. Each ``as``-aliased name gets its
-# own statement because ruff runs with the default ``combine-as-imports = false``.
-from wardline.scanner.marker_reader import ModuleCensus, alias_map_for_qualname, call_shape_offences, extract_keywords
+# ``ModuleCensus`` is NO LONGER imported here: ``check`` used to CONSTRUCT an inert one
+# for its ``level_token`` call, and now reads the REAL per-module census off
+# ``context.module_censuses`` instead, so nothing in this module names the type.
+# ``alias_map_for_qualname`` likewise dropped — see ``_owning_module`` below, which
+# performs the ONE longest-owning-module resolution that serves both the alias map and
+# the census, so the two keys cannot drift. Each ``as``-aliased name gets its own
+# statement because ruff runs with the default ``combine-as-imports = false``.
+from wardline.scanner.marker_reader import call_shape_offences, extract_keywords
 from wardline.scanner.marker_reader import is_builtin_decorator_fqn as _is_builtin_decorator_fqn
 from wardline.scanner.marker_reader import level_token as _level_token
 from wardline.scanner.marker_reader import resolve_decorator_fqn as _resolve_decorator_fqn
@@ -31,7 +33,7 @@ from wardline.scanner.marker_reader import shadowed_builtin_roots as _shadowed_b
 from wardline.scanner.rules.metadata import RuleMetadata
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Iterable, Mapping
 
     from wardline.scanner.context import AnalysisContext
 
@@ -125,6 +127,32 @@ def _builtin_level_marker(deco: ast.expr, alias_map: Mapping[str, str], shadowed
     return None
 
 
+def _owning_module(qualname: str, modules: Iterable[str]) -> str | None:
+    """The LONGEST module prefix that owns *qualname*, or None.
+
+    The SINGLE resolution behind both of ``check``'s per-entity module lookups —
+    the alias map and the form-5 census — because a naive ``qualname.rsplit('.', 1)``
+    yields ``svc.C`` for the method ``svc.C.method``, which is a MISS in
+    ``context.module_censuses``; a miss is the absent sentinel, so the shared reader
+    would RAISE (``WLN-ENGINE-RULE-FAILED``) on legitimate code where correct keying
+    gives census-present -> ineligible reference site -> ``None`` -> unreadable. That
+    is fail-loud-and-wrong on precisely the method shape spec §4.2.1 refuses.
+
+    Identical resolution to ``marker_reader.alias_map_for_qualname``'s, which is the
+    engine floor's shipped answer for ``alias_maps``; it is spelled here because that
+    helper returns the MAP, not the KEY, and the census lookup needs the key. Deriving
+    both from this one call is what makes the two impossible to drift apart.
+    """
+    return next(
+        (
+            name
+            for name in sorted(modules, key=len, reverse=True)
+            if qualname == name or qualname.startswith(name + ".")
+        ),
+        None,
+    )
+
+
 class InvalidDecoratorLevel:
     rule_id = METADATA.rule_id
     metadata = METADATA
@@ -139,10 +167,18 @@ class InvalidDecoratorLevel:
         # ``weft_markers`` rejects every builtin marker under that root).
         shadowed_roots = _shadowed_builtin_roots(frozenset(context.alias_maps))
         for qualname, entity in context.entities.items():
-            # The alias map of the LONGEST module prefix that owns this entity — needed to
-            # resolve an aliased builtin decorator to its FQN. One shared lookup for every
-            # marker-reading rule (engine floor, P9).
-            alias_map = alias_map_for_qualname(qualname, context.alias_maps)
+            # The LONGEST module prefix that owns this entity, resolved ONCE and used for
+            # BOTH module-keyed lookups below — the alias map (needed to resolve an aliased
+            # builtin decorator to its FQN) and the form-5 census. ``AnalysisContext``
+            # keys both mappings the same way, so one resolution serving both is what
+            # stops the two keys drifting apart.
+            mod_name = _owning_module(qualname, context.alias_maps)
+            alias_map = context.alias_maps.get(mod_name, {}) if mod_name is not None else {}
+            # The REAL per-module census, replacing the inert one this rule used to
+            # construct inline: PY-WL-114 stops being form-5-blind here. A MISS yields
+            # ``None`` — the ABSENT sentinel — and the shared reader raises on it, which
+            # is the loud plumbing-defect channel, never a quiet unreadable.
+            census = context.module_censuses.get(mod_name) if mod_name is not None else None
             for deco_ordinal, deco in enumerate(entity.node.decorator_list):
                 name = _builtin_level_marker(deco, alias_map, shadowed_roots)
                 if name is None:
@@ -178,16 +214,13 @@ class InvalidDecoratorLevel:
                     token = _level_token(
                         kw_value,
                         alias_map,
-                        # PRESENT but empty: no bindings, not poisoned, no eligible
-                        # reference sites — so form 5 resolves nothing here, while the
-                        # reader still raises on a genuine plumbing defect. Constructed
-                        # INLINE, deliberately: the engine floor ships no inert census
-                        # constant, because a public one is the defaulted-empty affordance
-                        # spec rev 6 §4.2.1 forbids. The rule side holds neither the
-                        # module AST nor the star-export map and therefore literally
-                        # cannot build a real one; the census task swaps this for the
-                        # per-module census addressed by the owning module above.
-                        census=ModuleCensus(values={}, poisoned=False, reference_sites=frozenset()),
+                        # The module's REAL census, built once in the parse loop and only
+                        # GATHERED onto the context — the rule side holds neither the
+                        # module AST nor the star-export map and therefore cannot build
+                        # one, which is exactly the pressure that keeps form 5 to a single
+                        # evaluation point. ``None`` here is the ABSENT sentinel, not an
+                        # empty census, and the reader raises on it.
+                        census=census,
                         # This rule already iterates ``entity.node.decorator_list``, so it
                         # holds the decorated statement and can PRESENT a reference site
                         # even though it cannot CLASSIFY one.

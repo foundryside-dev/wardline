@@ -23,6 +23,7 @@ if TYPE_CHECKING:
     from wardline.core.finding import Finding, Severity
     from wardline.core.taints import TaintState
     from wardline.scanner.index import Entity
+    from wardline.scanner.marker_reader import ModuleCensus
     from wardline.scanner.rules._sink_helpers import SinkBindings
     from wardline.scanner.taint.propagation import TaintProvenance
 
@@ -120,6 +121,14 @@ class AnalysisContext:
     # Defaulted so direct constructions (tests) need not supply it; absence degrades to
     # function-scope-only binding resolution.
     module_bindings: Mapping[str, SinkBindings] = field(default_factory=dict)
+    # Per-module form-5 binding censuses: ``{module: ModuleCensus}``. Built ONCE in
+    # the parse loop and only GATHERED here — never rebuilt, and no rule computes
+    # one. Shape and default mirror ``module_bindings`` so direct constructions
+    # (tests) need not supply it; a MISSING KEY is the absent sentinel and makes the
+    # shared reader raise, landing on the shipped per-rule isolation as a
+    # gate-eligible WLN-ENGINE-RULE-FAILED ERROR DEFECT — loud, and impossible to
+    # confuse with a clean scan.
+    module_censuses: Mapping[str, ModuleCensus] = field(default_factory=dict)
     # Rule ids selected for THIS run (``rules.enable``), or ``None`` when unknown
     # (direct constructions / duck-typed registry seams without a ``rules``
     # property). A rule that suppresses-and-delegates to a sibling (PY-WL-120 →
@@ -175,6 +184,9 @@ class AnalysisContext:
         object.__setattr__(self, "analyzed_source_sha256", _freeze_mapping(self.analyzed_source_sha256))
         # SinkBindings values are frozen dataclasses — only the outer map needs the proxy.
         object.__setattr__(self, "module_bindings", _freeze_mapping(self.module_bindings))
+        # ModuleCensus is a frozen dataclass whose own `values` map is already
+        # proxied by the builder — only the outer map needs the proxy here.
+        object.__setattr__(self, "module_censuses", _freeze_mapping(self.module_censuses))
 
 
 class _RuleClass(Protocol):

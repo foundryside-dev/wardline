@@ -3,9 +3,11 @@ from __future__ import annotations
 import ast
 
 from wardline.core.config import WardlineConfig
+from wardline.core.run import run_scan
 from wardline.core.taints import TaintState
 from wardline.scanner.pipeline import L2FunctionInput, ParseProjectInput, run_l2_function_stage, run_parse_project_stage
 from wardline.scanner.taint.decorator_provider import DecoratorTaintSourceProvider, vocabulary_star_exports
+from wardline.scanner.taint.provider import SeedContext, SeedResult
 
 T = TaintState
 
@@ -212,3 +214,83 @@ def test_parse_project_stage_recursion_skip_is_gate_eligible(tmp_path) -> None:
     assert skips[0].kind is Kind.DEFECT
     assert skips[0].severity is Severity.ERROR
     assert skips[0].location.line_start == 1
+
+
+class _CensusRecordingProvider:
+    """Records the ``SeedContext`` census the parse loop handed the provider."""
+
+    def __init__(self) -> None:
+        self.seen: list[SeedContext] = []
+
+    def taint_for(self, entity, ctx: SeedContext) -> SeedResult:  # noqa: ANN001, ARG002
+        self.seen.append(ctx)
+        return SeedResult(taint=None)
+
+    def fingerprint(self) -> str:
+        return "census-recording-v1"
+
+
+def test_parse_loop_builds_one_census_per_module(tmp_path) -> None:
+    # THE SINGLE BUILD. ``SeedContext`` and ``ParsedFile`` must receive the SAME
+    # object, not two censuses that happen to compare equal — hence ``is``. A frozen
+    # dataclass equality check would pass over two independent builds and the test
+    # would not discriminate, which is exactly the drift this pins out.
+    path = tmp_path / "svc.py"
+    path.write_text(
+        "from wardline.decorators import trusted\n"
+        "_LEVEL = 'ASSURED'\n"
+        "@trusted(level=_LEVEL)\n"
+        "def f(p):\n"
+        "    return p\n",
+        encoding="utf-8",
+    )
+    provider = _CensusRecordingProvider()
+    result = run_parse_project_stage(
+        ParseProjectInput(
+            files=(path,),
+            root=tmp_path,
+            provider=provider,
+            config=WardlineConfig(),
+            star_exports=vocabulary_star_exports(),
+        )
+    )
+
+    assert provider.seen, "the provider was never called — the fixture seeds nothing"
+    census = provider.seen[0].census
+    # One census per MODULE, not one per entity — compared by identity because
+    # ``ModuleCensus`` holds a mappingproxy and is therefore unhashable.
+    assert all(ctx.census is census for ctx in provider.seen)
+    assert census is not None
+    assert result.files[0].census is census  # identity, not equality
+    # ...and it is a REAL census, so the assertion above cannot be satisfied by two
+    # matching empties.
+    assert census.values["_LEVEL"].token == "ASSURED"
+
+
+def test_seed_context_and_parsed_file_censuses_are_per_module(tmp_path) -> None:
+    (tmp_path / "a.py").write_text("A = 'ASSURED'\ndef f(p):\n    return p\n", encoding="utf-8")
+    (tmp_path / "b.py").write_text("B = 'INTEGRAL'\ndef g(p):\n    return p\n", encoding="utf-8")
+    provider = _CensusRecordingProvider()
+    result = run_parse_project_stage(
+        ParseProjectInput(
+            files=(tmp_path / "a.py", tmp_path / "b.py"),
+            root=tmp_path,
+            provider=provider,
+            config=WardlineConfig(),
+            star_exports=vocabulary_star_exports(),
+        )
+    )
+    by_module = {parsed.module: parsed.census for parsed in result.files}
+    assert set(by_module["a"].values) == {"A", "f"}
+    assert set(by_module["b"].values) == {"B", "g"}
+    assert by_module["a"] is not by_module["b"]
+
+
+def test_census_reaches_a_rule_on_the_analysers_real_construction_path(tmp_path) -> None:
+    # END-TO-END: the object the parse loop built IS the object a rule receives, and
+    # the reference-site set holds the entity's OWN node — the identity relation form
+    # 5 depends on. Driven through ``run_scan``, never a hand-built context.
+    (tmp_path / "svc.py").write_text("def f(p):\n    return p\n", encoding="utf-8")
+    result = run_scan(tmp_path)
+    assert result.context is not None
+    assert result.context.entities["svc.f"].node in result.context.module_censuses["svc"].reference_sites

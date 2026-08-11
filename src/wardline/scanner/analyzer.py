@@ -53,6 +53,10 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
     from pathlib import Path
 
+    # Annotation-only: the analyzer GATHERS censuses built by the parse loop and
+    # never constructs one, so this stays a TYPE_CHECKING edge (the local-variable
+    # annotation below is not evaluated at runtime).
+    from wardline.scanner.marker_reader import ModuleCensus
     from wardline.scanner.taint.summary_cache import SummaryCache
 
 
@@ -630,7 +634,9 @@ class WardlineAnalyzer:
         # import time, presented to each function's L2 walk as implicit raw parameters.
         module_sink_bindings: dict[str, SinkBindings] = {}
         module_global_taints: dict[str, dict[str, TaintState]] = {}
+        module_censuses: dict[str, ModuleCensus] = {}
         for parsed in file_meta:
+            module_censuses[parsed.module] = parsed.census  # GATHER only — no rebuild
             module_sink_bindings[parsed.module] = collect_sink_bindings(parsed.tree, parsed.alias_map, parsed.module)
             global_raw_seeds = collect_module_global_raw_seeds(
                 parsed.tree,
@@ -1158,6 +1164,7 @@ class WardlineAnalyzer:
             alias_maps={m.module_path: m.alias_map for m in modules},
             analyzed_source_sha256={parsed.relpath: parsed.source_sha256 for parsed in file_meta},
             module_bindings=module_sink_bindings,
+            module_censuses=module_censuses,
             enabled_rule_ids=enabled_rule_ids,
         )
         self.last_context = context
