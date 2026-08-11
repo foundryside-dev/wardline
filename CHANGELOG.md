@@ -9,6 +9,74 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **PY-WL-130 — malformed or statically unverifiable builtin-marker calls are
+  loud.** The diagnostic distinguishes three channels, and claims a runtime
+  error only where the shipped signatures prove one. **Proved runtime-invalid:**
+  a bare call-only marker, an undeclared or duplicated keyword, a missing
+  required keyword, and a non-string constant `**` key. **Statically
+  unverifiable:** a dynamic `**mapping`, or a literal dict with a computed key —
+  both may be perfectly valid at runtime, but Wardline cannot prove they satisfy
+  the marker grammar. **Declaration-grammar only:** calling a bare-only marker,
+  and any positional or `*` argument — `@external_boundary(some_callable)` and
+  `@trusted(audit_fn)` execute cleanly, they are simply not declarations
+  Wardline will honour. A bare-only marker called with no argument
+  (`@external_boundary()`, `@external_boundary(**{})`) is additionally a
+  runtime `TypeError`; PY-WL-130's `call_not_allowed` message states that
+  disjunction rather than picking a side. Every such shape previously
+  UN-DECLARED the function silently (the seed dropped and every tier-modulated
+  rule went quiet — the scan got greener on a typo). It is now an ERROR DEFECT
+  sharing the exact call-shape validator seeding uses. **Two** companion FACTs
+  ship beside it: `WLN-ENGINE-UNKNOWN-MARKER` surfaces vocabulary-rooted
+  decorators this engine does not recognise (new-weft-markers-on-old-wardline
+  skew), and `WLN-ENGINE-UNREADABLE-MARKER-VALUE` surfaces a builtin marker's
+  LEVEL value that stays statically unreadable — counted in
+  `decorator_coverage`'s new `unknown_markers` and `unreadable_marker_values`
+  summary keys respectively.
+- **A module-level constant is now read in a builtin marker's LEVEL slot (P3
+  form 5).** `@trusted(level=_SVC_LEVEL)` with `_SVC_LEVEL = "ASSURED"` (or
+  `TaintState.ASSURED`) at module top level now resolves, where it previously
+  dropped the seed with no diagnostic on any channel. The discipline is
+  deliberately narrow, and everything outside it stays unreadable: a bare name
+  only — never a dotted attribute; the same file only; **one hop**, so a
+  right-hand side that is itself a bare name does not resolve; exactly one
+  binding of that name anywhere in module scope, at any statement depth,
+  counting imports, `for`/`with`/`except` targets, augmented assignments
+  (`+=`), `match` capture patterns, `del`, `def`, `class` and walrus
+  bindings; that one binding direct-top-level, unconditional, a single
+  `Name` target, and lexically before the decorated statement; no
+  `global <name>` anywhere in the module; no unresolved star import in the
+  module; and the decorated `def` / `async def` must itself be a **direct
+  element of the module body** — a method, a nested `def`, or a
+  conditionally-defined module-level `def` is unreadable whatever the module
+  holds, because Python evaluates a decorator expression in the enclosing
+  scope. **This changes gate colour.** Functions that were silently outside the
+  declared set now enter it, so their tier-modulated defects fire; those
+  findings are true positives by construction — the function was always a
+  declared boundary and only the engine's inability to read the marker kept
+  them quiet. `PY-WL-114` gains the same widened surface, so a named-but-invalid
+  token such as `_SVC_LEVEL = "ASURED"` is now an ERROR DEFECT instead of
+  silence.
+- **`WLN-ENGINE-UNREADABLE-MARKER-VALUE` — what stays unreadable stays
+  observable.** A `Severity.NONE` / `Kind.FACT` companion for a **builtin**
+  marker's LEVEL value that no form resolves: a call, an f-string, a subscript,
+  a two-hop name, an import-bound name, a twice-bound name, or any name in a
+  star-import-poisoned module. It is builtin-only — a custom `BoundaryType`'s
+  unreadable level value keeps `WLN-ENGINE-UNPROVABLE-BOUNDARY` and never also
+  takes this one, so no site is reported on two channels or counted twice. It
+  is not suppressible: non-`DEFECT` findings bypass the waiver/baseline join
+  entirely, and a generated baseline never contains one. A waiver — or a
+  hand-authored baseline row — naming its fingerprint is still accepted by the
+  loaders; it simply has no effect, rather than being rejected. It never
+  gates (`Severity.NONE` is absent from the gate's severity order), it survives
+  an `untrusted_sources` override, and it is counted in `decorator_coverage`. It
+  is **not** emitted where the marker's call SHAPE is malformed: the shape gate
+  short-circuits, no level is read, and `PY-WL-130` is the whole verdict.
+- **Marker grammar on the registry.** `RegistryEntry` now declares each
+  marker's bare/called form, keyword set, and per-keyword `ArgKind` (`level` today;
+  `token_set`/`ref` readers arrive with the declaration-surface stages), fused
+  to the boundary types' level-arg schema by a load-time tripwire. The
+  vocabulary descriptor and `REGISTRY_VERSION` are unchanged.
+
 - **Codex CLI judge transport with explicit selection and provenance.** The
   opt-in judge now accepts `auto`, `codex-cli`, or `openrouter`; `auto` prefers
   an installed, compatible, safely projectable ChatGPT-authenticated Codex CLI
@@ -19,6 +87,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   carry the concrete `judge_transport` and provider-specific `model_id`; legacy
   version 1 records remain readable as OpenRouter provenance. A separately
   opted-in authenticated live test covers Codex execution and repository reads.
+
+### Changed
+
+- **BREAKING (analyzer-only): the legacy `to_level=` tolerance on `@trusted` is
+  removed.** The shape was always a runtime `TypeError`; the analyzer no longer
+  seeds it, and PY-WL-130 flags it. Any called `@external_boundary` form,
+  including `@external_boundary()` and `@external_boundary(**{})`, no longer
+  seeds. Migrate to
+  `@trusted(level=...)` / bare `@external_boundary`.
+- **Version-bump discipline (recorded).** Internal, non-serialized registry
+  metadata requires no wire bump. Seeding/resolver semantic changes bump
+  `_RESOLVER_VERSION`; serialized `FunctionSummary` structure changes bump
+  `SUMMARY_SCHEMA_VERSION`; descriptor-envelope changes bump
+  `DESCRIPTOR_SCHEMA`; serialized vocabulary changes bump `REGISTRY_VERSION`
+  and, when seeding changes, `_RESOLVER_VERSION`; attestation wire changes bump
+  `ATTEST_SCHEMA`; baseline document changes bump `BASELINE_VERSION`; a Legis
+  artifact shape change mints the next artifact `vN`. MCP output-schema changes
+  have no runtime version constant and re-freeze their schema golden. A custom
+  grammar change moves its provider fingerprint automatically. S0's registry
+  grammar changes seeding semantics but not Wardline's serialized vocabulary or
+  attestation emission, so it moves `_RESOLVER_VERSION` from `sp1g` to `sp1h`
+  and no Wardline wire version. The MCP schema changes re-freeze their golden;
+  sibling consumer-reader changes do not change a Wardline wire version.
+  Consumers ship before emission.
 
 ## [1.5.0] - 2026-07-31
 
