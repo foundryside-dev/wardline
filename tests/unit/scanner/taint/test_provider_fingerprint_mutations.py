@@ -3256,3 +3256,76 @@ def test_module_chain_depth_cap_is_reported_as_a_cycle() -> None:
     assert _fp(_bt(seed=chain(3, "EXTERNAL_RAW"))) != _fp(_bt(seed=chain(3, "ASSURED")))
     deep_left, deep_right = _fp(_bt(seed=chain(70, "EXTERNAL_RAW"))), _fp(_bt(seed=chain(70, "ASSURED")))
     assert deep_left == deep_right, "A11 closed — the depth cap now discriminates; update the residual document"
+
+
+# --- Round 15: the surface grows where the CONSUMER is consulted -------------------
+#
+# The producer used to grow at three ENUMERATED sites (function globals, module
+# namespace, class namespace) while the consumer is consulted at EVERY visited
+# function. An enumeration of producer sites can always be one site short while the
+# consumer is general — so the dispatcher bound anywhere else was silent. All five of
+# the non-enumerated bindings below collided; the class-body control fired, which is
+# exactly what made the gap invisible.
+
+_BINDING_SITE_SRC = {
+    "control_class_body": "class Reg:\n    pick = _p\ndef seed(levels):\n"
+    "    return FunctionTaint(Reg.pick(), levels['to_level'])\n",
+    "module_dict_table": "TABLE = {'a': _p}\ndef seed(levels):\n"
+    "    return FunctionTaint(TABLE['a'](), levels['to_level'])\n",
+    "module_list_handlers": "HANDLERS = [_p]\ndef seed(levels):\n"
+    "    return FunctionTaint(HANDLERS[0](), levels['to_level'])\n",
+    "closure_cell": "def mk(p):\n    def seed(levels):\n"
+    "        return FunctionTaint(p(), levels['to_level'])\n    return seed\n",
+    "instance_dict": "class Reg:\n    def __init__(self, p):\n        self.pick = p\nR = Reg(_p)\n"
+    "def seed(levels):\n    return FunctionTaint(R.pick(), levels['to_level'])\n",
+    "function_dict": "def registry():\n    return None\nregistry.pick = _p\n"
+    "def seed(levels):\n    return FunctionTaint(registry.pick(), levels['to_level'])\n",
+}
+
+
+def _binding_site_seed(site: str, lvl: str) -> object:
+    other = _r14_otherpkg("getattr", lvl)
+    ns: dict = {"__name__": "mypack.grammar", "_p": other.__dict__["pick"]}
+    exec(compile(_FT + _BINDING_SITE_SRC[site], "m.py", "exec"), ns)  # noqa: S102
+    return ns["mk"](other.__dict__["pick"]) if site == "closure_cell" else ns["seed"]
+
+
+@pytest.mark.parametrize("site", sorted(_BINDING_SITE_SRC))
+def test_surface_grows_at_the_consumer_visit_point(site: str) -> None:
+    """A module-level handler table is the plainest registry idiom in Python.
+
+    It was silent while the class-body binding fired. Growing the surface where the
+    guard is consulted — any visited function that is neither fenced nor a foreign
+    distribution IS the surface, because reaching it means grammar code led here —
+    makes producer and consumer symmetric BY CONSTRUCTION rather than by enumeration.
+    """
+    left_seed, right_seed = _binding_site_seed(site, "EXTERNAL_RAW"), _binding_site_seed(site, "ASSURED")
+    levels = {"to_level": TaintState.GUARDED}
+    assert left_seed(levels).body_taint is TaintState.EXTERNAL_RAW
+    assert right_seed(levels).body_taint is TaintState.ASSURED
+    left = _fp(_bt(seed=left_seed))
+    assert "+grammar:uncacheable-" in left, f"{site} did not fail closed"
+    assert left != _fp(_bt(seed=right_seed))
+
+
+@pytest.mark.parametrize("module_name", ["click", "requests", "jsonschema"])
+def test_list_held_dependency_is_the_D4_direction(module_name: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The honest cost of visit-point growth, measured rather than discovered later.
+
+    Any visited function's root joins the surface, so a dependency held in a list — or
+    anywhere else — contributes its root. Under installed metadata the distribution gate
+    rejects it; with the root carrying no metadata it is read as the pack's own. That is
+    D4's existing direction widened from three namespaces to any visited function.
+    """
+    module = pytest.importorskip(module_name)
+    attribute = {"click": "Command", "requests": "Session", "jsonschema": "Draft7Validator"}[module_name]
+    pack = _r7_pack(
+        "from wardline.core.taints import TaintState\n" + _FT + "def seed(levels):\n"
+        "    return FunctionTaint(TaintState.EXTERNAL_RAW if BOX[0] else None, levels['to_level'])\n",
+        extra={"BOX": [getattr(module, attribute)]},
+    )
+    assert "uncacheable" not in _fp(_bt(seed=pack["seed"])), f"{module_name} bricked under real metadata"
+    monkeypatch.setattr(dp, "_PACKAGE_DISTRIBUTIONS", {"mypack": ("acme-trustpack",)})
+    assert "+grammar:uncacheable-" in _fp(_bt(seed=pack["seed"])), (
+        f"{module_name} no longer bricks without metadata — D4 shrank, update the residual document"
+    )

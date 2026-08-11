@@ -132,7 +132,7 @@ class _Walk:
         self.pack_roots: frozenset[str] = frozenset()
         # Top-level packages beyond the seeds' own roots that belong to the grammar's
         # surface. GROWN DURING THE WALK rather than precomputed — see
-        # ``_grow_surface_roots`` for why a precomputed set could not keep up.
+        # ``_function_identity`` for why the surface grows at the VISIT point.
         self.surface_roots: set[str] = set()
 
 
@@ -921,10 +921,31 @@ def _function_identity(fn: object, walk: _Walk, depth: int) -> dict[str, object]
     globals_map = _probe(fn, "__globals__")
     globals_record: dict[str, object] = {}
     names = _reachable_names(code)
-    if isinstance(globals_map, dict):
-        # BEFORE descending: the members expanded below are exactly where a
-        # second-package dispatcher is reached, so the surface must already include it.
-        _grow_surface_roots(_module_root(fn), names, globals_map, walk)
+    # THE SURFACE GROWS WHERE THE CONSUMER IS CONSULTED. Any function the walk actually
+    # visits, that is neither fenced nor a foreign distribution, IS the grammar's
+    # surface — because reaching it means grammar code led here.
+    #
+    # This replaces an enumeration of PRODUCER sites (function globals, module namespace,
+    # class namespace). That enumeration was true about its own three call sites and
+    # still wrong, because the CONSUMER is consulted at every visited function: an
+    # enumeration of producer sites can always be one site short while the consumer is
+    # general. Measured, with the dispatcher bound at a site no producer covered — a
+    # module-level ``TABLE = {"a": _p}`` or ``HANDLERS = [_p]``, a closure cell, an
+    # instance ``__dict__``, a function ``__dict__`` — all five COLLIDED while the
+    # class-body control fired.
+    #
+    # Growing here makes producer and consumer symmetric BY CONSTRUCTION rather than by
+    # enumeration: there is exactly one place a function becomes visible to the guard,
+    # and it is the same place the guard runs.
+    visited_root = _module_root(fn)
+    if (
+        visited_root
+        and visited_root not in walk.pack_roots
+        and visited_root not in walk.surface_roots
+        and not _is_structurally_opaque(fn)
+        and not _is_foreign_distribution(visited_root, walk.pack_roots)
+    ):
+        walk.surface_roots.add(visited_root)
     if _computed_dispatch_is_unprovable(fn, names, walk):
         # COMPUTED-NAME DISPATCH — the demand set is not statically knowable.
         #
@@ -1126,53 +1147,6 @@ def _is_grammar_surface(fn: object, walk: _Walk) -> bool:
     return root in walk.pack_roots or root in walk.surface_roots
 
 
-def _grow_surface_roots(owner_root: str, names: tuple[str, ...], namespace: dict[str, object], walk: _Walk) -> None:
-    """Extend the grammar's surface from the SAME traversal that consults the guard.
-
-    THE ASYMMETRY THIS REMOVES, stated once so it cannot recur on a fourth axis: the
-    producer of ``surface_roots`` used to walk **the seed's own code object only**,
-    while the consumer (``_computed_dispatch_is_unprovable``) is consulted on **every
-    function the walk reaches, transitively**. Producer specific, consumer general.
-    Three rounds each closed one axis of that gap — dispatcher reach, then seed member
-    KIND, then seed reach DEPTH — and each fix was correct and left another axis.
-
-    Measured before this change, on the canonical pack shape this very test module
-    already uses (``seed`` -> ``_pick``): a seed calling a module-level helper that
-    reaches a second-package dispatcher collided **6/6** across both import spellings
-    and all three dispatch forms, with ``surface_roots == {'mypack'}`` instead of
-    ``{'otherpkg'}``. ``@functools.wraps`` was the same defect in another spelling.
-
-    Now the surface grows wherever the walk is standing on grammar code, so producer
-    and consumer read the same graph and the depth axis closes for every depth at once.
-    The distribution gate is applied at ADD time, so a third-party root never enters the
-    set in the first place.
-    """
-    if owner_root not in walk.pack_roots and owner_root not in walk.surface_roots:
-        return
-    for name in names:
-        member = namespace.get(name)
-        if member is None:
-            continue
-        if isinstance(member, ModuleType):
-            if _is_structurally_opaque_module(member):
-                continue
-            root = str(_probe(member, "__name__") or "").split(".", 1)[0]
-        else:
-            # `from otherpkg.mod import pick` binds the FUNCTION, whose ``__module__``
-            # names the package just as well — the guard must not depend on the import
-            # spelling.
-            if _is_structurally_opaque(member):
-                continue
-            root = _module_root(member)
-        if (
-            root
-            and root not in walk.pack_roots
-            and root not in walk.surface_roots
-            and not _is_foreign_distribution(root, walk.pack_roots)
-        ):
-            walk.surface_roots.add(root)
-
-
 def _computed_dispatch_is_unprovable(fn: object, names: tuple[str, ...], walk: _Walk) -> bool:
     """Can this function reach a member whose NAME is computed at run time?
 
@@ -1277,19 +1251,6 @@ def _module_identity(
     members: dict[str, object] = {}
     record: dict[str, object] = {"t": "module", "name": name, "members": members}
     if isinstance(namespace, dict):
-        # A MODULE NAMESPACE is an edge the producer used to be blind to. ``_module_identity``
-        # never grew the surface, so a pack module binding the second package —
-        # ``mypack.helpers: from otherpkg.mod import pick`` reached as ``H.pick()``, or
-        # ``from otherpkg import mod`` reached as ``H.mod.pick()`` — left
-        # ``surface_roots == []`` while the CONSUMER was still consulted on the function
-        # reached through it. Measured COLLIDE 3/3 on both spellings, with the controls
-        # (helper reaching via its own globals, and the seed's own globals) firing.
-        #
-        # This is NOT residual R2: the demand information exists here — ``H`` is named and
-        # its member is demanded and expanded — so the fix is this one call, restricted to
-        # the same ``used`` set the walk is already bounded by. Zero blast radius: 0 of 7
-        # libraries re-brick, because the distribution gate still rejects at add time.
-        _grow_surface_roots(name.split(".", 1)[0], tuple(sorted(set(used))), namespace, walk)
         for want in sorted(set(used)):
             if want in _MODULE_NOISE:
                 continue
@@ -1345,22 +1306,7 @@ def _class_identity(cls: type, walk: _Walk, depth: int) -> dict[str, object]:
     # An ORDERED list of [index, name, record], not a dict. ``_canonical_json`` sorts
     # dict keys, which made class-namespace order unobservable — and ``vars(cls)`` is an
     # ordered mapping a pack can iterate first-match-wins exactly like a dict literal.
-    # A CLASS NAMESPACE is the third producer, and the one round 13 did not check. A pack
-    # class binding the second package — ``pick = staticmethod(_p)``, a plain
-    # ``pick = _p``, or a second-package BASE class — left ``surface_roots`` short while
-    # the consumer was still consulted on the method reached through it. Measured COLLIDE
-    # 9/9 across three bindings x three dispatch forms.
-    #
-    # SCOPED TO ``used``, exactly as the module hop is: ``used`` here is the set this
-    # record actually expands — the class's own namespace plus its bases — rather than
-    # anything reachable from it. That bound is what keeps a vendored or metadata-less
-    # dependency PARKED on a pack class from widening the surface further than the
-    # members this record already walks.
     own = _snapshot(vars(cls).items)
-    demanded: dict[str, object] = {str(k): v for k, v in own if k not in _CLASS_NOISE}
-    for index, base in enumerate(getattr(cls, "__bases__", ())):
-        demanded[f"__base__{index}"] = base
-    _grow_surface_roots(_module_root(cls), tuple(sorted(demanded)), demanded, walk)
     members = [
         [i, str(k), _element(lambda v=v: _seed_value_identity(v, walk, depth))]  # type: ignore[misc]
         for i, (k, v) in enumerate(m for m in own if m[0] not in _CLASS_NOISE)

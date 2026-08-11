@@ -4,10 +4,11 @@ Known, measured limitations of `_grammar_digest` in `decorator_provider.py` — 
 key over a project's custom trust grammar.
 
 **Anything not on this list is not claimed closed.** This document records what is known
-to be wrong, not what has been proven right. It was produced by a thirteen-round
-adversarial hardening programme; the reasoning behind each entry is in
-`.superpowers/sdd/2026-08-09-s0-hardening-and-consumer-prep/task-13-report.md`, but this
-file is the durable artifact and is meant to be actionable without it.
+to be wrong, not what has been proven right. It was produced by a fifteen-round
+adversarial hardening programme; the working notes behind each entry are in the task-13
+report under `.superpowers/sdd/2026-08-09-s0-hardening-and-consumer-prep/`, but that
+workspace is temporary — **this file is the durable artifact** and is written to be
+actionable without it.
 
 ## How to read an entry
 
@@ -81,52 +82,59 @@ is not less true, but it is less recently checked — do not trust the list unif
   live → `surface_roots == []`; gate neutered → `['charset_normalizer', 'requests',
   'urllib3']`, `['attr', 'attrs', 'idna', 'jsonschema', 'referencing', 'rpds']`, and all
   four go uncacheable. The correctness of the library cases rests entirely here.
-* **A dependency parked on a pack class is the same direction.** Since the class
-  namespace now feeds the producer, a library object held as a class attribute
-  contributes its root. Measured: under installed metadata all three of `click`,
-  `requests`, `jsonschema` stay cacheable; with the root carrying **no** metadata all
-  three go uncacheable. Bounded by scoping the growth to the members the class record
-  already expands, but the direction is real. Pinned by
+* **Widened to any visited function.** The surface grows at the consumer's visit point,
+  so a dependency contributes its root from *anywhere* it is reached — a class
+  attribute, a list, a dict, a closure. Measured across all seven libraries in three
+  reference shapes (module-ref, class-ref, list-held): under installed metadata **all
+  stay warm**; with the root carrying no metadata, `click`, `rich`, `requests`,
+  `jsonschema` and `yaml` go cold for class-ref and list-held. This is the honest cost of
+  the construction argument in A1 — the same direction, widened from three namespaces to
+  any visited function. Pinned by `test_list_held_dependency_is_the_D4_direction` and
   `test_dependency_parked_on_a_pack_class_is_the_D4_direction`.
 * **Fix cheaper than the defect?** Unknown. A location-based test was built and measured
   working in an earlier round and deliberately not retained.
 
-## A1 — reach: bindings the producer cannot turn into a demand set
+## A1 — reach: bindings whose dispatcher is never visited
 
-* **Direction:** UNDER-DISCRIMINATION. **Reach:** live but uncommon. **Freshness:** fresh.
+* **Direction:** UNDER-DISCRIMINATION. **Reach:** live; the closed half included the
+  plainest registry idioms in Python. **Freshness:** fresh.
 
-The surface-root producer runs at three sites — a function's `__globals__`, a module
-namespace, and a class namespace. What it needs from a binding is a **root name**. The
-line between closed and open is therefore *whether the thing that dispatches is ever
-visited*, not what kind of container held it:
+**The line is whether the surface was grown where the consumer is consulted.** It is not
+"what container held the binding", and it is not "is the function visited" — both of
+those were tried and both drew the line in the wrong place.
 
-**CLOSED — the producer only needed a root name, and the fix was one call each:**
+The surface now grows at **one** point: any function the walk visits that is neither
+fenced nor a foreign distribution joins `surface_roots`, which is the same point the
+guard is consulted. Producer and consumer are therefore symmetric **by construction**.
 
-| binding | closed in |
+**CLOSED — every binding whose dispatching function the walk visits:**
+
+| binding of the dispatcher | note |
 |---|---|
-| module or member in any function's globals, at any depth | producer/consumer unification |
-| a pack **module namespace** binding the second package (`from otherpkg.mod import pick`, `from otherpkg import mod`) | module-namespace site |
-| a pack **class namespace** binding a **function** (`pick = _p`, `pick = staticmethod(_p)`) or a second-package **base class** | class-namespace site |
+| any function's globals, at any depth | |
+| a pack **module namespace** (`from otherpkg.mod import pick`, `from otherpkg import mod`) | |
+| a pack **class namespace** — function, `staticmethod`, or a second-package base class | |
+| a module-level **dict** (`TABLE = {"a": _p}`) or **list** (`HANDLERS = [_p]`) | plainest registry idiom |
+| a **closure cell** holding the dispatcher | |
+| an **instance `__dict__`** (`self.pick = _p`) or a **function `__dict__`** | |
 
-**OPEN — the dispatching function is never *visited*, so no root name would help:**
+**OPEN — the dispatching function is never visited at all:**
 
 | binding | measured |
 |---|---|
-| a module reached only through a **closure cell** | collides |
-| a module reached only through a **plain list** | collides |
-| a module held as a **class attribute** | collides |
+| a **module** reached only through a closure cell, a plain list, or a class attribute | collides |
 
-For the open rows the module's member is never expanded: the name is not in any
-`co_names`, so `_module_identity` never runs and there is no demand set to drive it. 18 of
-30 cells, pinned in `test_seed_reach_axis_behaves_as_classified`; the class-attribute case
-is pinned separately in `test_class_attribute_holding_a_MODULE_is_still_open`.
+For the open row the module's member is never expanded: the name is in no `co_names`, so
+`_module_identity` never runs and there is no demand set to drive it. Nothing is reached,
+so no root name would help. 18 of 30 cells, pinned by
+`test_seed_reach_axis_behaves_as_classified` and
+`test_class_attribute_holding_a_MODULE_is_still_open`.
 
-* **Fix cheaper than the defect?** **No — for the OPEN rows only.** Expanding a
+* **Fix cheaper than the defect?** **No — for the OPEN row only.** Expanding a
   demand-free module's full member set is the namespace walk that measured **207 MB**.
-* ⚠️ **Do not generalise that sentence.** It was previously written across the whole
-  entry and stopped a maintainer looking at the closeable half twice. A binding whose
-  member is already visited — a function, a base class — needs only a root name, and each
-  such case has cost one call with zero blast radius.
+* ⚠️ **Do not generalise that sentence past the open row.** This entry has over-claimed
+  four times; each time the claim moved with a fix without being re-derived. It must be
+  re-measured every round, not edited.
 
 ## A2 — trigger names: an allow-list of spellings, not a closed category
 
