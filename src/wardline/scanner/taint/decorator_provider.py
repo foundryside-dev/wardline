@@ -1523,7 +1523,13 @@ class DecoratorTaintSourceProvider:
                 # same site twice (spec §4.2.1, soundness condition 5).
                 unprovable.append(unprov)
             else:
-                marker = unknown_vocabulary_marker(deco, ctx.alias_map, shadowed_roots)
+                marker = unknown_vocabulary_marker(
+                    deco,
+                    ctx.alias_map,
+                    shadowed_roots,
+                    census=ctx.census,
+                    reference_site=entity.node,
+                )
                 if marker is not None:
                     unknown.append(marker)
                 elif unreadable:
@@ -1624,7 +1630,12 @@ class DecoratorTaintSourceProvider:
         names, and without the reference site P3 form 5 cannot evaluate its
         lexical-precedence clause.
         """
-        fqn = _resolve_decorator_fqn(deco, alias_map)
+        fqn = _resolve_decorator_fqn(
+            deco,
+            alias_map,
+            census=census,
+            reference_site=reference_site,
+        )
         if fqn is None:
             return None, None, ()
         # Builtin markers are security-sensitive defaults: a scanned project could

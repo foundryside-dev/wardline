@@ -88,8 +88,18 @@ def dotted_name(node: ast.expr) -> str | None:
     return None
 
 
-def resolve_dotted_fqn(node: ast.expr, alias_map: Mapping[str, str]) -> str | None:
-    """Reconstruct ``node``'s dotted name and rewrite its head via ``alias_map``.
+def resolve_dotted_fqn(
+    node: ast.expr,
+    alias_map: Mapping[str, str],
+    *,
+    census: ModuleCensus | None = None,
+    resolution_site: ast.AST | None = None,
+) -> str | None:
+    """Reconstruct ``node``'s dotted name and rewrite its visible imported head.
+
+    When a built census and resolution site are present, the module-wide alias
+    map is accepted only if its import remains the last possible binding before
+    that site. This prevents a stale import entry surviving a local rebind.
 
     Returns None for non-name nodes (calls, subscripts, literals).
     """
@@ -97,17 +107,46 @@ def resolve_dotted_fqn(node: ast.expr, alias_map: Mapping[str, str]) -> str | No
     if dotted is None:
         return None
     head, _, rest = dotted.partition(".")
-    head_fqn = alias_map.get(head, head)
+    head_fqn = alias_map.get(head)
+    if head_fqn is None:
+        head_fqn = head
+    elif census is not None and census.binding_lines is not None and census.alias_lines is not None:
+        # ``alias_map`` is a module-wide import inventory, not a source-order
+        # environment. Refuse its rewrite unless the last possible module binding
+        # before this use is the direct import that supplied the alias. A later
+        # import also makes the map's final target unusable for an earlier site.
+        line = getattr(resolution_site, "lineno", None)
+        alias_lines = census.alias_lines.get(head, ())
+        binding_lines = census.binding_lines.get(head, ())
+        if not alias_lines:
+            # A caller may supply a pre-built alias map with no corresponding
+            # source import in this tree (the public reader/unit-test contract).
+            # There is no source-order evidence to contradict that environment.
+            pass
+        elif line is None or any(import_line >= line for import_line in alias_lines):
+            head_fqn = head
+        else:
+            # A materialised star import contributes alias lines without named
+            # occurrences, so both populations participate in the last-bind test.
+            prior = tuple(binding_line for binding_line in (*binding_lines, *alias_lines) if binding_line < line)
+            if not prior or max(prior) not in alias_lines:
+                head_fqn = head
     return f"{head_fqn}.{rest}" if rest else head_fqn
 
 
-def resolve_decorator_fqn(deco: ast.expr, alias_map: Mapping[str, str]) -> str | None:
+def resolve_decorator_fqn(
+    deco: ast.expr,
+    alias_map: Mapping[str, str],
+    *,
+    census: ModuleCensus | None = None,
+    reference_site: ast.stmt | None = None,
+) -> str | None:
     """Resolve a decorator node to a fully-qualified name via the alias map.
 
     Strips a call wrapper (``@d(...)`` -> ``d``) then resolves the dotted name.
     """
     func = deco.func if isinstance(deco, ast.Call) else deco
-    return resolve_dotted_fqn(func, alias_map)
+    return resolve_dotted_fqn(func, alias_map, census=census, resolution_site=reference_site)
 
 
 def alias_map_for_qualname(
@@ -203,11 +242,19 @@ class ModuleCensus:
     qualname or column-offset proxy can answer this test (a conditionally-defined
     module-level ``def`` has the same qualname as an unconditional one). Built
     once per module in the parse loop; never rebuilt, and no rule computes one.
+    ``binding_lines`` and ``alias_lines`` are the source-order evidence shared by
+    marker and level-head resolution so imported names cannot outlive a rebind.
     """
 
     values: Mapping[str, CensusBinding]
     poisoned: bool
     reference_sites: frozenset[ast.stmt]
+    # Source-order evidence for deciding whether an import alias is still the
+    # visible binding at a decorator or level expression. ``None`` is retained as
+    # an explicit compatibility sentinel for hand-built censuses in reader unit
+    # tests; the production builder always supplies both mappings.
+    binding_lines: Mapping[str, tuple[int, ...]] | None = None
+    alias_lines: Mapping[str, tuple[int, ...]] | None = None
 
 
 def level_token(
@@ -275,7 +322,12 @@ def level_token(
     if isinstance(value, ast.Constant) and isinstance(value.value, str):
         return value.value
     if isinstance(value, ast.Attribute):
-        receiver = resolve_dotted_fqn(value.value, alias_map)
+        receiver = resolve_dotted_fqn(
+            value.value,
+            alias_map,
+            census=census,
+            resolution_site=reference_site or value,
+        )
         if receiver is None:
             return None
         if receiver.split(".")[0] in shadowed_roots:
@@ -534,6 +586,9 @@ def unknown_vocabulary_marker(
     deco: ast.expr,
     alias_map: Mapping[str, str],
     shadowed_roots: frozenset[str],
+    *,
+    census: ModuleCensus | None = None,
+    reference_site: ast.stmt | None = None,
 ) -> str | None:
     """The resolved FQN iff *deco* is vocabulary-rooted but not a recognised export.
 
@@ -548,7 +603,7 @@ def unknown_vocabulary_marker(
     unresolved in the alias map (``vocabulary_star_exports`` maps only known
     names) and cannot be attributed to the vocabulary.
     """
-    fqn = resolve_decorator_fqn(deco, alias_map)
+    fqn = resolve_decorator_fqn(deco, alias_map, census=census, reference_site=reference_site)
     if fqn is None:
         return None
     if fqn.split(".")[0] in shadowed_roots:

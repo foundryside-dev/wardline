@@ -653,6 +653,35 @@ _FORM5_AGREEMENT = [
         False,
         id="star-import poisoned module",
     ),
+    pytest.param(
+        _AG
+        + "_SVC_LEVEL = 'ASSURED'\n"
+        "if enabled:\n"
+        "    from unknownpkg import *\n"
+        "@trusted(level=_SVC_LEVEL)\n"
+        "def f(p):\n"
+        "    return p\n",
+        "svc.f",
+        False,
+        True,
+        False,
+        id="nested star-import poisoned module",
+    ),
+    pytest.param(
+        _AG
+        + "from wardline.core.taints import TaintState as T\n"
+        "class T:\n"
+        "    ASSURED = 'INTEGRAL'\n"
+        "_SVC_LEVEL = T.ASSURED\n"
+        "@trusted(level=_SVC_LEVEL)\n"
+        "def f(p):\n"
+        "    return p\n",
+        "svc.f",
+        False,
+        True,
+        False,
+        id="taintstate alias rebound before form5 binding",
+    ),
     # Added beyond spec §4.2.1's eight: LEXICAL PRECEDENCE. The qualifying single
     # binding sits BELOW the decorated ``def``, so form 5's fifth conjunct refuses it.
     # A reader missing that conjunct MINTS A SEED here — the dangerous direction.

@@ -199,6 +199,22 @@ def test_unresolved_star_import_poisons_the_module() -> None:
 
 
 @pytest.mark.parametrize(
+    "nested_star",
+    [
+        "if enabled:\n    from unknown_pkg import *\n",
+        "try:\n    from unknown_pkg import *\nexcept ImportError:\n    pass\n",
+        "if enabled:\n    from wardline.decorators import *\n",
+    ],
+)
+def test_unresolved_star_import_at_nested_module_statement_depth_poisons_the_module(nested_star: str) -> None:
+    # A nested module-scope star import can overwrite X at runtime just as a direct
+    # Module.body import can. The poison walk must therefore share the binding
+    # census's statement-depth semantics rather than inspecting tree.body alone.
+    census = _census('X = "ASSURED"\n' + nested_star)
+    assert census.poisoned is True
+
+
+@pytest.mark.parametrize(
     ("star", "module_path"),
     [
         ("from . import *", "pkg.mod"),  # relative — never materialised

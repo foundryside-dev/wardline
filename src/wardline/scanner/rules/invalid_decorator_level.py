@@ -18,9 +18,8 @@ from wardline.core.registry import REGISTRY
 from wardline.core.taints import TaintState
 from wardline.scanner.boundary_types import BUILTIN_BOUNDARY_TYPES
 
-# ``ModuleCensus`` is NO LONGER imported here: ``check`` used to CONSTRUCT an inert one
-# for its ``level_token`` call, and now reads the REAL per-module census off
-# ``context.module_censuses`` instead, so nothing in this module names the type.
+# ``ModuleCensus`` is imported only for typing: ``check`` reads the REAL per-module
+# census off ``context.module_censuses`` and never constructs one here.
 # ``alias_map_for_qualname`` likewise dropped — see ``_owning_module`` below, which
 # performs the ONE longest-owning-module resolution that serves both the alias map and
 # the census, so the two keys cannot drift. Each ``as``-aliased name gets its own
@@ -36,6 +35,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
 
     from wardline.scanner.context import AnalysisContext
+    from wardline.scanner.marker_reader import ModuleCensus
 
 _BOUNDARY_LEVELS = frozenset({TaintState.GUARDED, TaintState.ASSURED})
 _TRUSTED_LEVELS = frozenset({TaintState.INTEGRAL, TaintState.ASSURED})
@@ -99,7 +99,14 @@ METADATA = RuleMetadata(
 )
 
 
-def _builtin_level_marker(deco: ast.expr, alias_map: Mapping[str, str], shadowed_roots: frozenset[str]) -> str | None:
+def _builtin_level_marker(
+    deco: ast.expr,
+    alias_map: Mapping[str, str],
+    shadowed_roots: frozenset[str],
+    *,
+    census: ModuleCensus | None,
+    reference_site: ast.stmt,
+) -> str | None:
     """The canonical builtin marker name (``trusted`` / ``trust_boundary``) iff *deco*
     resolves to a builtin level-bearing trust decorator THE ENGINE'S SEEDING WOULD HONOUR.
     Gating on the resolved FQN (not the trailing identifier) fixes both the alias-blind FN —
@@ -114,7 +121,7 @@ def _builtin_level_marker(deco: ast.expr, alias_map: Mapping[str, str], shadowed
     fail-closed exactly as the provider rejects it. PY-WL-110 sidesteps shadows via its
     anchored-provenance gate; this rule fires precisely where seeding FAILED, so it must
     thread the shadow set explicitly."""
-    fqn = _resolve_decorator_fqn(deco, alias_map)
+    fqn = _resolve_decorator_fqn(deco, alias_map, census=census, reference_site=reference_site)
     if fqn is None:
         return None
     for bt in BUILTIN_BOUNDARY_TYPES:
@@ -180,7 +187,13 @@ class InvalidDecoratorLevel:
             # is the loud plumbing-defect channel, never a quiet unreadable.
             census = context.module_censuses.get(mod_name) if mod_name is not None else None
             for deco_ordinal, deco in enumerate(entity.node.decorator_list):
-                name = _builtin_level_marker(deco, alias_map, shadowed_roots)
+                name = _builtin_level_marker(
+                    deco,
+                    alias_map,
+                    shadowed_roots,
+                    census=census,
+                    reference_site=entity.node,
+                )
                 if name is None:
                     continue
 

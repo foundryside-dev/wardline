@@ -14,9 +14,9 @@ Three components, and the census — not either reader — owns all three:
   when exactly one occurrence satisfies the direct-top-level, unconditional,
   single-``Name``-target discipline and no other module-scope occurrence of any
   kind exists anywhere in the module;
-* ``poisoned`` — an unresolved top-level star import makes every name in the
-  module unreadable, because ``build_import_alias_map`` skipped that import and
-  the star may silently override the visible assignment;
+* ``poisoned`` — an unresolved star import at any module-statement depth makes
+  every name in the module unreadable, because ``build_import_alias_map`` skipped
+  that import and the star may silently override the visible assignment;
 * ``reference_sites`` — the ``def`` / ``async def`` statements that are DIRECT
   elements of ``Module.body``, held by node identity.
 
@@ -91,15 +91,45 @@ def build_module_census(
     # module is in star_exports. Everything else it silently skips, so the star
     # may supply a name the census cannot see. Pinned against the shipped
     # function by test_census_poison_agrees_with_build_import_alias_map.
-    poisoned = any(
-        isinstance(stmt, ast.ImportFrom)
-        and any(alias.name == "*" for alias in stmt.names)
-        and not ((stmt.level or 0) == 0 and stmt.module is not None and stmt.module in star_exports)
-        for stmt in tree.body
-    )
+    def has_unmaterialised_star(child: ast.AST, *, direct: bool) -> bool:
+        if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
+            return False
+        if isinstance(child, ast.ImportFrom) and any(alias.name == "*" for alias in child.names):
+            return not (
+                direct
+                and (child.level or 0) == 0
+                and child.module is not None
+                and child.module in star_exports
+            )
+        return any(has_unmaterialised_star(grandchild, direct=False) for grandchild in ast.iter_child_nodes(child))
+
+    poisoned = any(has_unmaterialised_star(stmt, direct=True) for stmt in tree.body)
 
     occurrences: dict[str, list[int]] = {}
     declared_global: set[str] = set()
+
+    # Direct imports are the only imports represented by ``alias_map``. Record
+    # their source lines separately from the complete module-scope binding walk so
+    # readers can reject an import head after an intervening local/conditional bind.
+    alias_lines: dict[str, list[int]] = {}
+    for stmt in tree.body:
+        if isinstance(stmt, ast.Import):
+            names = tuple(alias.asname or alias.name.split(".")[0] for alias in stmt.names)
+        elif isinstance(stmt, ast.ImportFrom):
+            if (
+                (stmt.level or 0) == 0
+                and stmt.module is not None
+                and any(alias.name == "*" for alias in stmt.names)
+                and stmt.module in star_exports
+            ):
+                names = tuple(star_exports[stmt.module])
+            else:
+                names = tuple(alias.asname or alias.name for alias in stmt.names if alias.name != "*")
+        else:
+            continue
+        for name in names:
+            if name in alias_map:
+                alias_lines.setdefault(name, []).append(stmt.lineno)
 
     def occurrence(name: str, line: int) -> None:
         occurrences.setdefault(name, []).append(line)
@@ -148,6 +178,13 @@ def build_module_census(
         if isinstance(node, ast.Global):
             declared_global.update(node.names)
 
+    binding_lines = MappingProxyType(
+        {bound_name: tuple(bound_lines) for bound_name, bound_lines in occurrences.items()}
+    )
+    frozen_alias_lines = MappingProxyType(
+        {alias_name: tuple(import_lines) for alias_name, import_lines in alias_lines.items()}
+    )
+
     # The one shape that may resolve: a DIRECT element of Module.body, single
     # `Name` target, unconditional. An `AnnAssign` qualifies when it has a value —
     # the annotation is not read, only the right-hand side, because `X: Final = ...`
@@ -191,7 +228,13 @@ def build_module_census(
         token = level_token(
             value_node,
             alias_map,
-            census=ModuleCensus(values={}, poisoned=False, reference_sites=frozenset()),
+            census=ModuleCensus(
+                values={},
+                poisoned=False,
+                reference_sites=frozenset(),
+                binding_lines=binding_lines,
+                alias_lines=frozen_alias_lines,
+            ),
             reference_site=None,
             shadowed_roots=shadowed_roots,
             builtin=True,
@@ -213,4 +256,6 @@ def build_module_census(
         reference_sites=frozenset(
             stmt for stmt in tree.body if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef))
         ),
+        binding_lines=binding_lines,
+        alias_lines=frozen_alias_lines,
     )

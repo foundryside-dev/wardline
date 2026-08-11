@@ -38,6 +38,7 @@ from wardline.core.finding import compute_finding_fingerprint as _fp
 from wardline.core.registry import REGISTRY
 from wardline.scanner.boundary_types import BUILTIN_BOUNDARY_TYPES, BoundaryType
 from wardline.scanner.marker_reader import (
+    ModuleCensus,
     alias_map_for_qualname,
     call_shape_offences,
     is_builtin_decorator_fqn,
@@ -93,11 +94,16 @@ METADATA = RuleMetadata(
 
 
 def _builtin_marker(
-    deco: ast.expr, alias_map: Mapping[str, str], shadowed_roots: frozenset[str]
+    deco: ast.expr,
+    alias_map: Mapping[str, str],
+    shadowed_roots: frozenset[str],
+    *,
+    census: ModuleCensus | None,
+    reference_site: ast.stmt,
 ) -> BoundaryType | None:
     """The matched builtin BoundaryType iff *deco* resolves to a builtin marker
     seeding would honour (exact known export, root not shadowed)."""
-    fqn = resolve_decorator_fqn(deco, alias_map)
+    fqn = resolve_decorator_fqn(deco, alias_map, census=census, reference_site=reference_site)
     if fqn is None:
         return None
     for bt in BUILTIN_BOUNDARY_TYPES:
@@ -122,8 +128,23 @@ class MalformedMarkerCall:
         shadowed = shadowed_builtin_roots(frozenset(context.alias_maps))
         for qualname, entity in context.entities.items():
             alias_map = alias_map_for_qualname(qualname, context.alias_maps)
+            module = next(
+                (
+                    name
+                    for name in sorted(context.module_censuses, key=len, reverse=True)
+                    if qualname == name or qualname.startswith(name + ".")
+                ),
+                None,
+            )
+            census = context.module_censuses.get(module) if module is not None else None
             for deco_ordinal, deco in enumerate(entity.node.decorator_list):
-                bt = _builtin_marker(deco, alias_map, shadowed)
+                bt = _builtin_marker(
+                    deco,
+                    alias_map,
+                    shadowed,
+                    census=census,
+                    reference_site=entity.node,
+                )
                 if bt is None:
                     continue
                 entry = REGISTRY[bt.canonical_name]

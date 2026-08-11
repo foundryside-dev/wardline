@@ -242,6 +242,37 @@ def test_aliased_builtin_fires(tmp_path: Path) -> None:
     assert len(_hits(result)) == 1
 
 
+def test_imported_marker_rebound_before_use_is_a_local_decorator(tmp_path: Path) -> None:
+    result = _scan(
+        tmp_path,
+        "from wardline.decorators import trusted\n"
+        "def trusted(*, level, audit):\n"
+        "    def decorate(fn):\n"
+        "        return fn\n"
+        "    return decorate\n"
+        "@trusted(level='ASSURED', audit=True)\n"
+        "def f(p):\n"
+        "    return p\n",
+    )
+    assert not _hits(result)
+    assert result.context is not None
+    assert "svc.f" not in result.context.declared_qualnames
+
+
+def test_imported_marker_rebound_after_use_still_resolves_at_the_decorator(tmp_path: Path) -> None:
+    # Source order is load-bearing: a later rebind cannot retroactively change the
+    # callable evaluated when the decorator ran.
+    result = _scan(
+        tmp_path,
+        "from wardline.decorators import trusted\n"
+        "@trusted(level='ASSURED', audit=True)\n"
+        "def f(p):\n"
+        "    return p\n"
+        "trusted = object()\n",
+    )
+    assert len(_hits(result)) == 1
+
+
 def test_foreign_and_custom_markers_are_not_this_rules_concern(tmp_path: Path) -> None:
     result = _scan(
         tmp_path,

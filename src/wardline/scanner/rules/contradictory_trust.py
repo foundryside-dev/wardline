@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING
 from wardline.core.finding import Finding, Kind, Severity
 from wardline.core.finding import compute_finding_fingerprint as _fp
 from wardline.scanner.boundary_types import BUILTIN_BOUNDARY_TYPES
-from wardline.scanner.marker_reader import alias_map_for_qualname, shadowed_builtin_roots
+from wardline.scanner.marker_reader import ModuleCensus, alias_map_for_qualname, shadowed_builtin_roots
 from wardline.scanner.marker_reader import is_builtin_decorator_fqn as _is_builtin_decorator_fqn
 from wardline.scanner.marker_reader import resolve_decorator_fqn as _resolve_decorator_fqn
 from wardline.scanner.rules._fingerprint import entity_source_fingerprint
@@ -64,6 +64,9 @@ def _marker_canonical_name(
     deco: ast.expr,
     alias_map: Mapping[str, str],
     shadowed_roots: frozenset[str],
+    *,
+    census: ModuleCensus | None,
+    reference_site: ast.stmt,
 ) -> str | None:
     """The canonical builtin marker name *deco* resolves to, or None.
 
@@ -74,7 +77,7 @@ def _marker_canonical_name(
     a genuine ``weft_markers`` marker, and vice versa (mirrors the provider's own
     per-root rejection in ``DecoratorTaintSourceProvider._match``).
     """
-    fqn = _resolve_decorator_fqn(deco, alias_map)
+    fqn = _resolve_decorator_fqn(deco, alias_map, census=census, reference_site=reference_site)
     if fqn is None:
         return None
     for bt in BUILTIN_BOUNDARY_TYPES:
@@ -107,10 +110,25 @@ class ContradictoryTrust:
             # The alias map of the LONGEST module prefix that owns this entity — the one
             # shared lookup PY-WL-110/PY-WL-114/PY-WL-130 all use (engine floor, P9).
             alias_map = alias_map_for_qualname(qualname, context.alias_maps)
+            module = next(
+                (
+                    name
+                    for name in sorted(context.module_censuses, key=len, reverse=True)
+                    if qualname == name or qualname.startswith(name + ".")
+                ),
+                None,
+            )
+            census = context.module_censuses.get(module) if module is not None else None
 
             markers = set()
             for deco in entity.node.decorator_list:
-                name = _marker_canonical_name(deco, alias_map, shadowed_roots)
+                name = _marker_canonical_name(
+                    deco,
+                    alias_map,
+                    shadowed_roots,
+                    census=census,
+                    reference_site=entity.node,
+                )
                 if name is not None:
                     markers.add(name)
 
