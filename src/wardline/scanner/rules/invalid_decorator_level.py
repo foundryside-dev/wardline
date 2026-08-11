@@ -14,10 +14,21 @@ from typing import TYPE_CHECKING
 
 from wardline.core.finding import Finding, Kind, Severity
 from wardline.core.finding import compute_finding_fingerprint as _fp
+from wardline.core.registry import REGISTRY
 from wardline.core.taints import TaintState
 from wardline.scanner.boundary_types import BUILTIN_BOUNDARY_TYPES
+
+# ``ModuleCensus`` is a CLASS, so ruff's isort (``order-by-type``, the default) sorts it
+# ahead of every lowercase function name — NOT into alphabetical position among them. It
+# is imported because ``check`` below CONSTRUCTS one for its ``level_token`` call; without
+# it that call is a NameError on the first level read. Each ``as``-aliased name gets its
+# own statement because ruff runs with the default ``combine-as-imports = false``.
+from wardline.scanner.marker_reader import ModuleCensus, alias_map_for_qualname, call_shape_offences, extract_keywords
+from wardline.scanner.marker_reader import is_builtin_decorator_fqn as _is_builtin_decorator_fqn
+from wardline.scanner.marker_reader import level_token as _level_token
+from wardline.scanner.marker_reader import resolve_decorator_fqn as _resolve_decorator_fqn
+from wardline.scanner.marker_reader import shadowed_builtin_roots as _shadowed_builtin_roots
 from wardline.scanner.rules.metadata import RuleMetadata
-from wardline.scanner.taint.decorator_provider import _is_builtin_decorator_fqn, _shadowed_builtin_roots
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -32,6 +43,19 @@ _TRUSTED_LEVELS = frozenset({TaintState.INTEGRAL, TaintState.ASSURED})
 # predicate (``_is_builtin_decorator_fqn`` + shadowed-root fail-closed rejection), so
 # the rule cannot recognise a marker the seeding rejects (wardline-09c09f14df).
 _LEVEL_MARKER_NAMES: frozenset[str] = frozenset({"trusted", "trust_boundary"})
+
+# The REQUIRED keyword set per builtin marker, for the registry-owned shape gate.
+# ``call_form`` and the DECLARED keyword set come from ``REGISTRY`` (the declaration
+# contract); required-ness is not a ``RegistryEntry`` field and must not become one
+# (``REGISTRY_VERSION`` is pinned and the vocabulary descriptor golden keys off it), so
+# it is derived from the grammar's own ``LevelArg.default is None`` convention — the
+# same "default=None means REQUIRED" rule the provider seeds on. Both builtin roots
+# carry identical rows for each canonical name, so the collapse is lossless.
+_REQUIRED_KWARGS: dict[str, frozenset[str]] = {
+    bt.canonical_name: frozenset(la.arg_name for la in bt.level_args if la.default is None)
+    for bt in BUILTIN_BOUNDARY_TYPES
+    if bt.builtin
+}
 
 METADATA = RuleMetadata(
     rule_id="PY-WL-114",
@@ -48,50 +72,29 @@ METADATA = RuleMetadata(
         # An ALIASED builtin decorator with a typo'd level must still fire (the alias resolves
         # to the builtin FQN) — otherwise the typo silently disables the gate (wardline-0267c31cd8).
         "from wardline.decorators import trusted as t\n@t(level='ASURED')\ndef f(p):\n    return p",
+        # An aliased genuine TaintState with a typo: the provider reads it (alias-
+        # resolved) and drops the seed, so the rule must fire (shared reader, P9).
+        "from wardline.core.taints import TaintState as T\n@trusted(level=T.ASURED)\ndef f(p):\n    return p",
     ),
     examples_clean=(
         "@trusted(level='ASSURED')\ndef f(p):\n    return p",
         "@trust_boundary(to_level='ASSURED')\ndef g(p):\n    if not p: raise ValueError\n    return p",
-        "@trusted(level=cfg.LEVEL)\ndef h(p):\n    return p",
+        # NOTE: ``@trusted(level=cfg.LEVEL)`` was DELETED from this tuple, not re-annotated.
+        # ``cfg.LEVEL`` is a dotted Attribute held out of P3 form 5 by design, so under
+        # design spec rev 6 it is an UNREADABLE builtin LEVEL value that takes the
+        # ``WLN-ENGINE-UNREADABLE-MARKER-VALUE`` FACT. A ``Severity.NONE`` FACT does not
+        # convert a fail-open construct into a legitimate CLEAN exemplar, and a shipped
+        # exemplar teaching that an unreadable level value is exemplary is exactly the
+        # trap this program removed one rule over. Do not re-add it, and do not add a
+        # ``myconfig.TaintState.ASURED`` sibling either: its receiver does not
+        # alias-resolve to the exact known export, so it is likewise unreadable. The
+        # foreign-receiver SILENCE property is pinned as a unit assertion in
+        # tests/unit/scanner/rules/test_invalid_decorator_level.py instead.
         # A FOREIGN decorator that merely happens to be spelled ``trusted`` is not the builtin
         # marker, so an invalid level on it is not PY-WL-114's concern (no FP) (wardline-0267c31cd8).
         "import other_pkg\n@other_pkg.trusted(level='BOGUS')\ndef f(p):\n    return p",
     ),
 )
-
-
-def _dotted_name(node: ast.expr) -> str | None:
-    """Reconstruct a dotted name (a.b.c) from a Name/Attribute chain."""
-    if isinstance(node, ast.Name):
-        return node.id
-    if isinstance(node, ast.Attribute):
-        base = _dotted_name(node.value)
-        return f"{base}.{node.attr}" if base is not None else None
-    return None
-
-
-def _level_token(value: ast.expr) -> str | None:
-    """Extract a level token from a Constant string or an Attribute name."""
-    if isinstance(value, ast.Constant) and isinstance(value.value, str):
-        return value.value
-    if isinstance(value, ast.Attribute):
-        base = _dotted_name(value.value)
-        if base is not None and (base == "TaintState" or base.endswith(".TaintState")):
-            return value.attr
-    return None
-
-
-def _resolve_decorator_fqn(deco: ast.expr, alias_map: Mapping[str, str]) -> str | None:
-    """Resolve a decorator to its fully-qualified name through the module's import alias
-    map (mirrors PY-WL-110's resolver), so ``@t`` from ``import trusted as t`` resolves to
-    ``wardline.decorators.trusted``."""
-    func = deco.func if isinstance(deco, ast.Call) else deco
-    dotted = _dotted_name(func)
-    if dotted is None:
-        return None
-    head, _, rest = dotted.partition(".")
-    head_fqn = alias_map.get(head, head)
-    return f"{head_fqn}.{rest}" if rest else head_fqn
 
 
 def _builtin_level_marker(deco: ast.expr, alias_map: Mapping[str, str], shadowed_roots: frozenset[str]) -> str | None:
@@ -100,10 +103,12 @@ def _builtin_level_marker(deco: ast.expr, alias_map: Mapping[str, str], shadowed
     Gating on the resolved FQN (not the trailing identifier) fixes both the alias-blind FN —
     ``@t(level=...)`` where ``t`` aliases the builtin — and the foreign-name FP — a
     non-wardline / locally-defined decorator that merely happens to be spelled ``trusted``
-    (wardline-0267c31cd8). Matching uses the seeding predicate itself: only the exact
-    exports ``P.<name>`` / ``P.trust.<name>`` count (an arbitrarily-nested path like
-    ``wardline.decorators.evil.trusted`` is seeded by NEITHER, so a bad level on it never
-    disabled any gate), and a marker whose root the scanned project shadows is rejected
+    (wardline-0267c31cd8). Matching uses the seeding predicate itself, whose accepted-export
+    table is ROOT-SPECIFIC: ``wardline.decorators.<name>`` plus its real implementation-module
+    export ``wardline.decorators.trust.<name>``, and a DIRECT ``weft_markers.<name>`` only
+    (there is no ``weft_markers.trust`` submodule, so that path is a ghost export). An
+    arbitrarily-nested path like ``wardline.decorators.evil.trusted`` is seeded by NEITHER,
+    so a bad level on it never disabled any gate; and a marker whose root the scanned project shadows is rejected
     fail-closed exactly as the provider rejects it. PY-WL-110 sidesteps shadows via its
     anchored-provenance gate; this rule fires precisely where seeding FAILED, so it must
     thread the shadow set explicitly."""
@@ -129,25 +134,36 @@ class InvalidDecoratorLevel:
 
     def check(self, context: AnalysisContext) -> list[Finding]:
         findings: list[Finding] = []
-        modules = list(context.alias_maps.keys())
         # The scanned project's modules are the alias-map keys; the same shadow
         # computation the provider runs (a project-local top-level ``wardline`` /
         # ``weft_markers`` rejects every builtin marker under that root).
-        shadowed_roots = _shadowed_builtin_roots(frozenset(modules))
+        shadowed_roots = _shadowed_builtin_roots(frozenset(context.alias_maps))
         for qualname, entity in context.entities.items():
-            # The alias map for the module that owns this entity — needed to resolve an
-            # aliased builtin decorator to its FQN (mirrors PY-WL-110).
-            mod_name = next(
-                (m for m in sorted(modules, key=len, reverse=True) if qualname == m or qualname.startswith(m + ".")),
-                None,
-            )
-            alias_map = (context.alias_maps.get(mod_name) if mod_name is not None else None) or {}
+            # The alias map of the LONGEST module prefix that owns this entity — needed to
+            # resolve an aliased builtin decorator to its FQN. One shared lookup for every
+            # marker-reading rule (engine floor, P9).
+            alias_map = alias_map_for_qualname(qualname, context.alias_maps)
             for deco_ordinal, deco in enumerate(entity.node.decorator_list):
                 name = _builtin_level_marker(deco, alias_map, shadowed_roots)
                 if name is None:
                     continue
 
-                if not isinstance(deco, ast.Call):
+                # SHAPE IS DECIDED FIRST AND SHORT-CIRCUITS (design spec rev 6 §4.2.1).
+                # The registry owns the call form and the declared keyword set; a marker
+                # whose CALL SHAPE is malformed drops its seed at the shape gate and its
+                # LEVEL value is never read, so PY-WL-114 must go silent on it rather than
+                # claim to have read a value the engine did not. Running this BEFORE the
+                # value loop is also what keeps at most ONE finding per decorator: a
+                # literal splat can supply a second ``level=``/``to_level=`` item, and two
+                # findings on one decorator would share ``deco_ordinal`` and therefore
+                # collide on the fingerprint. ``duplicate_kwarg`` silences that here.
+                entry = REGISTRY[name]
+                if call_shape_offences(
+                    deco,
+                    call_form=entry.call_form,
+                    declared=entry.kwargs,
+                    required=_REQUIRED_KWARGS[name],
+                ):
                     continue
 
                 # For trusted, check keyword 'level'
@@ -155,11 +171,31 @@ class InvalidDecoratorLevel:
                 target_kw = "level" if name == "trusted" else "to_level"
                 allowed_set = _TRUSTED_LEVELS if name == "trusted" else _BOUNDARY_LEVELS
 
-                for kw in deco.keywords:
-                    if kw.arg != target_kw:
+                for kw_name, kw_value in extract_keywords(deco).items:
+                    if kw_name != target_kw:
                         continue
 
-                    token = _level_token(kw.value)
+                    token = _level_token(
+                        kw_value,
+                        alias_map,
+                        # PRESENT but empty: no bindings, not poisoned, no eligible
+                        # reference sites — so form 5 resolves nothing here, while the
+                        # reader still raises on a genuine plumbing defect. Constructed
+                        # INLINE, deliberately: the engine floor ships no inert census
+                        # constant, because a public one is the defaulted-empty affordance
+                        # spec rev 6 §4.2.1 forbids. The rule side holds neither the
+                        # module AST nor the star-export map and therefore literally
+                        # cannot build a real one; the census task swaps this for the
+                        # per-module census addressed by the owning module above.
+                        census=ModuleCensus(values={}, poisoned=False, reference_sites=frozenset()),
+                        # This rule already iterates ``entity.node.decorator_list``, so it
+                        # holds the decorated statement and can PRESENT a reference site
+                        # even though it cannot CLASSIFY one.
+                        reference_site=entity.node,
+                        shadowed_roots=shadowed_roots,
+                        # PY-WL-114 polices builtin level-bearing markers only.
+                        builtin=True,
+                    )
                     if token is None:
                         continue  # not statically readable (e.g. dynamic variable)
 

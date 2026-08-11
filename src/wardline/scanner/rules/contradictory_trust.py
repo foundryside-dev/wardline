@@ -25,17 +25,21 @@ from typing import TYPE_CHECKING
 from wardline.core.finding import Finding, Kind, Severity
 from wardline.core.finding import compute_finding_fingerprint as _fp
 from wardline.scanner.boundary_types import BUILTIN_BOUNDARY_TYPES
+from wardline.scanner.marker_reader import alias_map_for_qualname, shadowed_builtin_roots
+from wardline.scanner.marker_reader import is_builtin_decorator_fqn as _is_builtin_decorator_fqn
+from wardline.scanner.marker_reader import resolve_decorator_fqn as _resolve_decorator_fqn
 from wardline.scanner.rules._fingerprint import entity_source_fingerprint
 from wardline.scanner.rules.metadata import RuleMetadata
-from wardline.scanner.taint.decorator_provider import _is_builtin_decorator_fqn
 
 if TYPE_CHECKING:
     from wardline.scanner.context import AnalysisContext
 
 # A marker is recognised using the EXACT same predicate the engine's seeding uses
-# (``_is_builtin_decorator_fqn``): for a builtin boundary type with prefix ``P``, only
-# the public re-export ``P.<name>`` and the implementation-module export
-# ``P.trust.<name>`` count. The rule MUST NOT recognise a marker the engine's seeding
+# (``marker_reader.is_builtin_decorator_fqn``), whose accepted-export table is
+# ROOT-SPECIFIC: ``wardline.decorators.<name>`` and its real implementation-module
+# export ``wardline.decorators.trust.<name>``, and a DIRECT ``weft_markers.<name>``
+# only — there is no ``weft_markers.trust`` submodule, so that path is a ghost export
+# neither seeding nor this rule may honour. The rule MUST NOT recognise a marker the engine's seeding
 # rejects, or it counts a "clash" the engine never actually resolved — an arbitrarily-
 # nested path like ``wardline.decorators.sub.external_boundary`` is seeded by NEITHER,
 # so it must not be counted here either (wardline-09c09f14df). Keying off the shared
@@ -56,31 +60,29 @@ METADATA = RuleMetadata(
 )
 
 
-def _dotted_name(node: ast.expr) -> str | None:
-    if isinstance(node, ast.Name):
-        return node.id
-    if isinstance(node, ast.Attribute):
-        base = _dotted_name(node.value)
-        return f"{base}.{node.attr}" if base is not None else None
-    return None
+def _marker_canonical_name(
+    deco: ast.expr,
+    alias_map: Mapping[str, str],
+    shadowed_roots: frozenset[str],
+) -> str | None:
+    """The canonical builtin marker name *deco* resolves to, or None.
 
-
-def _resolve_decorator_fqn(deco: ast.expr, alias_map: Mapping[str, str]) -> str | None:
-    func = deco.func if isinstance(deco, ast.Call) else deco
-    dotted = _dotted_name(func)
-    if dotted is None:
-        return None
-    head, _, rest = dotted.partition(".")
-    head_fqn = alias_map.get(head, head)
-    return f"{head_fqn}.{rest}" if rest else head_fqn
-
-
-def _marker_canonical_name(deco: ast.expr, alias_map: Mapping[str, str]) -> str | None:
+    Recognition rides the SHARED engine-floor predicates (P9), so this rule cannot
+    recognise a marker the provider's seeding rejects. The shadow filter is applied
+    PER MARKER ROOT, never as a global "any shadow disables all roots" switch: a
+    scanned project defining its own top-level ``wardline`` package must not suppress
+    a genuine ``weft_markers`` marker, and vice versa (mirrors the provider's own
+    per-root rejection in ``DecoratorTaintSourceProvider._match``).
+    """
     fqn = _resolve_decorator_fqn(deco, alias_map)
     if fqn is None:
         return None
     for bt in BUILTIN_BOUNDARY_TYPES:
-        if bt.builtin and _is_builtin_decorator_fqn(fqn, bt.canonical_name, bt.module_prefix):
+        if not bt.builtin:
+            continue
+        if bt.module_prefix.split(".")[0] in shadowed_roots:
+            continue
+        if _is_builtin_decorator_fqn(fqn, bt.canonical_name, bt.module_prefix):
             return bt.canonical_name
     return None
 
@@ -94,23 +96,21 @@ class ContradictoryTrust:
 
     def check(self, context: AnalysisContext) -> list[Finding]:
         findings: list[Finding] = []
-        modules = list(context.alias_maps.keys())
+        # The scanned project's modules are the alias-map keys — the same input the
+        # provider's shadow computation takes. PER-ROOT (see ``_marker_canonical_name``).
+        shadowed_roots = shadowed_builtin_roots(frozenset(context.alias_maps))
         for qualname, entity in context.entities.items():
             prov = context.taint_provenance.get(qualname)
             if prov is None or prov.source != "anchored":
                 continue  # opt-in: only where the engine confirmed a real trust marker
 
-            # Find the module name that owns this entity
-            mod_name = None
-            for m in sorted(modules, key=len, reverse=True):
-                if qualname == m or qualname.startswith(m + "."):
-                    mod_name = m
-                    break
-            alias_map = (context.alias_maps.get(mod_name) if mod_name is not None else None) or {}
+            # The alias map of the LONGEST module prefix that owns this entity — the one
+            # shared lookup PY-WL-110/PY-WL-114/PY-WL-130 all use (engine floor, P9).
+            alias_map = alias_map_for_qualname(qualname, context.alias_maps)
 
             markers = set()
             for deco in entity.node.decorator_list:
-                name = _marker_canonical_name(deco, alias_map)
+                name = _marker_canonical_name(deco, alias_map, shadowed_roots)
                 if name is not None:
                     markers.add(name)
 

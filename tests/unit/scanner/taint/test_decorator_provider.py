@@ -407,9 +407,17 @@ def test_builtin_decorator_accepts_implementation_module_export() -> None:
     assert out["m.f"] == FunctionTaint(T.INTEGRAL, T.INTEGRAL)
 
 
-def test_builtin_decorator_accepts_weft_markers_implementation_module_export() -> None:
+def test_builtin_decorator_rejects_weft_markers_ghost_implementation_module_export() -> None:
+    # REVERSED (declaration-surface-v2 P9): the accepted-export table is ROOT-SPECIFIC.
+    # ``wardline.decorators`` genuinely re-exports from ``wardline/decorators/trust.py``,
+    # so BOTH ``wardline.decorators.trusted`` and ``wardline.decorators.trust.trusted``
+    # are real. ``weft_markers`` ships a single ``__init__.py`` and has NO
+    # ``weft_markers.trust`` submodule — verified in packages/weft-markers/src — so
+    # ``weft_markers.trust.trusted`` is a GHOST export that cannot resolve at runtime.
+    # Seeding trust off a path that does not exist is a false green, so it must NOT
+    # anchor. The PY-WL-110 / PY-WL-114 silence twins live in the two rule test modules.
     out = _seed("from weft_markers.trust import trusted\n@trusted\ndef f():\n    return 1\n")
-    assert out["m.f"] == FunctionTaint(T.INTEGRAL, T.INTEGRAL)
+    assert out["m.f"] is None
 
 
 def test_unrelated_nested_module_does_not_trip_shadow() -> None:

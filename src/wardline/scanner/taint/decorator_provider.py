@@ -19,6 +19,13 @@ from typing import TYPE_CHECKING
 from wardline.core.registry import REGISTRY, REGISTRY_VERSION
 from wardline.core.taints import TRUST_RANK, TaintState
 from wardline.scanner.boundary_types import BUILTIN_BOUNDARY_TYPES, BoundaryType
+from wardline.scanner.marker_reader import VOCAB_PREFIX as _VOCAB_PREFIX
+from wardline.scanner.marker_reader import WEFT_MARKERS_PREFIX as _WEFT_MARKERS_PREFIX
+from wardline.scanner.marker_reader import ModuleCensus
+from wardline.scanner.marker_reader import is_builtin_decorator_fqn as _is_builtin_decorator_fqn
+from wardline.scanner.marker_reader import level_token as _level_token
+from wardline.scanner.marker_reader import resolve_decorator_fqn as _resolve_decorator_fqn
+from wardline.scanner.marker_reader import shadowed_builtin_roots as _shadowed_builtin_roots
 from wardline.scanner.taint.provider import FunctionTaint, SeedResult
 
 if TYPE_CHECKING:
@@ -26,19 +33,6 @@ if TYPE_CHECKING:
 
     from wardline.scanner.index import Entity
     from wardline.scanner.taint.provider import SeedContext
-
-_VOCAB_PREFIX = "wardline.decorators"
-_WEFT_MARKERS_PREFIX = "weft_markers"
-_TAINTSTATE_FQN = "wardline.core.taints.TaintState"
-
-# The top-level import roots of every BUILTIN marker module — derived dynamically
-# from the grammar so adding a builtin marker root (e.g. a future ``weft_markers``
-# sibling) automatically participates in shadow fail-closed + exact-export matching.
-# A ``weft_markers`` boundary type has module_prefix ``weft_markers`` (root
-# ``weft_markers``); a ``wardline.decorators`` one has root ``wardline``.
-_BUILTIN_MARKER_ROOTS: frozenset[str] = frozenset(
-    bt.module_prefix.split(".")[0] for bt in BUILTIN_BOUNDARY_TYPES if getattr(bt, "builtin", False)
-)
 
 
 def vocabulary_star_exports() -> dict[str, dict[str, str]]:
@@ -61,88 +55,6 @@ def vocabulary_star_exports() -> dict[str, dict[str, str]]:
     }
 
 
-def _dotted_name(node: ast.expr) -> str | None:
-    """Reconstruct a dotted name (``a.b.c``) from a Name/Attribute chain."""
-    if isinstance(node, ast.Name):
-        return node.id
-    if isinstance(node, ast.Attribute):
-        base = _dotted_name(node.value)
-        return f"{base}.{node.attr}" if base is not None else None
-    return None
-
-
-def _resolve_dotted_fqn(node: ast.expr, alias_map: Mapping[str, str]) -> str | None:
-    """Reconstruct ``node``'s dotted name and rewrite its head via ``alias_map``.
-
-    Returns None for non-name nodes (calls, subscripts, literals).
-    """
-    dotted = _dotted_name(node)
-    if dotted is None:
-        return None
-    head, _, rest = dotted.partition(".")
-    head_fqn = alias_map.get(head, head)
-    return f"{head_fqn}.{rest}" if rest else head_fqn
-
-
-def _resolve_decorator_fqn(deco: ast.expr, alias_map: Mapping[str, str]) -> str | None:
-    """Resolve a decorator node to a fully-qualified name via the alias map.
-
-    Strips a call wrapper (``@d(...)`` -> ``d``) then resolves the dotted name.
-    """
-    func = deco.func if isinstance(deco, ast.Call) else deco
-    return _resolve_dotted_fqn(func, alias_map)
-
-
-def _shadowed_builtin_roots(project_modules: frozenset[str]) -> frozenset[str]:
-    """Return the builtin marker roots the scanned project SHADOWS.
-
-    Builtin marker declarations must refer to the installed marker package, not a
-    module supplied by the scanned project. A root is shadowed when the project
-    itself defines a TOP-LEVEL module/package equal to that root (e.g. its own
-    ``wardline`` or ``weft_markers`` package): Python import resolution can then
-    bind ``wardline.decorators`` / ``weft_markers`` to attacker-controlled code, so
-    builtin matching fails closed for markers under that root.
-
-    Only the FIRST dotted component is compared, so an unrelated nested module such
-    as ``app.wardline_helper`` or ``myweft.wardline`` does NOT trip a shadow.
-    """
-    project_roots = {module.split(".", 1)[0] for module in project_modules}
-    return frozenset(project_roots & _BUILTIN_MARKER_ROOTS)
-
-
-def _is_builtin_decorator_fqn(fqn: str, canonical_name: str, module_prefix: str) -> bool:
-    """Return whether *fqn* is one of the exact builtin decorator exports.
-
-    For a builtin boundary type with prefix ``P``, only the public re-export
-    ``P.<name>`` and the implementation-module export ``P.trust.<name>`` are
-    accepted (mirroring ``wardline/decorators/__init__.py`` and
-    ``wardline/decorators/trust.py``). Prefix + arbitrary-nested + final-segment
-    paths (e.g. ``wardline.decorators.evil.trusted``) are rejected for builtins.
-    """
-    return fqn in {
-        f"{module_prefix}.{canonical_name}",
-        f"{module_prefix}.trust.{canonical_name}",
-    }
-
-
-def _level_token(value: ast.expr, alias_map: Mapping[str, str]) -> str | None:
-    """Extract a TaintState name token from a keyword-argument value node.
-
-    Handles a string literal (``"ASSURED"``) and an attribute access whose
-    receiver alias-resolves to ``wardline.core.taints.TaintState`` (so
-    ``TaintState.ASSURED`` -> ``"ASSURED"``, but a coincidental ``cfg.ASSURED``
-    is rejected). Anything else (a bare Name, a call, an f-string, a non-
-    ``TaintState`` attribute) is not statically readable -> None (fail-closed).
-    """
-    if isinstance(value, ast.Constant) and isinstance(value.value, str):
-        return value.value
-    if isinstance(value, ast.Attribute):
-        if _resolve_dotted_fqn(value.value, alias_map) == _TAINTSTATE_FQN:
-            return value.attr
-        return None
-    return None
-
-
 def _read_level(
     deco: ast.expr,
     arg: str,
@@ -150,6 +62,8 @@ def _read_level(
     allowed: frozenset[TaintState],
     default: TaintState | None,
     alias_map: Mapping[str, str],
+    shadowed_roots: frozenset[str],
+    builtin: bool,
     ignored_args: frozenset[str] = frozenset(),
 ) -> TaintState | None:
     """Read a level keyword arg from a decorator, normalised + allow-checked.
@@ -159,6 +73,14 @@ def _read_level(
     state, outside ``allowed``, duplicated, or mixed with malformed decorator
     call syntax. The real level-bearing decorators are keyword-only; positional
     args and unexpected keywords are not trusted as the default level.
+
+    ``shadowed_roots`` and ``builtin`` are this function's OWN required parameters,
+    forwarded verbatim to the shared :func:`~wardline.scanner.marker_reader.level_token`
+    — neither is captured from an enclosing scope, and ``bt`` never enters here (the
+    sole call site, inside :meth:`DecoratorTaintSourceProvider._match`, reads
+    ``bt.builtin`` and passes it in). Both are short-lived by construction: Task 5
+    deletes this whole function once the shared ``read_level`` lands with the
+    cache/version gate.
     """
     if not isinstance(deco, ast.Call):
         return default
@@ -188,7 +110,29 @@ def _read_level(
         return default
     if len(values) != 1:
         return None
-    token = _level_token(values[0], alias_map)
+    token = _level_token(
+        values[0],
+        alias_map,
+        # PRESENT but empty: no bindings, not poisoned, no eligible reference
+        # sites — so form 5 resolves nothing and seeding is byte-identical to
+        # today, while the reader still raises on a genuine plumbing defect.
+        # Constructed INLINE, deliberately: the engine floor ships no inert
+        # census constant, because a public one is the defaulted-empty
+        # affordance spec rev 6 §4.2.1 forbids. Replaced by the real
+        # per-module census when the census task lands; this call site and
+        # PY-WL-114's in Step 3 are the ONLY two, and both are rewritten there.
+        census=ModuleCensus(values={}, poisoned=False, reference_sites=frozenset()),
+        # ``_match`` holds no entity node today (verified in source), so the
+        # provider path cannot present a reference site until Task 5 threads
+        # ``entity.node`` down. Not a permanent option.
+        reference_site=None,
+        # BOTH of these are ``_read_level``'s OWN new parameters, forwarded —
+        # not names captured from an enclosing scope. ``bt`` never enters this
+        # function; it is the ``:405`` CALL SITE, inside ``_match``, that reads
+        # ``bt.builtin`` and passes it in.
+        shadowed_roots=shadowed_roots,
+        builtin=builtin,
+    )
     if token is None:
         return None
     try:
@@ -408,6 +352,13 @@ class DecoratorTaintSourceProvider:
                     allowed=la.allowed,
                     default=la.default,
                     alias_map=alias_map,
+                    # Threaded ONE hop further rather than recomputed or replaced by
+                    # ``frozenset()``: the shared reader refuses a form-2 receiver whose
+                    # resolved root the project shadows. ``bt.builtin`` is passed for
+                    # real — hardcoding ``True`` would put custom packs on the builtin
+                    # arm and break the released custom-boundary contract.
+                    shadowed_roots=shadowed_roots,
+                    builtin=bt.builtin,
                     ignored_args=ignored,
                 )
                 if lvl is None:

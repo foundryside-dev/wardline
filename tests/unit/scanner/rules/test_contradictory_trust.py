@@ -9,11 +9,22 @@ from wardline.scanner.analyzer import WardlineAnalyzer
 from wardline.scanner.rules.contradictory_trust import ContradictoryTrust
 
 
-def _analyze(tmp_path: Path, src: str):
+def _analyze(tmp_path: Path, src: str, *, extra_modules: tuple[str, ...] = ()):
+    """Analyze ``m.py``; ``extra_modules`` names sibling top-level modules to also ship.
+
+    A sibling named ``wardline`` / ``weft_markers`` makes the scanned project SHADOW
+    that builtin marker root (the analyzer derives ``project_modules`` from the scanned
+    file set), which is how the per-root shadow direction tests below are driven.
+    """
     p = tmp_path / "m.py"
     p.write_text(textwrap.dedent(src), encoding="utf-8")
+    files = [p]
+    for name in extra_modules:
+        extra = tmp_path / f"{name}.py"
+        extra.write_text("VALUE = 1\n", encoding="utf-8")
+        files.append(extra)
     analyzer = WardlineAnalyzer()
-    analyzer.analyze([p], WardlineConfig(), root=tmp_path)
+    analyzer.analyze(files, WardlineConfig(), root=tmp_path)
     assert analyzer.last_context is not None
     return analyzer.last_context
 
@@ -198,6 +209,94 @@ def test_weft_markers_call_form_fires(tmp_path) -> None:
     )
     findings = _run(ctx)
     assert [(f.rule_id, f.qualname) for f in findings] == [("PY-WL-110", "m.conflicting")]
+
+
+def test_shadowing_wardline_does_not_suppress_a_genuine_weft_markers_stack(tmp_path) -> None:
+    # PER-ROOT shadow filtering, direction 1 (P9). The project ships its own top-level
+    # ``wardline`` module, so every ``wardline.decorators`` marker fails closed — but a
+    # genuine ``weft_markers`` stack is under a DIFFERENT root and must still anchor and
+    # still fire. A global "any shadow disables all roots" switch would silence this.
+    ctx = _analyze(
+        tmp_path,
+        """
+        from weft_markers import external_boundary, trusted
+        @trusted
+        @external_boundary
+        def f(p):
+            return p
+        """,
+        extra_modules=("wardline",),
+    )
+    assert [(x.rule_id, x.qualname) for x in _run(ctx)] == [("PY-WL-110", "m.f")]
+
+
+def test_shadowing_weft_markers_does_not_suppress_a_genuine_wardline_stack(tmp_path) -> None:
+    # PER-ROOT shadow filtering, direction 2 (P9) — the mirror image of the case above.
+    ctx = _analyze(
+        tmp_path,
+        """
+        from wardline.decorators import external_boundary, trusted
+        @trusted
+        @external_boundary
+        def f(p):
+            return p
+        """,
+        extra_modules=("weft_markers",),
+    )
+    assert [(x.rule_id, x.qualname) for x in _run(ctx)] == [("PY-WL-110", "m.f")]
+
+
+def test_shadowed_root_marker_is_not_counted_as_a_second_marker(tmp_path) -> None:
+    # The SUPPRESSION half of per-root filtering — the false PY-WL-110 the filter exists to
+    # prevent, and the one row that DISCRIMINATES. The two direction tests above pin only
+    # the NON-suppression half and pass with or without the filter (their markers are all
+    # under the unshadowed root, so the filter never fires on them).
+    #
+    # Here the project ships its own top-level ``wardline`` module, so the provider REJECTS
+    # ``wardline.decorators.trusted`` fail-closed and seeds ONLY via the genuine
+    # ``weft_markers.external_boundary``. The entity therefore IS anchored — it clears the
+    # ``prov.source == "anchored"`` opt-in gate, asserted below so this row cannot pass by
+    # being filtered out before marker-counting — yet exactly ONE marker was actually
+    # resolved. Counting the shadowed one would report a clash the engine never resolved.
+    # Without the per-root filter ``_marker_canonical_name`` returns ``trusted`` for the
+    # shadowed decorator, ``markers == {"trusted", "external_boundary"}``, and PY-WL-110
+    # fires — so this assertion reds if the filter is dropped.
+    ctx = _analyze(
+        tmp_path,
+        """
+        from weft_markers import external_boundary
+        from wardline.decorators import trusted
+        @trusted
+        @external_boundary
+        def f(p):
+            return p
+        """,
+        extra_modules=("wardline",),
+    )
+    prov = ctx.taint_provenance.get("m.f")
+    assert prov is not None and prov.source == "anchored", "the row must clear the opt-in gate, not dodge it"
+    assert _run(ctx) == []
+
+
+def test_weft_markers_ghost_trust_submodule_is_not_counted(tmp_path) -> None:
+    # The accepted-export table is ROOT-SPECIFIC: ``weft_markers`` ships a single
+    # ``__init__.py`` and has NO ``weft_markers.trust`` submodule, so
+    # ``weft_markers.trust.trusted`` is a GHOST export. The entity DOES anchor (via the
+    # genuine ``weft_markers.external_boundary``), so it clears the prov.source gate —
+    # but the ghost marker must not be counted as a second, contradictory marker.
+    # Counting it would fire a false PY-WL-110 over a path that cannot resolve at runtime.
+    ctx = _analyze(
+        tmp_path,
+        """
+        from weft_markers import external_boundary
+        from weft_markers.trust import trusted
+        @trusted
+        @external_boundary
+        def f(p):
+            return p
+        """,
+    )
+    assert _run(ctx) == []
 
 
 def test_nested_path_marker_engine_rejects_does_not_fire(tmp_path) -> None:
