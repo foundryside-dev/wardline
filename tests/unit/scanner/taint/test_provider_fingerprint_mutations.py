@@ -776,6 +776,110 @@ _CARRIERS: dict[str, str] = {
 }
 
 
+# --- Round 4: the GENERAL FORM, not four more instances of it --------------------
+#
+# Every defect in rounds 0-3 had one shape:
+#
+#   an early-return arm that matches on SHAPE and returns a proxy record BEFORE any
+#   structural arm, consulting no fence.
+#
+# `isinstance` catches SUBCLASSES, and a subclass body is grammar behaviour —
+# `class P(NamedTuple): ... def decide(self): ...` is ordinary Python, not exotic.
+# The container/scalar/`__func__`/`property` arms all returned a contents-or-name
+# proxy ungated, so each entry below measured COLLIDE on a `decide` body change until
+# `_typed_shape` attached the value's TYPE to every one of those records.
+#
+# The last four entries exist because every row in every earlier round shared one
+# assumption: the carrier was reached through the seed's own GLOBALS or `__dict__`.
+# These reach it through a CLOSURE CELL, a DEFAULT ARGUMENT, and nested one level
+# down inside a plain (fenced) list and dict — proving the gate fires inside the
+# recursion, not only at the top level.
+
+_SHAPE_HEAD = (
+    "import typing\n"
+    "from wardline.core.taints import TaintState\n"
+    "from wardline.scanner.taint.provider import FunctionTaint\n"
+    "class P(typing.NamedTuple):\n"
+    "    n: int\n"
+    "    def decide(self):\n"
+    "        return TaintState.{lvl}\n"
+)
+
+
+def _shape_carrier(decl: str, body: str = "BOX.decide()") -> str:
+    """A pack whose seed reaches a subclass-carried `decide` through one shape arm."""
+    return (
+        "from wardline.core.taints import TaintState\n"
+        "from wardline.scanner.taint.provider import FunctionTaint\n" + decl + "def seed(levels):\n"
+        f"    return FunctionTaint({body}, levels['to_level'])\n"
+    )
+
+
+_CARRIERS.update(
+    {
+        "tuple_subclass_method": _SHAPE_HEAD + "BOX = P(1)\ndef seed(levels):\n"
+        "    return FunctionTaint(BOX.decide(), levels['to_level'])\n",
+        "list_subclass_method": _shape_carrier(
+            "class L(list):\n    def decide(self):\n        return TaintState.{lvl}\nBOX = L([1])\n"
+        ),
+        "dict_subclass_method": _shape_carrier(
+            "class D(dict):\n    def decide(self):\n        return TaintState.{lvl}\nBOX = D(a=1)\n"
+        ),
+        "set_subclass_method": _shape_carrier(
+            "class St(set):\n    def decide(self):\n        return TaintState.{lvl}\nBOX = St([1])\n"
+        ),
+        "str_subclass_method": _shape_carrier(
+            "class S(str):\n    def decide(self):\n        return TaintState.{lvl}\nBOX = S('x')\n"
+        ),
+        "int_subclass_method": _shape_carrier(
+            "class I(int):\n    def decide(self):\n        return TaintState.{lvl}\nBOX = I(3)\n"
+        ),
+        "bytes_subclass_method": _shape_carrier(
+            "class B(bytes):\n    def decide(self):\n        return TaintState.{lvl}\nBOX = B(b'x')\n"
+        ),
+        "str_mixin_enum_member": _shape_carrier(
+            "import enum\n"
+            "class L(str, enum.Enum):\n"
+            "    A = 'a'\n"
+            "    def decide(self):\n        return TaintState.{lvl}\n"
+            "BOX = L.A\n"
+        ),
+        # The `__func__` arm keyed the WRAPPER by `type(value).__name__`. For
+        # staticmethod/classmethod/method that name is all there is; a PACK's own
+        # wrapper class has a `__call__` body, and it is the behaviour.
+        "custom_func_wrapper_call_body": _shape_carrier(
+            "def _t():\n    return TaintState.EXTERNAL_RAW\n"
+            "class W:\n"
+            "    def __init__(self, fn):\n        self.__func__ = fn\n"
+            "    def __call__(self):\n        return TaintState.{lvl}\n"
+            "BOX = W(_t)\n",
+            body="BOX()",
+        ),
+        # A `property` SUBCLASS computes the value in its own `__get__`, so fget —
+        # the only thing the property arm recorded — is not the behaviour.
+        "property_subclass_get": _shape_carrier(
+            "class Lazy(property):\n"
+            "    def __get__(self, obj, owner=None):\n        return TaintState.{lvl}\n"
+            "class Policy:\n    level = Lazy(lambda self: None)\n"
+            "BOX = Policy()\n",
+            body="BOX.level",
+        ),
+        # --- reach paths that break the shared assumption of every earlier row ---
+        "subclass_via_closure_cell": _SHAPE_HEAD + "def _factory(box):\n"
+        "    def seed(levels):\n"
+        "        return FunctionTaint(box.decide(), levels['to_level'])\n"
+        "    return seed\n"
+        "seed = _factory(P(1))\n",
+        "subclass_via_default_arg": _SHAPE_HEAD + "def seed(levels, _box=P(1)):\n"
+        "    return FunctionTaint(_box.decide(), levels['to_level'])\n",
+        "subclass_nested_in_plain_list": _SHAPE_HEAD + "BOX = [P(1)]\ndef seed(levels):\n"
+        "    return FunctionTaint(BOX[0].decide(), levels['to_level'])\n",
+        "subclass_nested_in_plain_dict": _SHAPE_HEAD + "BOX = {{'k': P(1)}}\ndef seed(levels):\n"
+        "    return FunctionTaint(BOX['k'].decide(), levels['to_level'])\n",
+    }
+)
+
+
 def _carrier_pack(src: str, lvl: str) -> dict:
     ns: dict = {"__name__": "mypack.grammar"}
     exec(compile(src.format(lvl=lvl), "mypack/grammar.py", "exec"), ns)  # noqa: S102
@@ -839,10 +943,21 @@ def test_referenced_module_expansion_is_demand_driven_not_a_namespace_walk() -> 
     does `import yaml as Y`. Following a reference is demand-driven; walking a
     namespace is not.
     """
-    record = _seed_identity(_module_pack("EXTERNAL_RAW")["seed"])["globals"]["H"]
+    seed = _module_pack("EXTERNAL_RAW")["seed"]
+    record = _seed_identity(seed)["globals"]["H"]
     assert record["t"] == "module"
-    assert set(record["members"]) == {"decide"}  # NOT the module's whole namespace
+    # The member keys are exactly the referring function's ``co_names`` — the DEMAND —
+    # never the module's namespace, which holds `TaintState` and the import machinery.
+    assert set(record["members"]) == set(seed.__code__.co_names)
+    assert "TaintState" not in record["members"]
+    # ... and only the names the module actually HAS are expanded. A demanded name the
+    # module lacks records ``missing`` rather than being silently omitted: silence made
+    # two DIFFERENT demand sets share a record, and it is why a module-level PEP-562
+    # ``__getattr__`` left no trace at all.
+    expanded = {k for k, v in record["members"].items() if v.get("t") != "missing"}
+    assert expanded == {"decide"}
     assert record["members"]["decide"]["kind"] == "function"
+    assert record["members"]["FunctionTaint"] == {"t": "missing"}
 
 
 _C_CONTAINERS = {
@@ -918,3 +1033,457 @@ def test_custom_digest_is_full_sha256() -> None:
 def test_builtin_fingerprint_literal_is_pinned_for_s0() -> None:
     # S0 must not move the vocabulary version; the S1 generic-3 bump updates this pin.
     assert DecoratorTaintSourceProvider().fingerprint() == "decorator-vocab:wardline-generic-2"
+
+
+def test_typed_shape_is_additive_for_fenced_types() -> None:
+    """The gate must not move an ORDINARY value's record.
+
+    A plain `tuple`/`dict`/`str` has a `builtins` type, which the fence already rules
+    out of scope, so its record carries no `type` key and no existing grammar's digest
+    moves. That is what makes the gate a pure addition rather than a cold-cache trade.
+    """
+    for plain in ((1, 2), [1], {"a": 1}, {1}, frozenset({1}), "s", b"s", 3, 1.5):
+        assert "type" not in _seed_value_identity(plain), plain
+    # ... while a subclass of the same shape DOES carry it.
+    ns: dict = {"__name__": "mypack.grammar"}
+    exec(compile("class L(list):\n    pass\nBOX = L([1])\n", "mypack/grammar.py", "exec"), ns)  # noqa: S102
+    record = _seed_value_identity(ns["BOX"])
+    assert record["t"] == "L"
+    assert record["type"]["kind"] == "class"
+    assert record["v"] == [{"t": "int", "v": "1"}]  # ... and the CONTENTS are still there
+
+
+# --- Modules: submodule chains, PEP-562, and demanded-but-absent names ------------
+
+
+def _submodule_pack(lvl: str) -> dict:
+    pkg = types.ModuleType("wl_test_pkg")
+    sub = types.ModuleType("wl_test_pkg.sub")
+    exec(  # noqa: S102
+        compile(
+            f"from wardline.core.taints import TaintState\ndef decide():\n    return TaintState.{lvl}\n",
+            "wl_test_pkg/sub.py",
+            "exec",
+        ),
+        sub.__dict__,
+    )
+    pkg.sub = sub  # type: ignore[attr-defined]
+    ns: dict = {"__name__": "mypack.grammar", "H": pkg}
+    exec(  # noqa: S102
+        compile(
+            "from wardline.scanner.taint.provider import FunctionTaint\n"
+            "def seed(levels):\n    return FunctionTaint(H.sub.decide(), levels['to_level'])\n",
+            "mypack/grammar.py",
+            "exec",
+        ),
+        ns,
+    )
+    return ns
+
+
+def test_submodule_attribute_chain_body_change_moves_the_fingerprint() -> None:
+    """`import pkg as H` then `H.sub.decide()` — the demand information was all there.
+
+    `co_names` is `('FunctionTaint', 'H', 'sub', 'decide')`, so both hops are named;
+    `sub` nonetheless hit the name-only module arm and every helper under it stayed
+    invisible. Measured COLLIDE before `_module_identity` recursed into submodules.
+    """
+    a, b = _submodule_pack("EXTERNAL_RAW"), _submodule_pack("ASSURED")
+    assert a["seed"].__code__.co_names == ("FunctionTaint", "H", "sub", "decide")
+    assert a["seed"].__code__.co_code == b["seed"].__code__.co_code
+    assert _fp(_bt(seed=a["seed"])) != _fp(_bt(seed=b["seed"]))
+
+
+def test_submodule_expansion_stays_demand_driven() -> None:
+    record = _seed_identity(_submodule_pack("EXTERNAL_RAW")["seed"])["globals"]["H"]
+    sub = record["members"]["sub"]
+    assert sub["t"] == "module" and sub["name"] == "wl_test_pkg.sub"
+    expanded = {k for k, v in sub["members"].items() if v.get("t") != "missing"}
+    assert expanded == {"decide"}  # the SAME demand drives each hop
+    assert "TaintState" not in sub["members"]
+
+
+def test_module_reference_cycle_terminates() -> None:
+    """A module graph may be cyclic (`pkg.sub.pkg`); the walk must not recurse forever."""
+    pkg = types.ModuleType("wl_cyc_pkg")
+    sub = types.ModuleType("wl_cyc_pkg.sub")
+    pkg.sub = sub  # type: ignore[attr-defined]
+    sub.sub = pkg  # type: ignore[attr-defined]  # the back edge
+    ns: dict = {"__name__": "mypack.grammar", "H": pkg}
+    exec(  # noqa: S102
+        compile(
+            "from wardline.scanner.taint.provider import FunctionTaint\n"
+            "def seed(levels):\n    return FunctionTaint(H.sub.sub.sub, levels['to_level'])\n",
+            "mypack/grammar.py",
+            "exec",
+        ),
+        ns,
+    )
+    assert re.fullmatch(r"[0-9a-f]{64}", _grammar_digest((_bt(seed=ns["seed"]),)))
+
+
+def _pep562_pack(lvl: str) -> dict:
+    mod = types.ModuleType("wl_lazy_mod")
+    exec(  # noqa: S102
+        compile(
+            "from wardline.core.taints import TaintState\n"
+            f"def __getattr__(name):\n    return lambda: TaintState.{lvl}\n",
+            "wl_lazy_mod.py",
+            "exec",
+        ),
+        mod.__dict__,
+    )
+    ns: dict = {"__name__": "mypack.grammar", "H": mod}
+    exec(  # noqa: S102
+        compile(
+            "from wardline.scanner.taint.provider import FunctionTaint\n"
+            "def seed(levels):\n    return FunctionTaint(H.decide(), levels['to_level'])\n",
+            "mypack/grammar.py",
+            "exec",
+        ),
+        ns,
+    )
+    return ns
+
+
+def test_module_level_pep562_getattr_body_change_moves_the_fingerprint() -> None:
+    """A module-level `__getattr__` computes attributes that are in NO namespace.
+
+    Emitting a `missing` record for the demanded name does NOT close this on its own —
+    both sides are equally "missing". What closes it is keying the module's
+    `__getattr__`, which is the code that actually computes the attribute.
+    """
+    a, b = _pep562_pack("EXTERNAL_RAW"), _pep562_pack("ASSURED")
+    assert "decide" not in vars(a["H"])  # genuinely absent from the namespace
+    record = _seed_identity(a["seed"])["globals"]["H"]
+    assert record["members"]["decide"] == {"t": "missing"}  # the demand is now VISIBLE
+    assert record["module_getattr"]["kind"] == "function"  # ... and the computer is keyed
+    assert _fp(_bt(seed=a["seed"])) != _fp(_bt(seed=b["seed"]))
+
+
+def test_module_level_pep562_reformat_does_not_move_the_fingerprint() -> None:
+    assert _fp(_bt(seed=_pep562_pack("EXTERNAL_RAW")["seed"])) == _fp(_bt(seed=_pep562_pack("EXTERNAL_RAW")["seed"]))
+
+
+# --- The fenced-module CLOSURE: a fence licence that did not extend to captures ---
+
+
+def _exitstack_pack(lvl: str, lead: str = "") -> dict:
+    ns: dict = {"__name__": "mypack.grammar"}
+    exec(  # noqa: S102
+        compile(
+            lead + "import contextlib\n"
+            "from wardline.core.taints import TaintState\n"
+            "from wardline.scanner.taint.provider import FunctionTaint\n"
+            f"def _helper():\n    return TaintState.{lvl}\n"
+            "STACK = contextlib.ExitStack()\n"
+            "STACK.callback(_helper)\n"
+            "def seed(levels):\n    return FunctionTaint(TaintState.EXTERNAL_RAW, levels['to_level'])\n"
+            "seed.__dict__['stack'] = STACK\n",
+            "mypack/grammar.py",
+            "exec",
+        ),
+        ns,
+    )
+    return ns
+
+
+def test_pack_helper_captured_by_a_fenced_closure_moves_the_fingerprint() -> None:
+    """`contextlib.ExitStack.callback` stores a `contextlib`-defined closure.
+
+    The fence's licence is that a stdlib function's BODY is versioned by the
+    interpreter. That licence never extended to what the function CAPTURES: the
+    `_exit_wrapper` closure holds the PACK's helper in a cell, and the name-only ref
+    (`{"t":"ref","module":"contextlib",...}`) hid it. Measured COLLIDE.
+    """
+    a, b = _exitstack_pack("EXTERNAL_RAW"), _exitstack_pack("ASSURED")
+    assert _fp(_bt(seed=a["seed"])) != _fp(_bt(seed=b["seed"]))
+
+
+def test_pack_helper_captured_by_a_fenced_closure_reformat_is_stable() -> None:
+    a, b = _exitstack_pack("EXTERNAL_RAW"), _exitstack_pack("EXTERNAL_RAW", lead="\n# layout only\n")
+    assert _fp(_bt(seed=a["seed"])) == _fp(_bt(seed=b["seed"]))
+
+
+def test_fenced_ref_without_captures_is_byte_identical_to_a_bare_name() -> None:
+    """The canary for the binding expansion: it must not widen into a namespace walk.
+
+    A capture-free fenced object keeps EXACTLY the record it had, so no ordinary
+    grammar's digest moves and the 207 MB / process-unstable stdlib walk stays out.
+    """
+    record = _seed_identity(_PACK_A["_helper"])
+    assert record["globals"]["FunctionTaint"] == {
+        "t": "ref",
+        "module": "wardline.scanner.taint.provider",
+        "qualname": "FunctionTaint",
+    }
+    blob = _canonical_json(_seed_identity(_exitstack_pack("EXTERNAL_RAW")["seed"]))
+    assert len(blob) < 50_000, f"the fenced-closure expansion ballooned to {len(blob)} bytes"
+    assert re.search(r" at 0x[0-9a-fA-F]+", blob) is None
+
+
+# --- The reduce probe that was itself unvalidated --------------------------------
+
+
+def test_reduce_payload_with_next_but_no_iter_does_not_crash_the_digest() -> None:
+    """`_reduce_part` probed `__next__` then called `islice`, which calls `iter()`.
+
+    A type with `__next__` and no `__iter__` raised `TypeError` out of
+    `fingerprint()`, taking the whole scan down — the same crash class round 3 closed
+    for `__code__`, reproduced inside the code that fixes unvalidated probes.
+    """
+    ns: dict = {"__name__": "mypack.grammar"}
+    exec(  # noqa: S102
+        compile(
+            "from wardline.core.taints import TaintState\n"
+            "from wardline.scanner.taint.provider import FunctionTaint\n"
+            "class HalfIter:\n"
+            "    def __next__(self):\n        raise StopIteration\n"
+            "class Box:\n"
+            "    def __reduce__(self):\n        return (Box, (), None, HalfIter(), None)\n"
+            "BOX = Box()\n"
+            "def seed(levels):\n    return FunctionTaint(TaintState.EXTERNAL_RAW, levels['to_level'])\n"
+            "seed.__dict__['box'] = BOX\n",
+            "mypack/grammar.py",
+            "exec",
+        ),
+        ns,
+    )
+    digest = _grammar_digest((_bt(seed=ns["seed"]),))
+    assert re.fullmatch(r"[0-9a-f]{64}", digest)
+    # ... and the guard leaves the walk consistent, so the digest is reproducible.
+    assert digest == _grammar_digest((_bt(seed=ns["seed"]),))
+
+
+def test_hostile_reduce_payload_degrades_with_a_distinct_marker() -> None:
+    """Two degradations, two markers — `no-reduce` and `unreadable-reduce` differ.
+
+    Both UNDER-discriminate and are named residuals, so a preimage must say which one
+    it hit rather than collapsing them into one indistinguishable signal.
+    """
+    ns: dict = {"__name__": "mypack.grammar"}
+    exec(  # noqa: S102
+        compile(
+            "class Boom:\n"
+            "    def __reduce__(self):\n        raise RuntimeError('no')\n"
+            "class Ouch(tuple):\n"
+            "    def __getitem__(self, i):\n        raise RuntimeError('no')\n"
+            "class Nasty:\n"
+            "    def __reduce__(self):\n        return Ouch((Nasty, ()))\n"
+            "BOOM = Boom()\nNASTY = Nasty()\n",
+            "mypack/grammar.py",
+            "exec",
+        ),
+        ns,
+    )
+    assert _seed_value_identity(ns["BOOM"])["reduced"] == {"t": "no-reduce"}
+    assert _seed_value_identity(ns["NASTY"])["reduced"] == {"t": "unreadable-reduce"}
+
+
+# --- The callable-OBJECT seed: `_seed_identity`'s own proxy arm -------------------
+
+
+def _callable_seed_pack(lvl: str = "EXTERNAL_RAW", n: int = 1, lead: str = "") -> dict:
+    ns: dict = {"__name__": "mypack.grammar"}
+    exec(  # noqa: S102
+        compile(
+            lead + "from wardline.core.taints import TaintState\n"
+            "from wardline.scanner.taint.provider import FunctionTaint\n"
+            "class Seeder:\n"
+            "    def __init__(self, n):\n        self.n = n\n"
+            "    def __repr__(self):\n        return 'Seeder()'\n"
+            f"    def __call__(self, levels):\n        return FunctionTaint(TaintState.{lvl}, levels['to_level'])\n"
+            f"seed = Seeder({n})\n",
+            "mypack/grammar.py",
+            "exec",
+        ),
+        ns,
+    )
+    return ns
+
+
+def test_callable_object_seed_call_body_change_moves_the_fingerprint() -> None:
+    """`_seed_identity`'s `opaque` arm returned `{qualname, repr}` and nothing else.
+
+    It was defended as "the repr embeds an address, so it over-invalidates, and
+    over-invalidating is safe". That holds only for the DEFAULT repr. Give the class a
+    `__repr__` — a dataclass, a NamedTuple, or one line of Python — and the repr is
+    STABLE, so a `__call__` body change left the digest byte-identical. Measured
+    COLLIDE: the same general form, on the seed's own arm.
+    """
+    a, b = _callable_seed_pack(), _callable_seed_pack(lvl="ASSURED")
+    assert not hasattr(a["seed"], "__code__")  # it really is the non-function arm
+    assert repr(a["seed"]) == repr(b["seed"])  # ... and the repr cannot tell them apart
+    assert _fp(_bt(seed=a["seed"])) != _fp(_bt(seed=b["seed"]))
+
+
+def test_callable_object_seed_state_change_moves_the_fingerprint() -> None:
+    # The under-discrimination the old arm feared, checked in the direction it feared:
+    # two differently-CONFIGURED instances of one callable class must not collide.
+    a, b = _callable_seed_pack(n=1), _callable_seed_pack(n=2)
+    assert _fp(_bt(seed=a["seed"])) != _fp(_bt(seed=b["seed"]))
+
+
+def test_callable_object_seed_reformat_does_not_move_the_fingerprint() -> None:
+    a, b = _callable_seed_pack(), _callable_seed_pack(lead="\n# layout only\n")
+    assert _fp(_bt(seed=a["seed"])) == _fp(_bt(seed=b["seed"]))
+
+
+def test_callable_object_seed_digest_is_identical_in_a_fresh_process() -> None:
+    """The other direction of the same trade: it used to be cold on EVERY scan.
+
+    The raw address made a callable-object seed hash differently in every process, so
+    the cache never warmed. Structural keying is both body-sensitive and stable.
+    """
+    here = str(pathlib.Path(__file__).parent)
+    src = (
+        "import sys;"
+        f"sys.path.insert(0, {here!r});"
+        "import test_provider_fingerprint_mutations as T;"
+        "from wardline.scanner.taint.decorator_provider import _grammar_digest as D;"
+        "print(D((T._bt(seed=T._callable_seed_pack()['seed']),)))"
+    )
+    out = subprocess.run(  # noqa: S603
+        [sys.executable, "-c", src], capture_output=True, text=True, check=True
+    ).stdout.strip()
+    assert out == _grammar_digest((_bt(seed=_callable_seed_pack()["seed"]),))
+    assert len(out) == 64
+
+
+# --- In-PROCESS repeatability: the axis every earlier stability row missed ---------
+
+
+@pytest.mark.parametrize("carrier", sorted(_CARRIERS))
+def test_repeated_fingerprint_calls_in_one_process_agree(carrier: str) -> None:
+    """Calling `fingerprint()` twice on ONE grammar must give ONE digest.
+
+    Every stability check in rounds 0-3 compared FRESH processes, so all of them
+    shared an assumption: that both sides start equally uncached. They do not.
+    `__reduce_ex__(2)` asks `copyreg._slotnames`, which CACHES `__slotnames__` onto
+    the class — so the digest's own traversal mutated the graph it was hashing and the
+    SECOND call saw a class member the first had created. Measured on an ordinary
+    slotted pack class, not an exotic one. A long-lived process (`wardline mcp`) would
+    have re-keyed its cache on every scan after the first.
+    """
+    pack = _carrier_pack(_CARRIERS[carrier], "EXTERNAL_RAW")
+    first = _fp(_bt(seed=pack["seed"]))
+    assert first == _fp(_bt(seed=pack["seed"])), f"{carrier} is not repeatable in one process"
+    assert first == _fp(_bt(seed=pack["seed"]))
+
+
+def test_slotted_pack_class_fingerprint_is_repeatable_in_one_process() -> None:
+    """The measured shape, pinned directly: a pack class with `__slots__`."""
+    ns: dict = {"__name__": "mypack.grammar"}
+    exec(  # noqa: S102
+        compile(_SLOTTED_SRC.format(lvl="EXTERNAL_RAW", n=1), "mypack/grammar.py", "exec"),
+        ns,
+    )
+    assert "__slotnames__" not in vars(ns["Policy"])  # nothing has pickled it yet
+    first = _fp(_bt(seed=ns["seed"]))
+    assert "__slotnames__" in vars(ns["Policy"]), "copyreg no longer caches; the guard may be stale"
+    assert first == _fp(_bt(seed=ns["seed"]))
+    blob = _canonical_json(_seed_identity(ns["seed"]))
+    assert "__slotnames__" not in blob
+
+
+# --- Hostile container internals: the crash class, closed as a rule ---------------
+
+_HOSTILE_CONTAINERS = {
+    "dict_items_raises": "class H(dict):\n    def items(self):\n        raise RuntimeError('no')\nBOX = H(a=1)\n",
+    "list_iter_raises": "class H(list):\n    def __iter__(self):\n        raise RuntimeError('no')\nBOX = H([1])\n",
+    "set_iter_raises": "class H(set):\n    def __iter__(self):\n        raise RuntimeError('no')\nBOX = H([1])\n",
+    "tuple_iter_raises": "class H(tuple):\n    def __iter__(self):\n        raise RuntimeError('no')\nBOX = H([1])\n",
+    # CPython validates `__slots__` at class creation, so a hostile one can only be
+    # installed afterwards — which `_slot_names` reads straight out of `__dict__`.
+    "slots_replaced_after_creation": "class Bad:\n    def __iter__(self):\n        raise RuntimeError('no')\n"
+    "class H:\n    __slots__ = ('n',)\n    def __init__(self):\n        self.n = 1\n"
+    "H.__slots__ = Bad()\nBOX = H()\n",
+    # A subclass shadowing a base's slot name with a property that raises: reading the
+    # slot runs pack code, and `getattr`'s AttributeError guard does not cover it.
+    "slot_shadowed_by_raising_property": "class P:\n    __slots__ = ('n',)\n"
+    "class H(P):\n    @property\n    def n(self):\n        raise RuntimeError('no')\n"
+    "BOX = H()\n",
+}
+
+
+@pytest.mark.parametrize("shape", sorted(_HOSTILE_CONTAINERS))
+def test_hostile_container_internals_do_not_crash_the_digest(shape: str) -> None:
+    """Iterating a value runs PACK code the moment that value is a subclass.
+
+    A global `class H(dict): def items(self): raise` reaches `_seed_value_identity`
+    through `_function_identity`'s globals loop, which has no guard around it — so the
+    exception left `fingerprint()` and took the whole scan down. This is the THIRD
+    instance of the same crash class in this file (`__code__`, then `__next__`), which
+    is why it is closed for every content-extracting arm at once rather than per shape.
+    """
+    src = (
+        "from wardline.core.taints import TaintState\n"
+        "from wardline.scanner.taint.provider import FunctionTaint\n"
+        + _HOSTILE_CONTAINERS[shape]
+        + "def seed(levels):\n    return FunctionTaint(TaintState.EXTERNAL_RAW, levels['to_level'])\n"
+        "seed.__dict__['box'] = BOX\n"
+    )
+    ns: dict = {"__name__": "mypack.grammar"}
+    exec(compile(src, "mypack/grammar.py", "exec"), ns)  # noqa: S102
+    digest = _grammar_digest((_bt(seed=ns["seed"]),))
+    assert re.fullmatch(r"[0-9a-f]{64}", digest)
+    assert digest == _grammar_digest((_bt(seed=ns["seed"]),))  # and repeatable
+
+
+def test_hostile_container_still_discriminates_on_its_class_body() -> None:
+    """Degrading the CONTENTS must not cost the discrimination the gate just bought.
+
+    The record still carries `type` through `_typed_shape`, and for a subclass that is
+    where the behaviour lives — so an unreadable container is a narrowed record, not a
+    blind one.
+    """
+    src = (
+        "from wardline.core.taints import TaintState\n"
+        "from wardline.scanner.taint.provider import FunctionTaint\n"
+        "class H(dict):\n"
+        "    def items(self):\n        raise RuntimeError('no')\n"
+        "    def decide(self):\n        return TaintState.{lvl}\n"
+        "BOX = H(a=1)\n"
+        "def seed(levels):\n    return FunctionTaint(BOX.decide(), levels['to_level'])\n"
+    )
+    a, b = _carrier_pack(src, "EXTERNAL_RAW"), _carrier_pack(src, "ASSURED")
+    assert _seed_value_identity(a["BOX"])["v"] == {"t": "unreadable-contents"}
+    assert _fp(_bt(seed=a["seed"])) != _fp(_bt(seed=b["seed"]))
+
+
+def test_scalar_encoding_comes_from_the_base_class_not_the_subclass() -> None:
+    """A subclass must not choose a scalar's canonical encoding (or crash it)."""
+    ns: dict = {"__name__": "mypack.grammar"}
+    exec(  # noqa: S102
+        compile(
+            "class I(int):\n    def __str__(self):\n        raise RuntimeError('no')\n"
+            "    def __repr__(self):\n        return 'nonsense'\n"
+            "BOX = I(7)\n",
+            "mypack/grammar.py",
+            "exec",
+        ),
+        ns,
+    )
+    assert _seed_value_identity(ns["BOX"])["v"] == "7"
+
+
+def test_two_hop_fenced_closure_capture_moves_the_fingerprint() -> None:
+    """A pack helper captured by a fenced closure that is itself captured by another.
+
+    `_ref_bindings` routes through `_expanded`, so the second hop terminates; this
+    pins that it also DISCRIMINATES rather than merely terminating.
+    """
+    src = (
+        "import contextlib\n"
+        "from wardline.core.taints import TaintState\n"
+        "from wardline.scanner.taint.provider import FunctionTaint\n"
+        "def _helper():\n    return TaintState.{lvl}\n"
+        "INNER = contextlib.ExitStack()\n"
+        "INNER.callback(_helper)\n"
+        "OUTER = contextlib.ExitStack()\n"
+        "OUTER.callback(INNER.close)\n"
+        "def seed(levels):\n    return FunctionTaint(TaintState.EXTERNAL_RAW, levels['to_level'])\n"
+        "seed.__dict__['stack'] = OUTER\n"
+    )
+    a, b = _carrier_pack(src, "EXTERNAL_RAW"), _carrier_pack(src, "ASSURED")
+    assert _fp(_bt(seed=a["seed"])) != _fp(_bt(seed=b["seed"]))
