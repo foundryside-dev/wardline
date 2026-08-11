@@ -35,8 +35,8 @@ precisely because its root is a project module.
 
 This is a live false green in the engine (the direct import declares the function
 and subjects it to the tier-gated leak rules; the re-export leaves it in
-RAW_ZONE where those rules go quiet). It is filed separately and is NOT this
-module's to fix. Deliberately NO TEST BELOW PINS IT: a test asserting that
+RAW_ZONE where those rules go quiet). It is tracked as wardline-69a58cb05f and
+is NOT this module's to fix. Deliberately NO TEST BELOW PINS IT: a test asserting that
 silence would convert a defect into a shipped contract, and the next person to
 fix it would have to argue with this file. It is recorded here as an uncovered
 axis, in prose, on purpose.
