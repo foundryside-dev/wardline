@@ -95,7 +95,15 @@ def test_decorator_coverage_lists_all_trust_decorated_entities(tmp_path: Path) -
     report = build_decorator_coverage(_project(tmp_path), binding_provider=_Bindings(), work_provider=_Work())
     out = report.to_dict()
 
-    assert out["summary"] == {"total": 3, "clean": 2, "defect": 1, "unknown": 0, "suppressed": 0}
+    assert out["summary"] == {
+        "total": 3,
+        "clean": 2,
+        "defect": 1,
+        "unknown": 0,
+        "suppressed": 0,
+        "unknown_markers": 0,
+        "unreadable_marker_values": 0,
+    }
     rows = {row["qualname"]: row for row in out["rows"]}
     assert set(rows) == {"svc.clean", "svc.leaky", "svc.raw"}
 
@@ -188,6 +196,87 @@ def test_decorator_coverage_surfaces_suppressed_defects(tmp_path: Path) -> None:
     assert rows["svc.leaky"].finding_state == "suppressed"
     assert rows["svc.leaky"].active_finding_fingerprints == []
     assert rows["svc.leaky"].suppressed_finding_fingerprints == [leak.fingerprint]
+
+
+def test_summary_counts_unknown_markers(tmp_path: Path) -> None:
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    (proj / "svc.py").write_text(
+        "import weft_markers\n"
+        "from wardline.decorators import trusted\n"
+        "@weft_markers.audit_record\n"
+        "def new_style(e):\n"
+        "    return e\n"
+        "@trusted\n"
+        "def declared(p):\n"
+        "    return p\n",
+        encoding="utf-8",
+    )
+    report = build_decorator_coverage(proj)
+    assert report.summary["unknown_markers"] == 1
+    # Rows are still provider-seeded entities only — the unknown-marker entity
+    # has no row; the count is the side-channel that says WHY.
+    assert report.summary["total"] == 1
+
+
+def test_summary_counts_unreadable_marker_values(tmp_path: Path) -> None:
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    (proj / "svc.py").write_text(
+        "from wardline.decorators import trusted\n"
+        "def get_level():\n"
+        "    return 'ASSURED'\n"
+        "DYN = get_level()\n"
+        "@trusted(level=DYN)\n"
+        "def residual(p):\n"
+        "    return p\n"
+        "@trusted\n"
+        "def declared(p):\n"
+        "    return p\n",
+        encoding="utf-8",
+    )
+    report = build_decorator_coverage(proj)
+    assert report.summary["unreadable_marker_values"] == 1
+    # Soundness condition 2 (spec §4.2.1): the residual FACT is NOT inertness-
+    # clearing — the unreadable-value entity becomes no provider-seeded row and does
+    # not move the posture denominator. `declared` is the only row.
+    assert report.summary["total"] == 1
+    # Condition 5's no-double-count clause: one unreadable value, one channel.
+    assert report.summary["unknown_markers"] == 0
+
+
+def test_marker_counts_are_per_value_not_per_site(tmp_path: Path) -> None:
+    # THE PIN ON THIS TASK'S DESIGN DECISION. Both `pipeline.py` loops emit one FACT per
+    # marker / per unreadable (argument, value) pair, so ONE site carrying TWO of either
+    # contributes TWO — per-site counting would report 1 and silently swallow the second,
+    # the same fail-open that `values[0]` would be. The key names say the same thing:
+    # `unknown_markers` counts markers and `unreadable_marker_values` counts values.
+    # Soundness condition 5's no-double-count clause is per-MARKER channel exclusivity
+    # (custom -> WLN-ENGINE-UNPROVABLE-BOUNDARY, builtin -> the residual FACT), not a
+    # per-site cap, so it is satisfied without collapsing these counts to sites.
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    (proj / "unreadable.py").write_text(
+        "from wardline.decorators import trusted, trust_boundary\n"
+        "def get_level():\n"
+        "    return 'ASSURED'\n"
+        "DYN = get_level()\n"
+        "@trusted(level=DYN)\n"
+        "@trust_boundary(to_level=DYN)\n"
+        "def stacked(p):\n"
+        "    return p\n",
+        encoding="utf-8",
+    )
+    (proj / "unknown.py").write_text(
+        "import weft_markers\n@weft_markers.audit_record\n@weft_markers.retention_class\ndef two(e): ...\n",
+        encoding="utf-8",
+    )
+    summary = build_decorator_coverage(proj).summary
+    assert summary["unreadable_marker_values"] == 2
+    assert summary["unknown_markers"] == 2
+    # Every marker here dropped its seed or took no opinion, so no site is declared and
+    # the posture denominator never moves (spec §4.2.1, soundness condition 2).
+    assert summary["total"] == 0
 
 
 def test_decorator_coverage_degrades_when_decorator_unparse_recurses(

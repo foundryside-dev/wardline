@@ -3024,8 +3024,26 @@ _DECORATOR_COVERAGE_OUTPUT_SCHEMA: dict[str, Any] = {
                 "defect": {"type": "integer", "description": "Rows with finding_state == defect."},
                 "unknown": {"type": "integer", "description": "Rows with finding_state == unknown."},
                 "suppressed": {"type": "integer", "description": "Rows with finding_state == suppressed."},
+                "unknown_markers": {
+                    "type": "integer",
+                    "description": "Count of vocabulary-rooted decorators this engine does not recognise "
+                    "(WLN-ENGINE-UNKNOWN-MARKER FACTs) — newer weft-markers than wardline.",
+                },
+                "unreadable_marker_values": {
+                    "type": "integer",
+                    "description": "Count of builtin marker LEVEL values that stay statically unreadable after "
+                    "P3 form 5 (WLN-ENGINE-UNREADABLE-MARKER-VALUE FACTs) — the seed dropped observably.",
+                },
             },
-            "required": ["total", "clean", "defect", "unknown", "suppressed"],
+            "required": [
+                "total",
+                "clean",
+                "defect",
+                "unknown",
+                "suppressed",
+                "unknown_markers",
+                "unreadable_marker_values",
+            ],
             "additionalProperties": False,
         },
         "rows": {
@@ -5103,9 +5121,7 @@ class WardlineMCPServer:
             if caller_packs is None or (
                 isinstance(caller_packs, list) and all(isinstance(p, str) for p in caller_packs)
             ):
-                merged["trust_packs"] = list(
-                    dict.fromkeys([*(caller_packs or []), *self._default_trusted_packs])
-                )
+                merged["trust_packs"] = list(dict.fromkeys([*(caller_packs or []), *self._default_trusted_packs]))
         if self._default_trust_local_packs:
             caller_local = merged.get("trust_local_packs")
             # Identity checks, not equality: 0 == False, and masking a caller's

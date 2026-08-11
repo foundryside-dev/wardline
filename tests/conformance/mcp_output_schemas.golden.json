@@ -774,6 +774,14 @@
           "unknown": {
             "description": "Rows with finding_state == unknown.",
             "type": "integer"
+          },
+          "unknown_markers": {
+            "description": "Count of vocabulary-rooted decorators this engine does not recognise (WLN-ENGINE-UNKNOWN-MARKER FACTs) \u2014 newer weft-markers than wardline.",
+            "type": "integer"
+          },
+          "unreadable_marker_values": {
+            "description": "Count of builtin marker LEVEL values that stay statically unreadable after P3 form 5 (WLN-ENGINE-UNREADABLE-MARKER-VALUE FACTs) \u2014 the seed dropped observably.",
+            "type": "integer"
           }
         },
         "required": [
@@ -781,7 +789,9 @@
           "clean",
           "defect",
           "unknown",
-          "suppressed"
+          "suppressed",
+          "unknown_markers",
+          "unreadable_marker_values"
         ],
         "type": "object"
       }

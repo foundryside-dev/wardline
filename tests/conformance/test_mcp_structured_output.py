@@ -100,6 +100,18 @@ _LEAKY = (
 )
 
 
+_UNKNOWN_SRC = "import weft_markers\n@weft_markers.audit_record\ndef f(): ...\n"
+_UNREADABLE_SRC = (
+    "from wardline.decorators import trusted\n"
+    "def get_level():\n"
+    "    return 'ASSURED'\n"
+    "DYN = get_level()\n"
+    "@trusted(level=DYN)\n"
+    "def g(p):\n"
+    "    return p\n"
+)
+
+
 def _leaky_project(tmp_path: Path) -> Path:
     proj = tmp_path / "proj"
     proj.mkdir()
@@ -295,9 +307,18 @@ def test_assure_structured_output(tmp_path: Path) -> None:
 
 
 def test_decorator_coverage_structured_output(tmp_path: Path) -> None:
-    server = WardlineMCPServer(root=_leaky_project(tmp_path))
+    # Plant BOTH marker side-channels alongside the leaky project so the validated
+    # structuredContent exercises the two `required` summary counts, not just `total`:
+    # a schema-only pin would stay green if a renderer silently stopped emitting them.
+    proj = _leaky_project(tmp_path)
+    (proj / "unknown_marker.py").write_text(_UNKNOWN_SRC, encoding="utf-8")
+    (proj / "unreadable_value.py").write_text(_UNREADABLE_SRC, encoding="utf-8")
+
+    server = WardlineMCPServer(root=proj)
     out = _validated(server, "decorator_coverage", {})
     assert out["summary"]["total"] >= 1
+    assert out["summary"]["unknown_markers"] == 1
+    assert out["summary"]["unreadable_marker_values"] == 1
 
 
 def test_attest_and_verify_attestation_structured_output(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

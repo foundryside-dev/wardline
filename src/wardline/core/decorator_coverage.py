@@ -116,6 +116,8 @@ class DecoratorCoverageRow:
 @dataclass(frozen=True, slots=True)
 class DecoratorCoverageReport:
     rows: list[DecoratorCoverageRow]
+    unknown_marker_count: int = 0
+    unreadable_marker_value_count: int = 0
 
     @property
     def summary(self) -> dict[str, int]:
@@ -130,6 +132,8 @@ class DecoratorCoverageReport:
             "defect": defect,
             "unknown": unknown,
             "suppressed": suppressed,
+            "unknown_markers": self.unknown_marker_count,
+            "unreadable_marker_values": self.unreadable_marker_value_count,
         }
 
     def to_dict(self) -> dict[str, Any]:
@@ -238,7 +242,23 @@ def decorator_coverage_from_scan(
                 work=work,
             )
         )
-    return DecoratorCoverageReport(rows=rows)
+    # PER-VALUE, not per-site: both loops in ``pipeline.py`` emit ONE FACT per marker /
+    # per unreadable ``(argument, value)`` pair, and a single site can carry several
+    # (measured: ``@trusted(level=DYN)`` over ``@trust_boundary(to_level=DYN)`` emits
+    # two residual FACTs). The key names say the same thing — ``unknown_markers`` counts
+    # markers and ``unreadable_marker_values`` counts values, neither counts sites.
+    # Soundness condition 5's no-double-count clause is a per-MARKER channel
+    # exclusivity (custom -> WLN-ENGINE-UNPROVABLE-BOUNDARY, builtin -> the residual
+    # FACT), so a stacked site contributes at most one count per marker to one key.
+    unknown_marker_count = sum(1 for f in result.findings if f.rule_id == "WLN-ENGINE-UNKNOWN-MARKER")
+    unreadable_marker_value_count = sum(1 for f in result.findings if f.rule_id == "WLN-ENGINE-UNREADABLE-MARKER-VALUE")
+    # Both are side-channels: neither creates a row, so `total` is unmoved and an
+    # otherwise-inert scan stays inert (spec §4.2.1, soundness condition 2).
+    return DecoratorCoverageReport(
+        rows=rows,
+        unknown_marker_count=unknown_marker_count,
+        unreadable_marker_value_count=unreadable_marker_value_count,
+    )
 
 
 def build_decorator_coverage(

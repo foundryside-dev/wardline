@@ -75,7 +75,9 @@ def _render_human(report: dict[str, object]) -> None:
     click.echo(
         "Decorator coverage: "
         f"{summary['total']} total, {summary['clean']} clean, {summary['defect']} defect, "
-        f"{summary['unknown']} unknown, {summary['suppressed']} suppressed"
+        f"{summary['unknown']} unknown, {summary['suppressed']} suppressed, "
+        f"unknown_markers={summary['unknown_markers']}, "
+        f"unreadable_marker_values={summary['unreadable_marker_values']}"
     )
     rows = report["rows"]
     assert isinstance(rows, list)
