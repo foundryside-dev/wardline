@@ -105,7 +105,7 @@ class _Walk:
     still moves the digest, and the preimage is linear in distinct objects for real.
     """
 
-    __slots__ = ("active", "alive", "budget", "memo", "pack_roots", "uncacheable")
+    __slots__ = ("active", "alive", "budget", "memo", "uncacheable")
 
     def __init__(self) -> None:
         # id(obj) -> the structural hash of that object's full record.
@@ -113,11 +113,8 @@ class _Walk:
         self.alive: list[object] = []
         self.active: set[int] = set()
         self.budget: int = _MAX_EXPANDED_NODES
-        # Set when the walk meets PACK code whose reachable member set it cannot prove.
+        # Set when the walk meets code whose reachable member set it cannot prove.
         self.uncacheable: bool = False
-        # Top-level packages the grammar's own seeds live in. The fail-closed check is
-        # scoped to these; see ``_function_identity``.
-        self.pack_roots: frozenset[str] = frozenset()
 
 
 def _canonical_json(value: object) -> str:
@@ -858,7 +855,7 @@ def _function_identity(fn: object, walk: _Walk, depth: int) -> dict[str, object]
     globals_map = _probe(fn, "__globals__")
     globals_record: dict[str, object] = {}
     names = _reachable_names(code)
-    if _module_root(fn) in walk.pack_roots and _COMPUTED_ATTRIBUTE_BUILTINS.intersection(names):
+    if isinstance(globals_map, dict) and _computed_dispatch_is_unprovable(names, globals_map):
         # COMPUTED-NAME DISPATCH — the demand set is not statically knowable.
         #
         #     fn = getattr(helpers, "for_" + level.value.lower(), helpers.default)
@@ -873,13 +870,14 @@ def _function_identity(fn: object, walk: _Walk, depth: int) -> dict[str, object]
         # matches this engine's own invariant that what it cannot prove yields an honest
         # unknown, never a false green. Bounded, and never silent in either direction.
         #
-        # SCOPED TO THE PACK'S OWN TOP-LEVEL PACKAGES, and that scoping is not cosmetic.
-        # Applied to every transitively expanded function it fired on ``yaml``'s
-        # internals — measured, a pack that merely does ``import yaml`` went uncacheable
-        # — which would leave essentially every real pack permanently cold and destroy
-        # the feature this whole task exists to make safe. A third-party library's
-        # internal dispatch is the same under-discrimination the fence already accepts
-        # for the stdlib (residual R2/R4); the PACK's own dispatch is what is in scope.
+        # SCOPED BY WHAT IS IN REACH, not by the grammar's own package roots. The
+        # naive form — trigger on every transitively expanded function — fired on
+        # ``yaml``'s internals, so a pack that merely does ``import yaml`` went
+        # uncacheable; that would leave essentially every real pack permanently cold.
+        # The root-scoped form that replaced it was a FAIL-OPEN: a
+        # ``functools.partial`` seed left the root set empty and silently disabled the
+        # guard for the whole grammar. Keying on a non-fenced MODULE being reachable
+        # keeps ``yaml`` cacheable AND leaves no empty case to fail open.
         walk.uncacheable = True
     if isinstance(globals_map, dict):
         for name in names:
@@ -910,13 +908,35 @@ def _function_identity(fn: object, walk: _Walk, depth: int) -> dict[str, object]
 
 # Builtins that turn a NAME into an attribute lookup at run time. If a function reaches
 # either, the set of members it actually uses cannot be read off its code object.
+# Builtins that turn a NAME into an attribute lookup at run time.
+#  * ``getattr``/``vars`` matter only when a non-fenced MODULE is in reach, because
+#    module members are the one thing resolved DEMAND-DRIVEN off ``co_names``. A
+#    computed lookup on an instance or a class is already covered structurally — the
+#    instance arm expands its type, and a class record now carries ORDERED members.
+#  * ``globals`` always matters: it reaches the function's OWN module namespace.
 _COMPUTED_ATTRIBUTE_BUILTINS = frozenset({"getattr", "vars"})
+_ALWAYS_COMPUTED_BUILTINS = frozenset({"globals"})
 
 
-def _module_root(value: object) -> str:
-    """The top-level package an object's ``__module__`` names, or ``""``."""
-    module = _probe(value, "__module__")
-    return module.split(".", 1)[0] if isinstance(module, str) and module else ""
+def _computed_dispatch_is_unprovable(names: tuple[str, ...], globals_map: dict[str, object]) -> bool:
+    """Can this function reach a module member whose NAME is computed at run time?
+
+    Scoping this by the grammar's own top-level packages was a FAIL-OPEN inside the
+    fail-closed mechanism: a ``functools.partial``-wrapped seed resolves ``__module__``
+    to ``functools``, which the fence filters out, leaving the root set EMPTY — and an
+    empty root set silently disabled the guard for the whole grammar (measured
+    COLLIDE). Dispatch inside a SECOND top-level package the pack ships collided for
+    the same reason. Keying on what is actually in reach removes the root set from the
+    decision entirely, so there is no empty case left to fail open.
+    """
+    if _ALWAYS_COMPUTED_BUILTINS.intersection(names):
+        return True
+    if not _COMPUTED_ATTRIBUTE_BUILTINS.intersection(names):
+        return False
+    return any(
+        isinstance(target, ModuleType) and not _is_structurally_opaque_module(target)
+        for target in (globals_map.get(name) for name in names)
+    )
 
 
 # Import machinery and filesystem paths in a module namespace: neither is behaviour,
@@ -1155,9 +1175,6 @@ def _grammar_digest(boundary_types: tuple[BoundaryType, ...]) -> str:
     # expanded once and both records carry that same expansion, so the cost stays
     # linear in distinct reachable objects while every body change still moves it.
     walk = _Walk()
-    walk.pack_roots = frozenset(
-        root for root in (_module_root(bt.seed) for bt in boundary_types) if root and root not in _OPAQUE_PACKAGES
-    )
     records: list[dict[str, object]] = [
         {
             "canonical_name": bt.canonical_name,

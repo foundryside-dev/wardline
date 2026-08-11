@@ -7,6 +7,7 @@ it. The builtin literal is pinned so a REGISTRY_VERSION drift in S0 is loud."""
 
 from __future__ import annotations
 
+import functools
 import os
 import pathlib
 import re
@@ -1811,13 +1812,21 @@ def test_A_first_match_wins_dict_key_order_moves_the_fingerprint() -> None:
 
 
 def test_class_namespace_order_moves_the_fingerprint() -> None:
-    """`vars(cls)` is an ordered mapping and a pack can scan it first-match-wins."""
+    """`cls.__dict__` is an ordered mapping a pack can scan first-match-wins.
+
+    The first version of this test used `vars(FLOORS)` — which itself tripped the
+    computed-dispatch guard, so BOTH sides returned `uncacheable-<random>` and the test
+    passed on the randomness while never once exercising `_class_identity`'s ordered
+    members. It is rewritten to reach the class dict by attribute, and it now ASSERTS
+    that neither fingerprint is uncacheable, so it can never silently stop testing the
+    path it names.
+    """
     src = (
         "from wardline.core.taints import TaintState\n"
         "from wardline.scanner.taint.provider import FunctionTaint\n"
         "class FLOORS:\n    {FIRST}\n    {SECOND}\n"
         "def _pick(name):\n"
-        "    for k, v in vars(FLOORS).items():\n"
+        "    for k, v in FLOORS.__dict__.items():\n"
         "        if not k.startswith('__') and name.startswith(k):\n            return v\n"
         "    return TaintState.UNKNOWN_RAW\n"
         "def seed(levels):\n    return FunctionTaint(_pick('assured'), levels['to_level'])\n"
@@ -1828,7 +1837,13 @@ def test_class_namespace_order_moves_the_fingerprint() -> None:
     b = _r7_pack(
         src.replace("{FIRST}", "a = TaintState.EXTERNAL_RAW").replace("{SECOND}", "assur = TaintState.ASSURED")
     )
-    assert _fp(_bt(seed=a["seed"])) != _fp(_bt(seed=b["seed"]))
+    # The behaviour really does differ, and BOTH digests are real digests.
+    assert a["_pick"]("assured") is TaintState.ASSURED
+    assert b["_pick"]("assured") is TaintState.EXTERNAL_RAW
+    left, right = _fp(_bt(seed=a["seed"])), _fp(_bt(seed=b["seed"]))
+    assert "uncacheable" not in left and "uncacheable" not in right, "the test would pass on a random token"
+    assert left == _fp(_bt(seed=a["seed"]))  # ... and they are reproducible
+    assert left != right
 
 
 _DEFAULTDICT_SRC = (
@@ -1953,3 +1968,120 @@ def test_ordinary_grammar_is_not_marked_uncacheable() -> None:
         fingerprint = _fp(_bt(seed=seed))
         assert "uncacheable" not in fingerprint
         assert fingerprint == _fp(_bt(seed=seed))
+
+
+# --- Round 8: the fail-open INSIDE the fail-closed mechanism -----------------------
+
+
+def _sibling_dispatch_module(lvl: str, name: str = "wl_r8_helpers") -> types.ModuleType:
+    mod = types.ModuleType(name)
+    exec(  # noqa: S102
+        compile(
+            "from wardline.core.taints import TaintState\n"
+            f"def for_assured():\n    return TaintState.{lvl}\n"
+            "def default():\n    return TaintState.UNKNOWN_RAW\n",
+            "h.py",
+            "exec",
+        ),
+        mod.__dict__,
+    )
+    return mod
+
+
+_DISPATCH_SEED_SRC = (
+    "from wardline.scanner.taint.provider import FunctionTaint\n"
+    "def _mk(levels):\n"
+    "    fn = getattr(helpers, 'for_' + 'assured', helpers.default)\n"
+    "    return FunctionTaint(fn(), levels['to_level'])\n"
+)
+
+
+def test_partial_wrapped_seed_does_not_disable_the_computed_dispatch_guard() -> None:
+    """A FAIL-OPEN inside the fail-closed mechanism.
+
+    Round 7 scoped the guard to the grammar's own top-level package roots. A
+    `functools.partial`-wrapped seed — which reaches the digest intact through the real
+    loader — resolves `__module__` to `functools`, the fence filters it out, and the
+    root set ends up EMPTY. An empty root set silently disabled the guard for the whole
+    grammar and computed dispatch COLLIDED. A guard that turns itself off when its
+    input is empty is the same defect class as a test that asserts nothing.
+
+    The rule no longer consults the root set at all: it keys on whether a non-fenced
+    MODULE is in reach, so there is no empty case left to fail open.
+    """
+    a = functools.partial(
+        _r7_pack(_DISPATCH_SEED_SRC, extra={"helpers": _sibling_dispatch_module("EXTERNAL_RAW")})["_mk"]
+    )
+    b = functools.partial(_r7_pack(_DISPATCH_SEED_SRC, extra={"helpers": _sibling_dispatch_module("ASSURED")})["_mk"])
+    assert a.__module__ == "functools"  # the seed's own module really is fenced
+    left = _fp(_bt(seed=a))
+    assert "+grammar:uncacheable-" in left
+    assert left != _fp(_bt(seed=b))
+
+
+def test_dispatch_inside_a_second_top_level_package_still_fails_closed() -> None:
+    """The pack ships two top-level packages; the dispatch lives in the other one."""
+
+    def mk(lvl: str) -> object:
+        other = types.ModuleType("otherpkg.mod")
+        exec(  # noqa: S102
+            compile(
+                "from wardline.core.taints import TaintState\n"
+                f"def for_assured():\n    return TaintState.{lvl}\n"
+                "def default():\n    return TaintState.UNKNOWN_RAW\n"
+                "def pick():\n    return getattr(_SELF, 'for_' + 'assured', default)()\n",
+                "o.py",
+                "exec",
+            ),
+            other.__dict__,
+        )
+        other.__dict__["_SELF"] = other
+        return _r7_pack(
+            "from wardline.scanner.taint.provider import FunctionTaint\n"
+            "def seed(levels):\n    return FunctionTaint(sibling.pick(), levels['to_level'])\n",
+            extra={"sibling": other},
+        )["seed"]
+
+    a, b = mk("EXTERNAL_RAW"), mk("ASSURED")
+    assert "+grammar:uncacheable-" in _fp(_bt(seed=a))
+    assert _fp(_bt(seed=a)) != _fp(_bt(seed=b))
+
+
+_GLOBALS_DISPATCH_SRC = (
+    "from wardline.core.taints import TaintState\n"
+    "from wardline.scanner.taint.provider import FunctionTaint\n"
+    "def for_assured():\n    return TaintState.{lvl}\n"
+    "def default():\n    return TaintState.UNKNOWN_RAW\n"
+    "def seed(levels):\n"
+    "    fn = globals().get('for_' + 'assured', default)\n"
+    "    return FunctionTaint(fn(), levels['to_level'])\n"
+)
+
+
+def test_globals_keyed_dispatch_fails_closed() -> None:
+    """`globals()['for_' + n]` is the same class as the `getattr` case.
+
+    It reaches the function's OWN module namespace, which is exactly the mapping the
+    demand-driven walk resolves off `co_names` — so a computed key is invisible to it.
+    Measured COLLIDE until `globals` joined the trigger set.
+    """
+    a, b = _r7_pack(_GLOBALS_DISPATCH_SRC), _r7_pack(_GLOBALS_DISPATCH_SRC, "ASSURED")
+    assert a["seed"]({"to_level": TaintState.GUARDED}).body_taint is TaintState.EXTERNAL_RAW
+    assert b["seed"]({"to_level": TaintState.GUARDED}).body_taint is TaintState.ASSURED
+    assert "+grammar:uncacheable-" in _fp(_bt(seed=a["seed"]))
+    assert _fp(_bt(seed=a["seed"])) != _fp(_bt(seed=b["seed"]))
+
+
+@pytest.mark.parametrize("carrier", sorted(_CARRIERS))
+def test_no_carrier_fixture_passes_on_a_random_token(carrier: str) -> None:
+    """No behaviour-carrier row may be silently answered by the uncacheable token.
+
+    `test_class_namespace_order_moves_the_fingerprint` shipped doing exactly that: it
+    used `vars(...)`, tripped the guard, and both sides returned a fresh random string,
+    so it never exercised the path it named. This sweeps every carrier so that failure
+    mode cannot recur unnoticed anywhere in the table.
+    """
+    pack = _carrier_pack(_CARRIERS[carrier], "EXTERNAL_RAW")
+    fingerprint = _fp(_bt(seed=pack["seed"]))
+    assert "uncacheable" not in fingerprint, f"{carrier} is answered by a random token"
+    assert fingerprint == _fp(_bt(seed=pack["seed"]))
