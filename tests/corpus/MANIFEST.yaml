@@ -11,9 +11,28 @@
 # (tests/grammar, frozen over fixtures/ only) keeps its substrate. Per the 2026-05-31
 # taint-combination audit the engine has 0 live FP, so every sentinel is expected
 # to stay silent.
+#
+# Row fields. Required: rule_id, qualname, label. Optional: note (default ""), plus
+# the three S0 fields below. `section` is NOT a row field — it is derived from which
+# top-level block the row sits in, so writing it is an unknown-key error.
+#   maturity:    "stable" (default) | "preview" — the maturity the row was written
+#                against. The loader rejects drift: PREVIEW DEFECTs are in the FP
+#                population (they gate like stable rules), so a rule graduating must
+#                update its rows rather than silently change what the corpus measured.
+#   kind:        "core" (default) | contracts | facets | restoration | sensitivity |
+#                dependency_taint — the analysis family the specimen belongs to. The
+#                gate is evaluated per kind as well as in aggregate, so a small kind
+#                cannot hide its FP rate inside a large healthy total. Only `core` is
+#                populated today; the rest are forward vocabulary for S1-S4, and the
+#                task that introduces one inherits that kind's specimen floors.
+#   interaction: "" (default) | "contradiction" | "match" — marks the two halves of a
+#                rule-interaction pair. `contradiction` is the TRUE_POSITIVE specimen
+#                (the rule must fire), `match` is its clean FALSE_POSITIVE sentinel
+#                (the near-miss shape the rule must stay silent on). The pair is what
+#                proves PY-WL-110 discriminates two DISTINCT markers from two markers.
 fixtures:
   contradictory.py:
-    - {rule_id: PY-WL-110, qualname: "contradictory.conflicting", label: TRUE_POSITIVE, note: "@trusted + @external_boundary — two distinct trust markers"}
+    - {rule_id: PY-WL-110, qualname: "contradictory.conflicting", label: TRUE_POSITIVE, note: "@trusted + @external_boundary — two distinct trust markers", interaction: contradiction}
   none_leak.py:
     - {rule_id: PY-WL-109, qualname: "none_leak.maybe_none", label: TRUE_POSITIVE, note: "value path + bare return — None leaks from a trusted producer"}
   deser_sink.py:
@@ -57,7 +76,9 @@ fixtures:
     - {rule_id: PY-WL-102, qualname: "more_shapes.passthrough_no_check", label: TRUE_POSITIVE, note: "boundary that cannot reject"}
 sentinels:
   clean_sql_parameterized.py:
-    - {rule_id: PY-WL-118, qualname: "clean_sql_parameterized.parameterized_query", label: FALSE_POSITIVE, note: "sentinel: placeholder SQL with the raw value confined to the parameter tuple — must stay silent"}
+    - {rule_id: PY-WL-118, qualname: "clean_sql_parameterized.parameterized_query", label: FALSE_POSITIVE, maturity: preview, note: "sentinel: placeholder SQL with the raw value confined to the parameter tuple — must stay silent"}
+  clean_matching_trust.py:
+    - {rule_id: PY-WL-110, qualname: "clean_matching_trust.repeated_matching_marker", label: FALSE_POSITIVE, interaction: match, note: "sentinel: the SAME marker repeated — PY-WL-110 fires on two DISTINCT markers, so the match half of the interaction pair must stay silent"}
   clean_boundary_rejection.py:
     - {rule_id: PY-WL-102, qualname: "clean_boundary_rejection.validate_token", label: FALSE_POSITIVE, note: "sentinel: boundary with a real raise-on-invalid rejection path — must stay silent"}
   clean_exec_const.py:
