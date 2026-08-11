@@ -51,16 +51,29 @@ VOCAB_PREFIX = "wardline.decorators"
 WEFT_MARKERS_PREFIX = "weft_markers"
 _TAINTSTATE_FQN = "wardline.core.taints.TaintState"
 
-# The top-level import roots of every BUILTIN marker module. Derived from the two
-# builtin marker module prefixes above rather than from ``BUILTIN_BOUNDARY_TYPES``:
-# this module is the ENGINE FLOOR and imports only ``core`` (see the module
-# docstring), whereas ``scanner.boundary_types`` pulls in ``scanner.taint.provider``
-# — the package that holds this module's own consumer. The two derivations are
-# provably equal: every builtin boundary type carries one of these two prefixes
-# (``boundary_types.BUILTIN_BOUNDARY_TYPES``, guarded by the REGISTRY consistency
-# tripwire in that module). A ``weft_markers`` boundary type has module_prefix
-# ``weft_markers`` (root ``weft_markers``); a ``wardline.decorators`` one has root
-# ``wardline``.
+# The top-level import roots of every BUILTIN marker module — the set
+# ``shadowed_builtin_roots`` intersects, and therefore the set that decides which roots
+# get shadow FAIL-CLOSED matching at all. A ``weft_markers`` boundary type has
+# module_prefix ``weft_markers`` (root ``weft_markers``); a ``wardline.decorators`` one
+# has root ``wardline``.
+#
+# Listed from the two prefix constants above rather than derived from
+# ``BUILTIN_BOUNDARY_TYPES``, because this module is the ENGINE FLOOR and imports only
+# ``core`` (see the module docstring), whereas ``scanner.boundary_types`` pulls in
+# ``scanner.taint.provider`` — the package that holds this module's own consumer.
+#
+# THAT PLACEMENT COSTS A GUARD, AND THE GUARD IS REPLACED RATHER THAN DROPPED. The
+# derivation this replaced existed so that adding a builtin marker root AUTOMATICALLY
+# participated in shadow fail-closed matching. Nothing in ``boundary_types`` restores
+# that: its REGISTRY consistency tripwire constrains ``canonical_name``, ``group``,
+# ``kwargs`` and ``arg_kinds`` ONLY — ``module_prefix`` is entirely unconstrained by it,
+# so a third builtin root would pass that tripwire while silently missing from this set,
+# ``shadowed_builtin_roots`` would never report it, and a project shadowing that root
+# could spoof ``@trusted`` past a green gate. The replacement guard is an equality PIN in
+# tests/unit/scanner/test_marker_reader_agreement.py
+# (``test_builtin_marker_roots_covers_every_builtin_boundary_type_root``), which lives on
+# the TEST side precisely because a test may import ``boundary_types`` and this module may
+# not. A new builtin root must be added HERE too, or that test reds.
 BUILTIN_MARKER_ROOTS: frozenset[str] = frozenset({VOCAB_PREFIX.split(".")[0], WEFT_MARKERS_PREFIX.split(".")[0]})
 
 

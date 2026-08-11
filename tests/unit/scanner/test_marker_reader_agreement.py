@@ -11,6 +11,7 @@ from wardline.core.registry import MarkerCallForm
 from wardline.core.run import run_scan
 from wardline.core.taints import TaintState
 from wardline.scanner.marker_reader import (
+    BUILTIN_MARKER_ROOTS,
     CensusBinding,
     LevelVerdict,
     ModuleCensus,
@@ -18,6 +19,7 @@ from wardline.scanner.marker_reader import (
     call_shape_offences,
     level_token,
     read_level,
+    shadowed_builtin_roots,
 )
 
 # A PRESENT but EMPTY census: no bindings, not poisoned, no eligible reference
@@ -424,6 +426,44 @@ def test_no_rule_imports_provider_privates() -> None:
         p.name for p in rules_dir.glob("*.py") if "taint.decorator_provider import" in p.read_text(encoding="utf-8")
     ]
     assert offenders == []
+
+
+def test_builtin_marker_roots_covers_every_builtin_boundary_type_root() -> None:
+    # The REPLACEMENT GUARD for the derivation ``marker_reader`` cannot perform itself.
+    # ``BUILTIN_MARKER_ROOTS`` used to be derived from ``BUILTIN_BOUNDARY_TYPES`` so that
+    # adding a builtin marker root automatically participated in shadow fail-closed
+    # matching. The engine floor imports only ``core`` (``scanner.boundary_types`` pulls in
+    # ``scanner.taint.provider``, this module's own consumer), so the constant is now
+    # LISTED there and the equality is pinned HERE — a test may import ``boundary_types``
+    # where the reader may not.
+    #
+    # This is a SECURITY pin, not a tidiness one, and nothing else enforces it: the
+    # REGISTRY consistency tripwire in ``boundary_types`` constrains ``canonical_name``,
+    # ``group``, ``kwargs`` and ``arg_kinds`` only — ``module_prefix`` is entirely
+    # unconstrained by it. So a third builtin root added to ``BUILTIN_BOUNDARY_TYPES``
+    # would pass that tripwire, be ABSENT from ``BUILTIN_MARKER_ROOTS``,
+    # ``shadowed_builtin_roots`` would never report it, shadow fail-closed would silently
+    # stop applying to that root, and a project shadowing it could spoof ``@trusted`` while
+    # the gate stayed green — the exact false-green class this program exists to close.
+    from wardline.scanner.boundary_types import BUILTIN_BOUNDARY_TYPES
+
+    # Operand order is the linter's (ruff SIM300 reads a leading module constant as a Yoda
+    # condition); equality is symmetric, so the pinned property is unchanged.
+    grammar_roots = {bt.module_prefix.split(".")[0] for bt in BUILTIN_BOUNDARY_TYPES if bt.builtin}
+    assert grammar_roots == BUILTIN_MARKER_ROOTS
+
+
+def test_shadowed_builtin_roots_reports_every_builtin_root() -> None:
+    # The same guard read through the FUNCTION the constant exists to serve, so the pin
+    # covers the behaviour and not merely the literal. Every builtin root must be
+    # shadow-detectable; a root missing from the constant is silently un-shadowable here.
+    from wardline.scanner.boundary_types import BUILTIN_BOUNDARY_TYPES
+
+    roots = {bt.module_prefix.split(".")[0] for bt in BUILTIN_BOUNDARY_TYPES if bt.builtin}
+    for root in roots:
+        assert shadowed_builtin_roots(frozenset({"app", root})) == {root}, (
+            f"builtin marker root {root!r} is not shadow-detectable"
+        )
 
 
 def test_alias_map_for_qualname_uses_longest_owner() -> None:
