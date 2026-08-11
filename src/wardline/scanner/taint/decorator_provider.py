@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import ast
 import hashlib
+import json
+from types import CodeType, ModuleType
 from typing import TYPE_CHECKING
 
 from wardline.core.registry import REGISTRY, REGISTRY_VERSION
@@ -55,78 +57,181 @@ def vocabulary_star_exports() -> dict[str, dict[str, str]]:
     }
 
 
-def _seed_value_identity(value: object) -> str:
-    if value is None or isinstance(value, (str, int, float, bool)):
-        return repr(value)
+# --- Grammar digest (P8) -----------------------------------------------------
+#
+# The digest is a full SHA-256 over CANONICAL JSON. Delimiter-joined preimages are
+# forbidden here and the reason is concrete: any join over free-form text is
+# ambiguous, so ``("a<D>b", "c")`` and ``("a", "b<D>c")`` hash identically for the
+# separator ``<D>`` and two DIFFERENT grammars share a cache key. Structured JSON
+# closes that — every field is its own delimited-by-construction slot, and JSON
+# escapes any separator byte that appears inside a value. No truncation either: a
+# 16-hex prefix is a 64-bit birthday surface on a value that gates cache reuse.
+
+# Recursion guard for pathological / self-referential values reachable through a
+# seed's globals or defaults. Set far above anything a real trust grammar reaches
+# (measured maximum on this tree: 3), so a capped record is never mistaken for
+# discrimination — if this ever trips, the digest UNDER-discriminates and the cap
+# must rise rather than the record be accepted.
+_MAX_VALUE_DEPTH = 24
+
+
+def _canonical_json(value: object) -> str:
+    """Compact, key-sorted, ASCII-escaped JSON — the one canonical encoding."""
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+
+
+def _seed_value_identity(value: object, _depth: int = 0) -> dict[str, object]:
+    """A JSON-serializable, type-TAGGED identity record for one Python value.
+
+    Every record carries its type tag ``t``, so ``"1"`` (a str) and ``1`` (an int)
+    can never produce the same record, and no value's encoding can be confused with
+    another's by concatenation.
+    """
+    if _depth > _MAX_VALUE_DEPTH:
+        return {"t": "depth-capped"}
+    d = _depth + 1
+    if value is None:
+        return {"t": "none"}
+    if value is Ellipsis:
+        return {"t": "ellipsis"}
+    if value is NotImplemented:
+        return {"t": "notimplemented"}
+    # TaintState is a StrEnum and bool is an int, so both MUST be tested before their
+    # supertypes or they collapse into the str/int arms.
     if isinstance(value, TaintState):
-        return f"TaintState:{value.value}"
+        return {"t": "taint", "v": value.value}
     if isinstance(value, FunctionTaint):
-        return (
-            "FunctionTaint("
-            f"body={_seed_value_identity(value.body_taint)},"
-            f"return={_seed_value_identity(value.return_taint)}"
-            ")"
-        )
+        return {
+            "t": "function_taint",
+            "body": _seed_value_identity(value.body_taint, d),
+            "return": _seed_value_identity(value.return_taint, d),
+        }
+    if isinstance(value, bool):
+        return {"t": "bool", "v": value}
+    if isinstance(value, int):
+        return {"t": "int", "v": str(value)}
+    if isinstance(value, float):
+        return {"t": "float", "v": repr(value)}
+    if isinstance(value, complex):
+        return {"t": "complex", "v": repr(value)}
+    if isinstance(value, str):
+        return {"t": "str", "v": value}
+    if isinstance(value, (bytes, bytearray)):
+        return {"t": "bytes", "v": bytes(value).hex()}
+    if isinstance(value, CodeType):
+        # Nested code (an inner def/lambda/comprehension lands in ``co_consts``)
+        # recurses into the SAME structural normalization. ``repr(code)`` is not an
+        # accepted canonical form: it embeds the object's memory ADDRESS and its
+        # source filename/first line, so it is simultaneously unstable across
+        # processes and sensitive to pure layout.
+        return {"t": "code", "v": _code_identity(value, d)}
+    if isinstance(value, ModuleType):
+        return {"t": "module", "v": str(getattr(value, "__name__", ""))}
     if isinstance(value, (tuple, list)):
-        return type(value).__name__ + "(" + ",".join(_seed_value_identity(v) for v in value) + ")"
+        return {"t": type(value).__name__, "v": [_seed_value_identity(v, d) for v in value]}
+    if isinstance(value, (frozenset, set)):
+        items = [_seed_value_identity(v, d) for v in value]
+        items.sort(key=_canonical_json)
+        return {"t": type(value).__name__, "v": items}
     if isinstance(value, dict):
-        parts = sorted((_seed_value_identity(k), _seed_value_identity(v)) for k, v in value.items())
-        return "dict(" + ",".join(f"{k}:{v}" for k, v in parts) + ")"
+        pairs = [[_seed_value_identity(k, d), _seed_value_identity(v, d)] for k, v in value.items()]
+        pairs.sort(key=_canonical_json)
+        return {"t": "dict", "v": pairs}
 
     module = getattr(value, "__module__", None)
     qualname = getattr(value, "__qualname__", None)
     if isinstance(module, str) and isinstance(qualname, str):
-        return f"{module}.{qualname}"
+        return {"t": "ref", "module": module, "qualname": qualname}
     name = getattr(value, "__name__", None)
     if isinstance(module, str) and isinstance(name, str):
-        return f"{module}.{name}"
-    return repr(value)
+        return {"t": "ref", "module": module, "name": name}
+    return {"t": "repr", "v": repr(value)}
 
 
-def _closure_identity(seed: object) -> tuple[str, ...]:
-    items: list[str] = []
+def _code_identity(code: CodeType, _depth: int = 0) -> dict[str, object]:
+    """Structural normalization of a code object — behaviour in, layout out.
+
+    IN: bytecode, constants (recursively, including nested code objects), referenced
+    names, argument/local/free/cell variable names, arity and flags.
+    OUT: ``co_filename``, ``co_firstlineno``, ``co_linetable``, ``co_positions`` and
+    ``co_stacksize`` — the first four are pure source-layout noise (re-indenting or
+    adding a comment must not cold-invalidate every warm cache) and the fifth is a
+    function of the bytecode that is already keyed.
+    """
+    return {
+        "argcount": code.co_argcount,
+        "posonlyargcount": code.co_posonlyargcount,
+        "kwonlyargcount": code.co_kwonlyargcount,
+        "nlocals": code.co_nlocals,
+        "flags": code.co_flags,
+        "name": code.co_name,
+        "qualname": getattr(code, "co_qualname", code.co_name),
+        "bytecode": code.co_code.hex(),
+        "consts": [_seed_value_identity(c, _depth + 1) for c in code.co_consts],
+        "names": list(code.co_names),
+        "varnames": list(code.co_varnames),
+        "freevars": list(code.co_freevars),
+        "cellvars": list(code.co_cellvars),
+    }
+
+
+def _closure_identity(seed: object) -> list[dict[str, object]]:
+    """Identity records for a seed's closure CELL CONTENTS, in ``co_freevars`` order.
+
+    Two seeds built by the same factory share bytecode, ``co_freevars`` and
+    everything else structural — only the captured VALUES differ, so the cell
+    contents are the sole discriminator.
+    """
+    items: list[dict[str, object]] = []
     for cell in getattr(seed, "__closure__", None) or ():
         try:
             items.append(_seed_value_identity(cell.cell_contents))
         except ValueError:
-            items.append("<empty-cell>")
-    return tuple(items)
+            items.append({"t": "empty-cell"})
+    return items
 
 
-def _seed_identity(seed: object) -> str:
-    """A stable identity string for a boundary type's seed callable.
+def _seed_identity(seed: object) -> dict[str, object]:
+    """A JSON-structured identity record for a boundary type's seed callable.
 
-    For a Python function/lambda, keys on bytecode, constants, referenced names,
-    defaults, closures, and the stable identities of referenced globals. Bytecode
-    alone is not enough: ``return SAFE_SEED`` and ``return RAW_SEED`` can share
-    ``co_code``/``co_consts`` while differing only by ``co_names`` or the value bound
-    to that name. For a non-function callable (no ``__code__``), falls back to
-    ``__qualname__`` / ``repr``. This only ever OVER-invalidates the summary cache (a
-    changed seed body/dependency → a different identity → a cold re-scan), never
-    wrongly reuses — strictly safe."""
+    For a Python function/lambda, keys on module and qualname as DISTINCT fields
+    (never joined — ``("x|y", "z")`` and ``("x", "y|z")`` must not collide), plus the
+    normalized code structure, defaults, closure cell contents, and the identities of
+    referenced globals. Bytecode alone is not enough: ``return SAFE_SEED`` and
+    ``return RAW_SEED`` can share ``co_code``/``co_consts`` while differing only by
+    ``co_names`` or the value bound to that name.
+
+    For a non-function callable (no ``__code__``) this DELIBERATELY falls back to
+    ``repr``, which for a plain instance embeds its memory address. Keying on the
+    class instead would make two differently-CONFIGURED instances of one callable
+    class collide — under-discrimination, i.e. the cross-grammar cache reuse this
+    digest exists to prevent. Over-invalidating (a changed seed → a different
+    identity → a cold re-scan) is strictly safe; under-invalidating is a false green.
+    """
     code = getattr(seed, "__code__", None)
-    if code is not None:
-        globals_map = getattr(seed, "__globals__", {})
-        global_parts = []
-        if isinstance(globals_map, dict):
-            for name in code.co_names:
-                global_parts.append(f"{name}={_seed_value_identity(globals_map.get(name, '<missing-global>'))}")
-        return "|".join(
-            (
-                str(getattr(seed, "__module__", "")),
-                str(getattr(seed, "__qualname__", getattr(seed, "__name__", ""))),
-                code.co_code.hex(),
-                repr(code.co_consts),
-                repr(code.co_names),
-                repr(code.co_freevars),
-                repr(code.co_cellvars),
-                repr(getattr(seed, "__defaults__", None)),
-                _seed_value_identity(getattr(seed, "__kwdefaults__", None)),
-                repr(_closure_identity(seed)),
-                repr(tuple(global_parts)),
+    if code is None:
+        return {
+            "kind": "opaque",
+            "qualname": str(getattr(seed, "__qualname__", "")),
+            "repr": repr(seed),
+        }
+    globals_map = getattr(seed, "__globals__", None)
+    globals_record: dict[str, object] = {}
+    if isinstance(globals_map, dict):
+        for name in code.co_names:
+            globals_record[name] = (
+                _seed_value_identity(globals_map[name]) if name in globals_map else {"t": "missing-global"}
             )
-        )
-    return str(getattr(seed, "__qualname__", repr(seed)))
+    return {
+        "kind": "function",
+        "module": str(getattr(seed, "__module__", "") or ""),
+        "qualname": str(getattr(seed, "__qualname__", None) or getattr(seed, "__name__", "") or ""),
+        "code": _code_identity(code),
+        "defaults": _seed_value_identity(getattr(seed, "__defaults__", None)),
+        "kwdefaults": _seed_value_identity(getattr(seed, "__kwdefaults__", None)),
+        "closure": _closure_identity(seed),
+        "globals": globals_record,
+    }
 
 
 def _grammar_digest(boundary_types: tuple[BoundaryType, ...]) -> str:
@@ -134,17 +239,34 @@ def _grammar_digest(boundary_types: tuple[BoundaryType, ...]) -> str:
 
     Bound into the provider fingerprint so two DIFFERENT loaded grammars cannot
     share cached module summaries (a false-green correctness bug — design spec §6).
-    Order-sensitive over (name, prefix, group, seed identity, level-arg schema).
+    Order-sensitive over the full declaration surface: canonical name, module prefix,
+    group, the ``builtin`` flag, the ORDERED level-argument schema, and structural
+    seed identity. Returns 64 lowercase hex characters — a full, untruncated SHA-256
+    over compact key-sorted canonical JSON.
     """
-    h = hashlib.sha256()
-    for bt in boundary_types:
-        parts = [bt.canonical_name, bt.module_prefix, str(bt.group), _seed_identity(bt.seed)]
-        for la in bt.level_args:
-            allowed = ",".join(sorted(t.value for t in la.allowed))
-            default = la.default.value if la.default is not None else ""
-            parts.append(f"{la.arg_name}:{allowed}:{default}")
-        h.update(("\x00".join(parts) + "\x01").encode("utf-8"))
-    return h.hexdigest()[:16]
+    records = [
+        {
+            "canonical_name": bt.canonical_name,
+            "module_prefix": bt.module_prefix,
+            "group": bt.group,
+            "builtin": bool(bt.builtin),
+            "level_args": [
+                {
+                    "arg_name": la.arg_name,
+                    # A set has no order; sorting the VALUES is what makes the record
+                    # canonical without smuggling iteration order into the digest.
+                    "allowed": sorted(t.value for t in la.allowed),
+                    # JSON ``null`` for "required", never the empty string — the empty
+                    # string is a value a level name could in principle take.
+                    "default": (la.default.value if la.default is not None else None),
+                }
+                for la in bt.level_args
+            ],
+            "seed": _seed_identity(bt.seed),
+        }
+        for bt in boundary_types
+    ]
+    return hashlib.sha256(_canonical_json(records).encode("utf-8")).hexdigest()
 
 
 class DecoratorTaintSourceProvider:
