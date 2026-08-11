@@ -24,17 +24,21 @@ from wardline.core.taints import TRUST_RANK, TaintState
 from wardline.scanner.analyzer import WardlineAnalyzer
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-_CORPUS = REPO_ROOT / "tests" / "corpus" / "fixtures"
+_CORPUS_ROOTS = (
+    REPO_ROOT / "tests" / "corpus" / "fixtures",
+    REPO_ROOT / "tests" / "corpus" / "sentinels",
+)
 
 
 def _corpus_findings() -> Sequence[Finding]:
-    """One complete, ordered analyzer run over the labeled corpus.
+    """One complete, ordered analyzer run over the fixed corpus (fixtures/ AND
+    sentinels/ — P4: sentinel-shape churn gets the same two-run byte guard).
 
     Unlike ``golden_harness.produce_stream`` this does NOT filter to STABLE
     maturity: PREVIEW rules (PY-WL-116..126) must be order-deterministic too —
     they feed baselines and the delta gate even before graduation.
     """
-    files = sorted(_CORPUS.rglob("*.py"))
+    files = sorted(p for root in _CORPUS_ROOTS for p in root.rglob("*.py"))
     analyzer = WardlineAnalyzer()
     return analyzer.analyze(files, WardlineConfig(), root=REPO_ROOT)
 
