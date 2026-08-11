@@ -19,7 +19,7 @@ import json
 import re
 import sys
 from types import CodeType, MappingProxyType, ModuleType
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from wardline.core.registry import REGISTRY, REGISTRY_VERSION
 from wardline.core.taints import TRUST_RANK, TaintState
@@ -34,7 +34,7 @@ from wardline.scanner.marker_reader import shadowed_builtin_roots as _shadowed_b
 from wardline.scanner.taint.provider import FunctionTaint, SeedResult
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Mapping
+    from collections.abc import Callable, Iterable, Mapping
 
     from wardline.scanner.index import Entity
     from wardline.scanner.taint.provider import SeedContext
@@ -88,19 +88,31 @@ class _Walk:
 
     A referenced global may reference back (``seed`` → ``_helper`` → ``seed``) and one
     object may be reachable by many paths, so the walk needs both cycle detection and
-    memoization: ``active`` breaks cycles, ``memo`` makes the cost linear in the number
-    of DISTINCT reachable objects rather than exponential in the paths to them.
-    ``alive`` pins every memoized object for the duration so CPython cannot recycle an
-    ``id()`` underneath the memo.
+    memoization: ``active`` breaks cycles, ``memo`` records the ORDINAL of an object
+    already expanded on this walk. ``alive`` pins every memoized object for the
+    duration so CPython cannot recycle an ``id()`` underneath the memo.
+
+    CORRECTED — this docstring previously claimed the memo made "the cost linear in the
+    number of DISTINCT reachable objects rather than exponential in the paths to them".
+    That is true of TRAVERSAL and **false of the preimage**: the memo shared a record by
+    REFERENCE while ``json.dumps`` serialises it by VALUE at every occurrence, so a DAG
+    was written out as a tree. Measured on a seed referencing ``click.Command``: 425
+    distinct objects, **668 MiB of preimage in 4.6 s**. ``_MAX_EXPANDED_NODES`` bounds
+    the node count (425 of 20 000 used) and therefore bounds nothing about cost. The
+    memo now returns a BACK-REFERENCE, which is the same argument the ``cycle``
+    back-edge already makes: the structure is in the preimage once, so a body change
+    still moves the digest, and the preimage is linear in distinct objects for real.
     """
 
-    __slots__ = ("active", "alive", "budget", "memo")
+    __slots__ = ("active", "alive", "budget", "memo", "ordinal")
 
     def __init__(self) -> None:
-        self.memo: dict[int, dict[str, object]] = {}
+        # id(obj) -> (ordinal of its FULL record, structural hash of that record).
+        self.memo: dict[int, tuple[int, str]] = {}
         self.alive: list[object] = []
         self.active: set[int] = set()
         self.budget: int = _MAX_EXPANDED_NODES
+        self.ordinal: int = 0
 
 
 def _canonical_json(value: object) -> str:
@@ -117,11 +129,30 @@ def _named(value: object) -> dict[str, object]:
 
 
 def _expanded(value: object, walk: _Walk, depth: int, build: Callable[[int], dict[str, object]]) -> dict[str, object]:
-    """Memoized, cycle-safe, budgeted structural expansion of one object."""
+    """Memoized, cycle-safe, budgeted structural expansion of one object.
+
+    A second reach of an already-expanded object returns a BACK-REFERENCE rather than
+    the record again. Returning the record re-serialised the whole subtree at every
+    occurrence — a DAG written out as a tree — which is how one ``click.Command``
+    reference produced a 668 MiB preimage from 425 objects. The soundness argument is
+    the one the ``cycle`` arm already relies on: the object's full structure is in the
+    preimage exactly once, under a stated ordinal, so any change to it still moves the
+    digest; the back-reference records only WHERE in the graph the sharing occurs.
+    """
     key = id(value)
-    cached = walk.memo.get(key)
-    if cached is not None:
-        return cached
+    seen = walk.memo.get(key)
+    if seen is not None:
+        # The back-reference carries the object's full STRUCTURAL HASH, not just a
+        # pointer to where the record was emitted. Without ``h`` the back-reference
+        # depends on the inline record surviving, and it does not always: the walk
+        # reaches some objects twice and keeps only the second result (measured —
+        # ``_instance_identity`` expanded ``__wrapped__`` once from the instance dict
+        # and again explicitly, and the back-reference OVERWROTE the real body, so an
+        # ``@lru_cache`` helper silently collided). A guard that discards a subtree
+        # (``_contents``, ``_reduced_state``) can drop one the same way. Keying the
+        # hash makes every back-reference discriminate on its own.
+        ordinal, digest = seen
+        return {"t": "seen", "n": ordinal, "h": digest, **_named(value)}
     if key in walk.active:
         # A reference cycle. The back-edge carries the NAME only; the object's own
         # structure is already being expanded higher up this same path, so the
@@ -130,13 +161,22 @@ def _expanded(value: object, walk: _Walk, depth: int, build: Callable[[int], dic
     if walk.budget <= 0:
         return {"t": "budget-exhausted", **_named(value)}
     walk.budget -= 1
+    ordinal = walk.ordinal
+    walk.ordinal += 1
     walk.active.add(key)
     try:
         record = build(depth)
     finally:
         walk.active.discard(key)
     walk.alive.append(value)
-    walk.memo[key] = record
+    # Hashed BEFORE the ordinal is attached, so ``h`` is a pure structural digest of
+    # the object and carries no traversal-position information.
+    walk.memo[key] = (ordinal, hashlib.sha256(_canonical_json(record).encode("utf-8")).hexdigest())
+    # The ordinal binds every back-reference to exactly this expansion, so two
+    # same-named objects cannot share one. It makes the digest sensitive to TRAVERSAL
+    # ORDER, which is why every container is now walked in a process-stable order —
+    # see ``_set_order_key``.
+    record["n"] = ordinal
     return record
 
 
@@ -201,6 +241,39 @@ def _is_structurally_opaque(value: object) -> bool:
     if not isinstance(module, str) or not module:
         return False
     return module.split(".", 1)[0] in _OPAQUE_PACKAGES
+
+
+def _snapshot(items: Callable[[], Iterable[Any]]) -> list[Any]:
+    """Materialise a container's members BEFORE recursing into any of them.
+
+    Expanding a member can WRITE to the container being iterated. The measured case is
+    an ordinary idiom — a self-referential singleton, ``Policy.DEFAULT = Policy(1)``,
+    which ``rich.console.Console`` also uses: expanding ``DEFAULT`` reaches
+    ``__reduce_ex__(2)``, which asks ``copyreg._slotnames``, which writes
+    ``__slotnames__`` into ``vars(Policy)`` — the very dict the class walk is iterating.
+    ``RuntimeError: dictionary changed size during iteration``, out of ``fingerprint()``.
+
+    Round 4 filtered ``__slotnames__` out of the class record's OUTPUT and left the
+    WRITE in place, so it treated the symptom. The rule is the fix: never hold a live
+    iterator over a container across a recursive expansion. Applied to every container
+    the walk descends into, not only to the one that was measured.
+    """
+    return list(items())
+
+
+def _set_order_key(value: object) -> str:
+    """A cheap, process-STABLE ordering key for set members, computed without recursing.
+
+    Set iteration order depends on hash values, which for ``str`` follow
+    ``PYTHONHASHSEED`` and for plain objects follow allocation. That never mattered
+    while records were shared by value — the members were sorted by canonical JSON
+    afterwards, so the output was order-independent either way. It matters NOW: with
+    back-references, WHICH occurrence carries the full record is decided by traversal
+    order, so an unstable traversal would make the digest differ between processes.
+    Sorting the members first makes the traversal deterministic; the post-recursion
+    sort by canonical JSON is still applied, so the OUTPUT stays canonical regardless.
+    """
+    return _canonical_json([type(value).__name__, _named(value), _safe_repr(value)])
 
 
 def _contents(build: Callable[[], object]) -> object:
@@ -322,7 +395,9 @@ def _seed_value_identity(value: object, walk: _Walk | None = None, _depth: int =
             value,
             {
                 "t": type(value).__name__,
-                "v": _contents(lambda: [_seed_value_identity(v, walk, d) for v in value]),
+                # SNAPSHOT before recursing: expanding a member can WRITE to the
+                # container being iterated (see ``_snapshot``).
+                "v": _contents(lambda: [_seed_value_identity(v, walk, d) for v in _snapshot(lambda: value)]),
             },
             walk,
             d,
@@ -332,7 +407,18 @@ def _seed_value_identity(value: object, walk: _Walk | None = None, _depth: int =
             value,
             {
                 "t": type(value).__name__,
-                "v": _contents(lambda: sorted((_seed_value_identity(v, walk, d) for v in value), key=_canonical_json)),
+                # Members are sorted BEFORE recursion, so traversal is process-stable
+                # and a back-reference lands in the same place every run; the records
+                # are sorted again AFTER, so the emitted order stays canonical.
+                "v": _contents(
+                    lambda: sorted(
+                        (
+                            _seed_value_identity(v, walk, d)
+                            for v in sorted(_snapshot(lambda: value), key=_set_order_key)
+                        ),
+                        key=_canonical_json,
+                    )
+                ),
             },
             walk,
             d,
@@ -354,7 +440,7 @@ def _seed_value_identity(value: object, walk: _Walk | None = None, _depth: int =
                     lambda: sorted(
                         (
                             [_seed_value_identity(k, walk, d), _seed_value_identity(v, walk, d)]
-                            for k, v in value.items()
+                            for k, v in _snapshot(value.items)
                         ),
                         key=_canonical_json,
                     )
@@ -608,9 +694,14 @@ def _instance_identity(value: object, walk: _Walk, depth: int) -> dict[str, obje
     state: dict[str, object] = {}
     instance_dict = getattr(value, "__dict__", None)
     if isinstance(instance_dict, dict):
-        for key, item in instance_dict.items():
+        # SNAPSHOT: expanding a value can set another attribute on the same instance.
+        for key, item in _snapshot(instance_dict.items):
             state[str(key)] = _seed_value_identity(item, walk, depth)
     for slot in _slot_names(type(value)):
+        if slot in state:
+            # Already carried by ``__dict__``; re-expanding would replace the inline
+            # record with a back-reference and move the structure out of this subtree.
+            continue
         try:
             state[slot] = _seed_value_identity(getattr(value, slot), walk, depth)
         except AttributeError:
@@ -628,7 +719,7 @@ def _instance_identity(value: object, walk: _Walk, depth: int) -> dict[str, obje
         wrapped = getattr(value, "__wrapped__", None)
     except Exception:  # noqa: BLE001 — a hostile __getattr__ must not break the digest
         wrapped = None
-    if wrapped is not None:
+    if wrapped is not None and "__wrapped__" not in state:
         state["__wrapped__"] = _seed_value_identity(wrapped, walk, depth)
     return {
         "t": "instance",
@@ -639,21 +730,44 @@ def _instance_identity(value: object, walk: _Walk, depth: int) -> dict[str, obje
     }
 
 
+def _reachable_names(code: CodeType) -> tuple[str, ...]:
+    """Every global name the function can reach — ITS ``co_names`` plus every nested one.
+
+    A ``lambda``, a generator expression and an inner ``def`` each compile to their own
+    code object in ``co_consts``, and the names they use live in THAT object's
+    ``co_names``, not the outer one's. Resolving globals against the outer names alone
+    left a helper used only from inside one of them as a bare name in the preimage, so
+    two behaviourally different grammars shared a cache key. Measured COLLIDE for a
+    genexp and for an inner ``def``; the control (a direct call) discriminated.
+
+    Returned SORTED, so the order the globals are expanded in — which now decides where
+    a back-reference points — is fixed by the name set and not by compilation order.
+    """
+    found: set[str] = set()
+    stack = [code]
+    while stack:
+        current = stack.pop()
+        found.update(current.co_names)
+        stack.extend(const for const in current.co_consts if isinstance(const, CodeType))
+    return tuple(sorted(found))
+
+
 def _function_identity(fn: object, walk: _Walk, depth: int) -> dict[str, object]:
     """Structural record for a function: its code, its bindings, and its globals."""
     code = _code_of(fn)
     assert code is not None  # callers gate on _has_code
     globals_map = getattr(fn, "__globals__", None)
     globals_record: dict[str, object] = {}
+    names = _reachable_names(code)
     if isinstance(globals_map, dict):
-        for name in code.co_names:
+        for name in names:
             if name not in globals_map:
                 globals_record[name] = {"t": "missing-global"}
                 continue
             target = globals_map[name]
             if isinstance(target, ModuleType) and not _is_structurally_opaque_module(target):
                 # ``H.decide()`` — resolve the ATTRIBUTES this function names.
-                globals_record[name] = _module_identity(target, code.co_names, walk, depth)
+                globals_record[name] = _module_identity(target, names, walk, depth)
             else:
                 globals_record[name] = _seed_value_identity(target, walk, depth)
     return {
@@ -779,7 +893,13 @@ def _class_identity(cls: type, walk: _Walk, depth: int) -> dict[str, object]:
     which ``_slot_names`` and these very members already key, so dropping it loses
     nothing.
     """
-    members = {str(k): _seed_value_identity(v, walk, depth) for k, v in vars(cls).items() if k not in _CLASS_NOISE}
+    # SNAPSHOT: ``vars(cls)`` is the LIVE class dict, and expanding a member writes to
+    # it — ``Policy.DEFAULT = Policy(1)`` reaches ``copyreg._slotnames``, which inserts
+    # ``__slotnames__`` into this very dict mid-iteration. Round 4 filtered the key out
+    # of the output and left the write, so the crash survived.
+    members = {
+        str(k): _seed_value_identity(v, walk, depth) for k, v in _snapshot(vars(cls).items) if k not in _CLASS_NOISE
+    }
     return {
         "kind": "class",
         **_named(cls),
@@ -835,7 +955,7 @@ def _closure_identity(seed: object, walk: _Walk | None = None, _depth: int = 0) 
     if walk is None:
         walk = _Walk()
     items: list[dict[str, object]] = []
-    for cell in getattr(seed, "__closure__", None) or ():
+    for cell in _snapshot(lambda: getattr(seed, "__closure__", None) or ()):
         try:
             items.append(_seed_value_identity(cell.cell_contents, walk, _depth))
         except ValueError:

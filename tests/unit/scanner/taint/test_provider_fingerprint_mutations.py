@@ -7,6 +7,7 @@ it. The builtin literal is pinned so a REGISTRY_VERSION drift in S0 is loud."""
 
 from __future__ import annotations
 
+import os
 import pathlib
 import re
 import subprocess
@@ -880,6 +881,39 @@ _CARRIERS.update(
 )
 
 
+# --- Round 5: a helper reachable ONLY from a NESTED code object -------------------
+#
+# A lambda, a generator expression and an inner `def` each compile to their OWN code
+# object in `co_consts`, and the names they use live in THAT object's `co_names`.
+# Globals were resolved against the outer `co_names` alone, so a helper called only
+# from inside one of them entered the preimage as a bare NAME. Measured COLLIDE.
+
+_NESTED_GLOBAL_HEAD = (
+    "from wardline.core.taints import TaintState\n"
+    "from wardline.scanner.taint.provider import FunctionTaint\n"
+    "def _rank(n):\n    return TaintState.{lvl}\n"
+)
+
+_CARRIERS.update(
+    {
+        "nested_lambda_only_global": _NESTED_GLOBAL_HEAD
+        + "def seed(levels):\n    return FunctionTaint((lambda n: _rank(n))(1), levels['to_level'])\n",
+        "nested_genexp_only_global": _NESTED_GLOBAL_HEAD
+        + "def seed(levels):\n    return FunctionTaint(next(_rank(x) for x in [1]), levels['to_level'])\n",
+        "nested_listcomp_only_global": _NESTED_GLOBAL_HEAD
+        + "def seed(levels):\n    return FunctionTaint([_rank(x) for x in [1]][0], levels['to_level'])\n",
+        "nested_inner_def_only_global": _NESTED_GLOBAL_HEAD + "def seed(levels):\n"
+        "    def _i(n):\n        return _rank(n)\n"
+        "    return FunctionTaint(_i(1), levels['to_level'])\n",
+        "nested_two_levels_deep_global": _NESTED_GLOBAL_HEAD + "def seed(levels):\n"
+        "    def _o():\n"
+        "        def _i():\n            return _rank(1)\n"
+        "        return _i()\n"
+        "    return FunctionTaint(_o(), levels['to_level'])\n",
+    }
+)
+
+
 def _carrier_pack(src: str, lvl: str) -> dict:
     ns: dict = {"__name__": "mypack.grammar"}
     exec(compile(src.format(lvl=lvl), "mypack/grammar.py", "exec"), ns)  # noqa: S102
@@ -1486,4 +1520,201 @@ def test_two_hop_fenced_closure_capture_moves_the_fingerprint() -> None:
         "seed.__dict__['stack'] = OUTER\n"
     )
     a, b = _carrier_pack(src, "EXTERNAL_RAW"), _carrier_pack(src, "ASSURED")
+    assert _fp(_bt(seed=a["seed"])) != _fp(_bt(seed=b["seed"]))
+
+
+# --- Round 5, item 1: the traversal WRITING to the container it is reading ---------
+
+
+_SELF_REF_SRC = (
+    "from wardline.core.taints import TaintState\n"
+    "from wardline.scanner.taint.provider import FunctionTaint\n"
+    "class Policy:\n"
+    "    def __init__(self, n):\n        self.n = n\n"
+    "    def decide(self):\n        return TaintState.{lvl}\n"
+    "Policy.DEFAULT = Policy(1)\n"
+    "def seed(levels):\n    return FunctionTaint(Policy.DEFAULT.decide(), levels['to_level'])\n"
+)
+
+
+def test_self_referential_class_singleton_does_not_crash_the_digest() -> None:
+    """`Policy.DEFAULT = Policy(1)` — an ordinary singleton idiom, not a pathology.
+
+    Expanding `DEFAULT` reaches `__reduce_ex__(2)` -> `copyreg._slotnames`, which
+    WRITES `__slotnames__` into `vars(Policy)` — the dict `_class_identity` is
+    iterating. `RuntimeError: dictionary changed size during iteration`, out of
+    `fingerprint()`.
+
+    Round 4 filtered `__slotnames__` out of the class record's OUTPUT and left the
+    WRITE in place, so it treated the symptom and the crash survived unchanged. The
+    fix is to snapshot every container before recursing into it.
+    """
+    pack = _carrier_pack(_SELF_REF_SRC, "EXTERNAL_RAW")
+    assert pack["Policy"].DEFAULT.__class__ is pack["Policy"]  # genuinely self-referential
+    digest = _grammar_digest((_bt(seed=pack["seed"]),))
+    assert re.fullmatch(r"[0-9a-f]{64}", digest)
+    assert "__slotnames__" in vars(pack["Policy"]), "copyreg no longer writes; the guard may be stale"
+    assert digest == _grammar_digest((_bt(seed=pack["seed"]),))  # repeatable in-process
+
+
+def test_self_referential_class_singleton_still_discriminates() -> None:
+    a, b = _carrier_pack(_SELF_REF_SRC, "EXTERNAL_RAW"), _carrier_pack(_SELF_REF_SRC, "ASSURED")
+    assert _fp(_bt(seed=a["seed"])) != _fp(_bt(seed=b["seed"]))
+
+
+def test_instance_dict_written_during_its_own_expansion_does_not_crash() -> None:
+    """The same class of defect from the INSTANCE side: expanding a value sets a
+    further attribute on the instance whose `__dict__` is being iterated."""
+    ns: dict = {"__name__": "mypack.grammar"}
+    exec(  # noqa: S102
+        compile(
+            "from wardline.core.taints import TaintState\n"
+            "from wardline.scanner.taint.provider import FunctionTaint\n"
+            "class Sneaky:\n"
+            "    def __reduce__(self):\n"
+            "        self.owner.late = 1\n"
+            "        return (Sneaky, ())\n"
+            "class Box:\n    pass\n"
+            "BOX = Box()\n"
+            "S = Sneaky()\n"
+            "S.owner = BOX\n"
+            "BOX.s = S\n"
+            "def seed(levels):\n    return FunctionTaint(TaintState.EXTERNAL_RAW, levels['to_level'])\n"
+            "seed.__dict__['box'] = BOX\n",
+            "mypack/grammar.py",
+            "exec",
+        ),
+        ns,
+    )
+    assert re.fullmatch(r"[0-9a-f]{64}", _grammar_digest((_bt(seed=ns["seed"]),)))
+
+
+# --- Round 5, item 2: the DAG was serialised as a TREE ----------------------------
+
+
+def _shared_dag_pack(depth: int, lvl: str = "EXTERNAL_RAW") -> dict:
+    """`depth` classes, each holding TWO references to the one below it.
+
+    Without back-references the bottom class is written out 2**depth times. Measured
+    on round 4 at depth 14: **46 objects, 32 MiB of preimage** — which is also the
+    proof that `_MAX_EXPANDED_NODES` (20 000) bounds the node count and therefore
+    bounds nothing at all about cost.
+    """
+    src = (
+        "from wardline.core.taints import TaintState\n"
+        "from wardline.scanner.taint.provider import FunctionTaint\n"
+        f"class L0:\n    def decide(self):\n        return TaintState.{lvl}\n"
+    )
+    for i in range(1, depth + 1):
+        src += f"class L{i}:\n    X = L{i - 1}\n    Y = L{i - 1}\n"
+    src += (
+        "def seed(levels):\n"
+        f"    return FunctionTaint(TaintState.EXTERNAL_RAW if L{depth} else None, levels['to_level'])\n"
+    )
+    ns: dict = {"__name__": "mypack.grammar"}
+    exec(compile(src, "mypack/grammar.py", "exec"), ns)  # noqa: S102
+    return ns
+
+
+def test_shared_subgraph_is_not_re_serialised_at_every_occurrence() -> None:
+    blob = _canonical_json(_seed_identity(_shared_dag_pack(14)["seed"]))
+    assert len(blob) < 256 * 1024, f"shared DAG re-serialised as a tree: {len(blob) / 1024:.0f} KiB"
+
+
+def test_shared_subgraph_cost_stays_bounded_as_depth_grows() -> None:
+    """Linear in DISTINCT objects, not exponential in the paths to them."""
+    small = len(_canonical_json(_seed_identity(_shared_dag_pack(14)["seed"])))
+    large = len(_canonical_json(_seed_identity(_shared_dag_pack(28)["seed"])))
+    assert large < small * 4, f"cost grew {large / small:.1f}x for 2x the depth"
+
+
+def test_shared_subgraph_still_discriminates_on_the_shared_body() -> None:
+    """The whole point: cheaper must not mean blinder."""
+    a, b = _shared_dag_pack(14), _shared_dag_pack(14, lvl="ASSURED")
+    assert _fp(_bt(seed=a["seed"])) != _fp(_bt(seed=b["seed"]))
+
+
+def test_back_reference_carries_a_structural_hash_not_just_a_pointer() -> None:
+    """A back-reference must discriminate on its own.
+
+    The walk reaches some objects twice and keeps only the SECOND result:
+    `_instance_identity` expanded `__wrapped__` from the instance dict and then again
+    explicitly, and the back-reference overwrote the real body — an `@lru_cache`
+    helper silently collided. A guard that discards a subtree can drop an inline
+    record the same way. Carrying the object's structural hash in every back-reference
+    removes the dependence on where the full record ended up.
+    """
+    record = _seed_identity(_shared_dag_pack(3)["seed"])["globals"]["L3"]
+    inner = record["members"]["Y"]
+    assert inner["t"] == "seen"
+    assert re.fullmatch(r"[0-9a-f]{64}", inner["h"])
+    assert isinstance(inner["n"], int)
+    # X is the first reach and carries the FULL record; Y is the back-reference.
+    assert record["members"]["X"]["kind"] == "class"
+
+
+def test_lru_cache_helper_survives_the_double_expansion_of_wrapped() -> None:
+    """The measured regression, pinned at the shape that produced it."""
+    src = _CARRIERS["lru_cache_wrapped_helper"]
+    a, b = _carrier_pack(src, "EXTERNAL_RAW"), _carrier_pack(src, "ASSURED")
+    state = _seed_identity(a["seed"])["globals"]["_helper"]["state"]
+    assert "__wrapped__" in state
+    assert _fp(_bt(seed=a["seed"])) != _fp(_bt(seed=b["seed"]))
+
+
+# --- Round 5: traversal order must be process-stable, because placement now matters -
+
+
+def _set_dag_pack(lvl: str = "EXTERNAL_RAW") -> dict:
+    """A frozenset of pack classes that all reach ONE shared helper.
+
+    Set iteration order follows hash values — `PYTHONHASHSEED` for strings, allocation
+    for objects. That never mattered while records were shared by value, because the
+    members were sorted by canonical JSON afterwards. It matters now: with back-
+    references, WHICH member carries the full record is decided by traversal order.
+    Measured without the pre-sort: two different digests across five fresh processes.
+    """
+    src = (
+        "from wardline.core.taints import TaintState\n"
+        "from wardline.scanner.taint.provider import FunctionTaint\n"
+        f"def _shared():\n    return TaintState.{lvl}\n"
+    )
+    for i in range(12):
+        src += f"class C{i}:\n    H = staticmethod(_shared)\n    TAG = 'name{i}'\n"
+    src += "BOX = frozenset([" + ", ".join(f"C{i}" for i in range(12)) + "])\n"
+    src += "STRS = frozenset(['alpha','beta','gamma','delta','epsilon','zeta','eta','theta'])\n"
+    src += (
+        "def seed(levels):\n    return FunctionTaint(TaintState.EXTERNAL_RAW, levels['to_level'])\n"
+        "seed.__dict__['box'] = BOX\nseed.__dict__['strs'] = STRS\n"
+    )
+    ns: dict = {"__name__": "mypack.grammar"}
+    exec(compile(src, "mypack/grammar.py", "exec"), ns)  # noqa: S102
+    return ns
+
+
+def test_set_of_shared_objects_digest_is_identical_in_fresh_processes() -> None:
+    here = str(pathlib.Path(__file__).parent)
+    src = (
+        "import sys;"
+        f"sys.path.insert(0, {here!r});"
+        "import test_provider_fingerprint_mutations as T;"
+        "from wardline.scanner.taint.decorator_provider import _grammar_digest as D;"
+        "print(D((T._bt(seed=T._set_dag_pack()['seed']),)))"
+    )
+    outs = {
+        subprocess.run(  # noqa: S603
+            [sys.executable, "-c", src],
+            capture_output=True,
+            text=True,
+            check=True,
+            env={**os.environ, "PYTHONHASHSEED": "random"},
+        ).stdout.strip()
+        for _ in range(3)
+    }
+    assert len(outs) == 1, f"set traversal order leaked into the digest: {outs}"
+    assert outs == {_grammar_digest((_bt(seed=_set_dag_pack()["seed"]),))}
+
+
+def test_set_of_shared_objects_still_discriminates() -> None:
+    a, b = _set_dag_pack(), _set_dag_pack(lvl="ASSURED")
     assert _fp(_bt(seed=a["seed"])) != _fp(_bt(seed=b["seed"]))
