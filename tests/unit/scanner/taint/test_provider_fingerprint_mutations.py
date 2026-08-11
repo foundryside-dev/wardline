@@ -2251,8 +2251,10 @@ def test_module_importing_pack_stays_cacheable() -> None:
 
     This is the shape that distinguishes the two candidate scopings: deriving pack roots
     from the seed's module imports closes the second-package case but makes THIS pack
-    uncacheable, because `yaml.reader` does computed dispatch five hops down. The
-    shipped guard gates on both the surface root AND the hop distance, so both hold.
+    uncacheable, because `yaml.reader` does computed dispatch five hops down. The hop
+    bound that once carried this was deleted in round 10 (it was inert in the direction
+    it was justified for); what holds it now is the DISTRIBUTION gate — `yaml` ships as
+    a different distribution than the grammar, so it is not the pack's own surface.
     """
     yaml = pytest.importorskip("yaml")
     pack = _r7_pack(
@@ -2422,3 +2424,230 @@ def _library_digest(module_name: str, attribute: str | None = None) -> str:
         extra={"M": target},
     )
     return _grammar_digest((_bt(seed=pack["seed"]),))
+
+
+# --- Round 11: the SEED-reach axis, and the level above it ------------------------
+#
+# Round 10's 48-row cross-product varied how the DISPATCHER reaches its module and
+# assumed, in every single row, that the SEED holds the second package as a ModuleType
+# in the seed's own globals. That assumption was the defect: read across
+# {seed-reach} x {dispatch-form} x {wrapping}, 24 of 30 cells collided, and the worst
+# cell was the plainest import spelling in Python.
+
+
+def _r11_dispatcher(form: str, lvl: str) -> types.ModuleType:
+    mod = types.ModuleType("otherpkg.mod")
+    helper = _dispatch_helpers(lvl, "otherpkg.impl")
+    mod.__dict__["HELPERS"] = helper
+    if form == "globals":
+        mod.__dict__["for_assured"] = helper.for_assured
+    exec(  # noqa: S102
+        compile("def pick():\n    H = HELPERS\n" + textwrap.indent(_DISPATCH_FORMS[form], "    "), "d.py", "exec"),
+        mod.__dict__,
+    )
+    mod.__dict__["pick"].__module__ = "otherpkg.mod"
+    return mod
+
+
+def _r11_seed(seed_reach: str, form: str, wrapping: str, lvl: str) -> object:
+    mod = _r11_dispatcher(form, lvl)
+    ns: dict = {"__name__": "mypack.grammar"}
+    if seed_reach == "module_in_globals":
+        ns["sibling"] = mod
+        src = _FT + "def seed(levels):\n    return FunctionTaint(sibling.pick(), levels['to_level'])\n"
+    elif seed_reach == "from_import":
+        ns["pick"] = mod.__dict__["pick"]
+        src = _FT + "def seed(levels):\n    return FunctionTaint(pick(), levels['to_level'])\n"
+    elif seed_reach == "closure_cell":
+        inner = "    def seed(levels):\n        return FunctionTaint(sibling.pick(), levels['to_level'])\n"
+        src = _FT + "def mk(sibling):\n" + inner + "    return seed\n"
+    elif seed_reach == "plain_list":
+        ns["BOX"] = [mod]
+        src = _FT + "def seed(levels):\n    return FunctionTaint(BOX[0].pick(), levels['to_level'])\n"
+    else:
+        src = (
+            _FT + "class Holder:\n    pass\ndef seed(levels):\n"
+            "    return FunctionTaint(Holder.MOD.pick(), levels['to_level'])\n"
+        )
+    exec(compile(src, "m.py", "exec"), ns)  # noqa: S102
+    if seed_reach == "closure_cell":
+        seed = ns["mk"](mod)
+    else:
+        if seed_reach == "class_attribute":
+            ns["Holder"].MOD = mod
+        seed = ns["seed"]
+    return functools.partial(seed) if wrapping == "partial" else seed
+
+
+# Seed-reach mechanisms the surface-root arm CAN see: the seed's own globals hold
+# either the module or a member of it.
+_SEED_REACH_COVERED = ("module_in_globals", "from_import")
+# ... and the ones it cannot: the module is reachable but never named in the seed's
+# globals, so there is no demand information at all. Residual R2's static case, whose
+# only fix is the 207 MB namespace walk.
+_SEED_REACH_UNCOVERED = ("closure_cell", "plain_list", "class_attribute")
+
+_SEED_REACH_CELLS = [
+    (reach, form, wrapping)
+    for reach in _SEED_REACH_COVERED + _SEED_REACH_UNCOVERED
+    for form in sorted(_DISPATCH_FORMS)
+    for wrapping in ("bare", "partial")
+]
+
+
+@pytest.mark.parametrize(("seed_reach", "form", "wrapping"), _SEED_REACH_CELLS)
+def test_seed_reach_axis_behaves_as_classified(seed_reach: str, form: str, wrapping: str) -> None:
+    """Both directions, per cell, with the behaviour proven by CALLING the seeds.
+
+    `from_import` — `from otherpkg.mod import pick` — fired 0 of 6 before this round,
+    while `import otherpkg.mod as sibling` fired 6 of 6 for identical behaviour: the
+    surface-root arm depended on the IMPORT SPELLING. The uncovered three are pinned as
+    known-collide so the classification cannot rot into a silent regression.
+    """
+    left_seed = _r11_seed(seed_reach, form, wrapping, "EXTERNAL_RAW")
+    right_seed = _r11_seed(seed_reach, form, wrapping, "ASSURED")
+    levels = {"to_level": TaintState.GUARDED}
+    # The control that makes this a collision test rather than a token comparison.
+    assert left_seed(levels).body_taint is TaintState.EXTERNAL_RAW
+    assert right_seed(levels).body_taint is TaintState.ASSURED
+    left, right = _fp(_bt(seed=left_seed)), _fp(_bt(seed=right_seed))
+    if seed_reach in _SEED_REACH_COVERED:
+        assert "+grammar:uncacheable-" in left, f"{seed_reach}/{form}/{wrapping} did not fail closed"
+        assert left != right
+    else:
+        assert "uncacheable" not in left
+        assert left == right, f"{seed_reach} now discriminates — promote it out of R2 and update the residual"
+
+
+# --- The level ABOVE the seed: how the GRAMMAR reaches the seed --------------------
+
+
+def _seed_shape(kind: str, lvl: str) -> object:
+    ns: dict = {"__name__": "mypack.grammar", "H": _dispatch_helpers(lvl, "otherpkg.impl")}
+    bodies = {
+        "callable_object": "class Seeder:\n    def __call__(self, levels):\n"
+        "        fn = getattr(H, 'for_' + 'assured', H.default)\n"
+        "        return FunctionTaint(fn(), levels['to_level'])\n"
+        "seed = Seeder()\n",
+        "bound_method": "class Seeder:\n    def seed(self, levels):\n"
+        "        fn = getattr(H, 'for_' + 'assured', H.default)\n"
+        "        return FunctionTaint(fn(), levels['to_level'])\n"
+        "S = Seeder()\nseed = S.seed\n",
+        "partial_bound_arg": "def _mk(pick, levels):\n    return FunctionTaint(pick(), levels['to_level'])\n"
+        "def pick():\n    fn = getattr(H, 'for_' + 'assured', H.default)\n    return fn()\n",
+    }
+    exec(compile(_FT + bodies[kind], "m.py", "exec"), ns)  # noqa: S102
+    if kind == "partial_bound_arg":
+        return functools.partial(ns["_mk"], ns["pick"])
+    return ns["seed"]
+
+
+@pytest.mark.parametrize("kind", ["callable_object", "bound_method", "partial_bound_arg"])
+def test_grammar_to_seed_level_is_covered(kind: str) -> None:
+    """The next level up, asked explicitly rather than left to the next verification.
+
+    This is the second time a fix was correct at one level and the same hole reappeared
+    one level up — dispatcher-reach, then seed-reach. So: how does the GRAMMAR reach the
+    seed? A callable object, a bound method, and a `functools.partial` whose BOUND
+    ARGUMENT is the dispatcher all reach `_function_identity` with a pack module root
+    and fail closed.
+
+    A fourth shape — a factory that performs the dispatch at grammar-BUILD time and
+    captures the resolved target in the seed's closure — is measured DIFF without the
+    guard, and correctly so: the computed lookup already happened, and its RESULT is in
+    the object graph where the digest keys it structurally.
+    """
+    left = _fp(_bt(seed=_seed_shape(kind, "EXTERNAL_RAW")))
+    assert "+grammar:uncacheable-" in left
+    assert left != _fp(_bt(seed=_seed_shape(kind, "ASSURED")))
+
+
+def test_factory_resolved_dispatch_discriminates_without_the_guard() -> None:
+    """The one next-level shape that needs no guard, and why."""
+
+    def mk(lvl: str) -> object:
+        ns: dict = {"__name__": "mypack.grammar", "H": _dispatch_helpers(lvl, "otherpkg.impl")}
+        exec(  # noqa: S102
+            compile(
+                _FT + "def make():\n    fn = getattr(H, 'for_' + 'assured', H.default)\n"
+                "    def seed(levels):\n        return FunctionTaint(fn(), levels['to_level'])\n    return seed\n",
+                "m.py",
+                "exec",
+            ),
+            ns,
+        )
+        return ns["make"]()
+
+    left, right = _fp(_bt(seed=mk("EXTERNAL_RAW"))), _fp(_bt(seed=mk("ASSURED")))
+    assert "uncacheable" not in left, "the resolved target is in the graph; no guard needed"
+    assert left != right
+
+
+# --- Round 11, CORRECTION 2: rows that actually CROSS the distribution gate --------
+#
+# The 48-row fire table does not exercise `_is_foreign_distribution` at all: the
+# fixture's `otherpkg` is an `exec`-ed module with no metadata, so deleting the gate
+# entirely leaves 8/8 firing. That is a canary that cannot die, guarding the newest and
+# most load-bearing piece of the design. These rows force the metadata.
+
+
+def _second_package_pack(lvl: str) -> object:
+    """A seed in `mypack` handing off to a dispatcher in `otherpkg`."""
+    return _r11_seed("module_in_globals", "getattr", "bare", lvl)
+
+
+@pytest.fixture
+def _distribution_map(monkeypatch: pytest.MonkeyPatch):  # noqa: ANN202
+    def install(mapping: dict[str, tuple[str, ...]]) -> None:
+        monkeypatch.setattr(dp, "_PACKAGE_DISTRIBUTIONS", mapping)
+
+    return install
+
+
+def test_second_package_in_the_SAME_distribution_fires(_distribution_map) -> None:  # noqa: ANN001
+    """One wheel shipping two top-level packages is the pack's own surface."""
+    _distribution_map({"mypack": ("acme-trustpack",), "otherpkg": ("acme-trustpack",)})
+    assert not dp._is_foreign_distribution("otherpkg", frozenset({"mypack"}))
+    assert "+grammar:uncacheable-" in _fp(_bt(seed=_second_package_pack("EXTERNAL_RAW")))
+
+
+def test_second_package_in_a_DIFFERENT_distribution_does_not_fire(_distribution_map) -> None:  # noqa: ANN001
+    """Residual D4, pinned as a LIVE under-discrimination rather than described as safe.
+
+    Nothing in `config.py:186-202` constrains how a pack lays out its distributions, so
+    a pack shipped separately from its own second package is a supported layout that
+    this gate cannot see. Measured: the two grammars share one fingerprint.
+    """
+    _distribution_map({"mypack": ("acme-trustpack",), "otherpkg": ("acme-extras",)})
+    assert dp._is_foreign_distribution("otherpkg", frozenset({"mypack"}))
+    left = _fp(_bt(seed=_second_package_pack("EXTERNAL_RAW")))
+    assert "uncacheable" not in left
+    assert left == _fp(_bt(seed=_second_package_pack("ASSURED"))), "D4 closed — update the residual"
+
+
+def test_metadata_bearing_root_with_an_uninstalled_grammar_does_not_fire(_distribution_map) -> None:  # noqa: ANN001
+    """The branch that used to fall out of `isdisjoint` on an empty set, now explicit.
+
+    It is a deliberate trade in BOTH directions: it is what keeps an ordinary
+    `import requests` pack warm, and it is why a pack that is not itself an installed
+    distribution cannot claim an installed second package. Round 10 called this "fails
+    closed by construction"; that was false in the under-discrimination direction.
+    """
+    _distribution_map({"otherpkg": ("acme-extras",)})  # the grammar has NO metadata
+    assert dp._is_foreign_distribution("otherpkg", frozenset({"mypack"}))
+    assert "uncacheable" not in _fp(_bt(seed=_second_package_pack("EXTERNAL_RAW")))
+
+
+def test_the_distribution_gate_canary_can_die(_distribution_map) -> None:  # noqa: ANN001
+    """Neutering the gate must FLIP the different-distribution row.
+
+    Without this, `_is_foreign_distribution` could be deleted outright and every fire
+    row would keep passing — which is exactly the state round 10 shipped.
+    """
+    _distribution_map({"mypack": ("acme-trustpack",), "otherpkg": ("acme-extras",)})
+    assert "uncacheable" not in _fp(_bt(seed=_second_package_pack("EXTERNAL_RAW")))
+    with pytest.MonkeyPatch.context() as patched:
+        patched.setattr(dp, "_is_foreign_distribution", lambda *_a, **_k: False)
+        assert "+grammar:uncacheable-" in _fp(_bt(seed=_second_package_pack("EXTERNAL_RAW"))), (
+            "the distribution gate is not load-bearing in this row"
+        )

@@ -1025,9 +1025,18 @@ def _is_foreign_distribution(root: str, pack_roots: frozenset[str]) -> bool:
     five of seven common libraries uncacheable the moment a pack used the ordinary
     ``import requests`` / ``requests.get(...)`` idiom.
 
-    FAILS CLOSED: a root with no distribution metadata — a local source tree, an
-    ``exec``-ed module — is NOT foreign, so it is treated as the pack's own and its
-    computed dispatch still fires.
+    It fails closed in ONE direction only, and the other direction is a live residual
+    (D4), not an oversight — correcting an earlier claim that it "fails closed by
+    construction":
+
+    * a root with **no distribution metadata** — a local source tree, an ``exec``-ed
+      module — is NOT foreign, so it is treated as the pack's own and still fires;
+    * a root that HAS metadata while the grammar has none is read as **foreign**. That
+      is a deliberate trade, written out explicitly below rather than falling out of
+      ``isdisjoint`` on an empty set: it is what keeps an ordinary
+      ``import requests`` pack warm, and it is simultaneously why a pack shipped as a
+      distribution SEPARATE from its own second package does not fire. Measured: that
+      configuration collides 8/8, and nothing in ``config.py`` constrains the layout.
     """
     root_dists = set(_distributions_for(root))
     if not root_dists:
@@ -1035,6 +1044,11 @@ def _is_foreign_distribution(root: str, pack_roots: frozenset[str]) -> bool:
     pack_dists: set[str] = set()
     for pack_root in pack_roots:
         pack_dists.update(_distributions_for(pack_root))
+    if not pack_dists:
+        # The grammar is not an installed distribution and the root is. Treat it as
+        # third-party. UNDER-DISCRIMINATES for a separately-packaged second package —
+        # residual D4, LIVE.
+        return True
     return root_dists.isdisjoint(pack_dists)
 
 
@@ -1057,10 +1071,23 @@ def _surface_roots(boundary_types: tuple[BoundaryType, ...]) -> frozenset[str]:
             continue
         for name in _reachable_names(code):
             member = globals_map.get(name)
-            if isinstance(member, ModuleType) and not _is_structurally_opaque_module(member):
-                named = str(_probe(member, "__name__") or "")
-                if named:
-                    roots.add(named.split(".", 1)[0])
+            if isinstance(member, ModuleType):
+                if not _is_structurally_opaque_module(member):
+                    named = str(_probe(member, "__name__") or "")
+                    if named:
+                        roots.add(named.split(".", 1)[0])
+                continue
+            # NOT a module: `from otherpkg.mod import pick` binds the FUNCTION, and its
+            # ``__module__`` names the package just as well. Reading only ModuleType
+            # members made the surface-root arm depend on the IMPORT SPELLING — measured,
+            # `from otherpkg.mod import pick` fired 0 of 6 cells while
+            # `import otherpkg.mod as sibling` fired 6 of 6, for identical behaviour.
+            # This is the same reach-agnosticism the DISPATCHER side already had; the
+            # SEED side was still globals-and-ModuleType-only.
+            if member is not None and not _is_structurally_opaque(member):
+                root = _module_root(member)
+                if root:
+                    roots.add(root)
     return frozenset(roots)
 
 
