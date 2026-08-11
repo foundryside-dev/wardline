@@ -55,6 +55,21 @@ population must stay true-positive-dominant.
   that the FP-rate target is met: the labeled FP baseline remains unmeasured. S0 cannot
   be accepted if waiver usage exceeds 5 or if its rule population pushes measured G1
   FP rate above **0.05**.
+- **Reading 2026-08-11 (S0 Task 10) — the FP measurement covers 16 of 27 rules.** Deleting the
+  corpus harness's PREVIEW skip, so preview findings finally enter the reconciliation
+  population, changed the denominator by **zero**: no preview rule fires on any specimen
+  (29 active DEFECTs, all `stable`, `PY-WL-101..110` only — confirmed by review to be genuine
+  rather than a replacement skip). So the corpus's headline **FP rate 0.0 is a claim about the
+  stable rule set alone**, while **11 of 27 builtin rules are preview** — and per PDR-0011
+  preview rules **gate exactly like stable ones**, six of them at ERROR severity.
+  Consequence for this guardrail: G1's ≤ 0.05 target is currently evidenced over a population
+  that **excludes 11 gate-tripping rules**, and PDR-0011's own reversal trigger — defined on the
+  preview FP rate — **cannot fire on evidence that does not exist**. Filed `wardline-74c9a455c5`
+  (P2). This is a **qualification** of the guardrail PRD-0003 criterion 3 uses to judge the Now
+  bet, not a breach reading: no FP rate above 0.05 has been measured on any population.
+  Committed waiver usage remains **0**, re-measured; Task 16 replaced the rule-count-coupled
+  ceiling — which had silently grown 4 → 27, so every new rule handed the repo more suppression
+  headroom as a side effect of improving detection — with a fixed reviewed ceiling of 5.
 
 ### G2 — Soundness / surface integrity (no false green, no policy bypass)
 Zero known fail-open taint holes (untrusted→trusted laundering) **and** zero
@@ -102,6 +117,34 @@ URL trust, fingerprint-suppression misapply).
   `PY-WL-130`, unknown forward marker skew surfaced by
   `WLN-ENGINE-UNKNOWN-MARKER`, and the full local receipt green without changing existing
   valid-marker bytes. Until then G2 is **not at target**.
+- **Reading 2026-08-10 (PDR-0017), recorded late.** PDR-0017 moved the count **1 → 3** and
+  called it a reversal-trigger crossing on a continuously-held target. That reading was
+  declared in the PDR and never written here; it is recorded now for the audit trail, with the
+  correction that it went unlogged for a day. The two siblings were `wardline-b857b50b54`
+  (Rust marker shape) and `wardline-2b2a6cddfa` (unreadable level value).
+- **Reading 2026-08-11 (PDR-0019/PDR-0020): 2 of the 3 closed and VERIFIED; count now 3 open,
+  and PDR-0017's reversal trigger has FIRED.**
+  - *Closed, each verified by the owner-agent on the real CLI rather than from a report:*
+    `wardline-4928b75782` — `@trusted(level="INTEGRAL", audit=True)` moves exit 0/gate PASSED →
+    **exit 1** with `PY-WL-130`; `wardline-2b2a6cddfa` — `@trusted(level=_SVC_LEVEL)` moves
+    exit 0/0 active → **exit 1** with 2 active ERRORs, the seed surviving via form 5 exactly as
+    PDR-0018 required.
+  - *Open at this reading:* `wardline-b857b50b54` (Rust marker shape, from the original three,
+    owns PRD-0003 criterion 6); **`wardline-69a58cb05f`** (NEW — a cross-module re-export of a
+    builtin marker drops the seed with **zero diagnostic channels**, losing `PY-WL-101` and
+    dropping the function into `RAW_ZONE`); **`wardline-70a8bb3875`** (NEW — `--fail-on-inert`
+    silently no-ops on Rust scans, reporting PASSED while reciting the trip condition; G2's
+    *policy-bypass* axis rather than its taint axis).
+  - *Trigger fired:* PDR-0017 pre-committed that a fourth hole **re-baselines PRD-0003 rather
+    than failing it**. That response is executed in PDR-0020. **G2 is not at target and the Now
+    bet cannot be banked.**
+  - *Method note, because it bears on the count's trustworthiness:* the count has now gone
+    1 → 3 → 4+, and both expansions came from adversarial review of work already believed
+    complete — not from new code. PRD-0003's stated assumption that three was all of them is
+    falsified twice over.
+  - *Blast radius, stated once:* every under-discrimination in the fingerprint's residual list
+    requires `--cache-dir` **and** `WARDLINE_SUMMARY_CACHE_KEY`; summary caching is opt-in, so
+    none is a live default-path false green. The two engine holes above are **not** so bounded.
 
 #### G2-seam — cross-repo seam honesty (no confident-empty)
 *Extension added 2026-06-27 for the weft-seam-conformance Now bet (PDR-0002 /

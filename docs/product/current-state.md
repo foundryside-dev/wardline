@@ -1,82 +1,67 @@
 # Current State — Wardline
 
-> Resume brief. Checkpointed 2026-08-09 from source head `23ce09c4` (main) /
-> `release/2.0.0` primary checkout; the checkpoint commit itself is the durable
-> audit record. Read this first next session.
+> Resume brief. Checkpointed 2026-08-11 from `release/2.0.0` @ `ffe890d5` (Tasks 1–17 of S0).
+> The checkpoint commit is the durable audit record. Read this first next session.
 
 ## The bet right now
 
-**Close S0's declaration-surface false green and prove consumer-first local
-readiness without emitting new vocabulary** (PDR-0012; `roadmap.md` → Now).
-This program is **Wardline 2**; its residency is **`release/2.0.0`** (PDR-0015).
+**Return G2 to zero known false-green holes, and prove consumer-first local readiness
+without emitting new vocabulary** (PRD-0003; `roadmap.md` → Now). Programme is Wardline 2,
+resident on `release/2.0.0`.
 
-- *Metric it moves:* **G2** back to 0 known false-green/fail-open holes while
-  holding **G1** at FP rate ≤ 0.05; **G2-seam** must remain honest across the staged
-  consumer contracts.
-- *Product contract:* declaration-surface-v2 spec **rev 3** at `1244f627`
-  (blob `4956ba3b33ad3c594f0ad47db98ee6d636ad3051` — the static preflight pin;
-  supersedes the `ed7bfe86` anchor in PDR-0012 via PDR-0013).
-- *Delivery plan:* S0 plan **rev 3.1** at `894b6d39` — 21 tasks, Task 1
-  code-only, local S0 GO after preflight, published generic-3/attest-3
-  emission NO-GO. Wardline work lands on `release/2.0.0`; loomweave stays
-  `release/1.5.0`; warpline/legis stay `main`.
+- *Metric:* **G2** to 0 known false-green/fail-open holes, holding **G1** FP ≤ 0.05.
+- *Contracts:* spec **rev 10** (`aa10dd3d`, blob `f4ba87c4…`), S0 plan **rev 3.8** (`0308b4e9`).
+- **G2 is NOT at target and the bet cannot be banked** — see PDR-0020.
 
 ## In flight (tracker is tactical truth)
 
-- **`wardline-4928b75782`** (P1 bug, ready, unclaimed) — the live malformed-marker
-  false green. Atomically claim first (executing session's actor); closes only after
-  plan Tasks 2–6 plus the before/after gate repro.
-- **`wardline-5a795253f1`** (P1 task, open, blocked by the bug) — the S0
-  hardening/QE/consumer-prep receipt. Comment 269 records execution readiness.
-- **`wardline-3baba7e42f`** (P0 spec, reviewing) — the pending re-review now reads
-  spec rev 3; comment 268 carries provenance plus two adjudication items (the §13.2
-  S2-vs-S3 evidence-marker stage tension; the arg-kind naming duality).
-- **`wardline-c66f62894b`** (P1 program tracker, in progress; stale `codex` claim) —
-  residual seam-conformance closeout, Next band; unchanged this session.
+- **`wardline-5a795253f1`** — the S0 receipt, `in_progress`, carries Tasks 9–23. Closes only on
+  its own five conditions (i)–(v).
+- **`wardline-b857b50b54`** (P1, open) — Rust marker shape. From the original three; **owns
+  PRD-0003 criterion 6**. Not fixed by S0 by owner ruling.
+- **`wardline-69a58cb05f`** (P1, open, NEW) — a cross-module re-export of a builtin marker drops
+  the seed with **zero channels**; `PY-WL-101` lost, function in `RAW_ZONE`. The fourth hole.
+- **`wardline-70a8bb3875`** (P1, open, NEW) — `--fail-on-inert` silently no-ops on Rust scans.
+- **`wardline-74c9a455c5`** (P2, open, NEW) — corpus FP measurement covers 16 of 27 rules.
+- **`wardline-1da8b93a73`** (P2, open, NEW) — a memoising pack never warms the cache under `mcp`.
+- **`wardline-c66f62894b`** (Next band) — seam-conformance closeout; stale `codex` claim, unchanged.
 
 ## Open questions / blocked-on-owner
 
-- **S0 execution go (owner):** subagent-driven (recommended) or inline? Everything
-  else is ready — the four-repo clean-target preflight was verified green 2026-08-09
-  (all plan-named branches, zero dirty lines, spec pin OK).
-- **P0 re-review verdict (owner-run):** against spec rev 3; includes the two
-  comment-268 adjudication items.
-- **Stale tracker custody:** `wardline-c66f62894b` remains assigned to `codex` with
-  an expired claim; reconcile separately.
-- **Standing measurement debt:** agent-fix success and the preview-rule FP rate
-  remain unmeasured; reliance-gated inert-framework prevalence is due a per-release
-  reread — 2.0.0 planning should schedule it.
+1. **41 commits are unpushed.** Tasks 1–17 exist only locally. Durability risk — push?
+2. **Branch protection is off**, so Task 17's CODEOWNERS is pure routing and the identity-corpus
+   review gate does not gate. Verified live (`branches/main/protection` → 404, `rulesets` → `[]`).
+   Enable "require review from Code Owners"?
+3. **Cross-repo readiness audit was still running at checkpoint** (`wf_b8fb2102-3ab`) — five
+   lenses verifying every anchor Tasks 19–23 cite across loomweave/warpline/legis, the last
+   re-freeze budget, and whether the five close conditions are checkable. Read its verdict before
+   dispatching any implementer into a sibling repo.
+4. **Standing measurement debt**, unchanged: agent-fix success (north star) unmeasured; preview-rule
+   FP rate unmeasured and now known to be a 16-of-27 gap; reliance-gated inert prevalence due a
+   per-release re-read.
 
 ## What this checkpoint did
 
-- Appended **PDR-0013** (spec rev 3 pre-landed for the P0 re-review; plan rev 3.1
-  execution-ready; Legis preflight stop resolved via legis `a117a21`).
-- Appended **PDR-0014** (owner-directed merge of release/1.5.0 → main as
-  `23ce09c4`, suite-gated 5815-green, no tag/publication) and **PDR-0015**
-  (wardline-2 residency `release/2.0.0`).
-- Reconciled the tracker live during the session (comments 268/269); no horizon
-  change, so `roadmap.md` untouched; no new metric readings, so `metrics.md`
-  untouched (G2 still shows exactly one known false green, closed by executing S0).
-- **Post-checkpoint addendum (same day):** the owner authorized v1.5.0
-  publication — **PDR-0016**: tag `v1.5.0` at `23ce09c4`, Release workflow
-  `31296246189` green, `wardline 1.5.0` live on PyPI (wheel + sdist, attested).
-  The PDR-0014 publication escalation is closed. Also noted: spec revision 4
-  (S0-contract reconciliation, §17) is in flight in the working tree — once it
-  commits, plan rev 3.1's static blob pin `4956ba3b…` must be refreshed to the
-  rev-4 blob (the pin's own drift rule makes this a hard preflight stop, by design).
+- **PDR-0019** accepted the engine core: two of three holes closed, each verified on the real CLI
+  rather than from a report. **PDR-0020** executed PDR-0017's reversal trigger — a fourth hole
+  re-baselines PRD-0003 rather than failing it.
+- **PDR-0021** recorded Task 13's sixteen-round overrun and its park on a *construction* argument,
+  with a durable residual document beside the code. **PDR-0022** adopted the owner's three standing
+  review directives and the `reviewing-for-vacuity` catalogue.
+- Applied PDR-0017's declared-but-never-written roadmap refresh and G2 reading; added the G1
+  16-of-27 qualification; reconciled the tracker (2 closed with evidence, 4 filed, 1 amended twice).
 
 ## Next session, start here
 
-1. If the owner has given the execution go: run the plan preflight from rev 3.1,
-   atomically `start-work wardline-4928b75782` under the executing actor, and begin
-   Task 1 on `release/2.0.0` — the plan header names the required sub-skill.
-2. If the P0 re-review verdict is in: on GO, close `wardline-3baba7e42f`; on
-   changes-requested, S0 STOPS pre-engine-commit per PDR-0013's reversal trigger.
-3. Keep `published_emission_ready=false` throughout S0; the v1.5.0 publication
-   question is independent and owner-gated.
+1. Read the cross-repo audit verdict (item 3), then **Task 18** (changelog, in-repo) and
+   **Tasks 19–23** (cross-repo). The four-repo preflight **passes** as of this checkpoint —
+   all four clean, spec pin OK — but re-run it, it is cheap and it failed once already today.
+2. Task 20 holds the **last** sanctioned MCP-golden re-freeze; Task 9 spent the first.
+3. Answer items 1 and 2 above — both are owner actions, neither blocks execution.
 
 ## Provenance
 
-Latest decisions: PDR-0013..0015. Prior decisions 0001–0012 remain append-only
-under `docs/product/decisions/`. Tactical backlog detail remains in Filigree; this
-file records intent, contract anchors, gates, and the next resume seam.
+Latest decisions PDR-0019..0022; 0001–0018 remain append-only under `docs/product/decisions/`.
+Engine-level residuals live in `src/wardline/scanner/taint/PROVIDER_FINGERPRINT_RESIDUALS.md`,
+which is the durable artifact and outlives the plan workspace. Review heuristics live in
+`.claude/skills/reviewing-for-vacuity/`.

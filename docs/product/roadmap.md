@@ -6,30 +6,36 @@
 > turning one bet into an implementation plan is `/axiom-planning`. Do not add
 > dates or scores here.
 
-`Updated: 2026-08-09 (PDR-0012)` — rotated S0 declaration-surface hardening and
-consumer-first preparation to Now after a new P1 false green reopened G2. The
-prior seam-conformance bet moves to Next as residual closeout: live tracker state
-records all six core seams at-bar, with two non-gating P4 follow-ons remaining.
-Prior: `2026-06-29 (PDR-0009)` added framework-boundary enforcement to Later as
-PARKED+gated; `2026-06-27 (PDR-0002)` rotated weft-seam-conformance to Now.
+`Updated: 2026-08-11 (PDR-0020)` — Now bet **re-baselined** on a fourth hole of the
+same class; horizon unchanged. Also applies PDR-0017's stated consequence, which was
+declared but never written: the Now entry's contract anchors were still PDR-0012's.
+Prior: `2026-08-09 (PDR-0012)` rotated S0 hardening to Now and moved seam-conformance
+to Next as residual closeout; `2026-06-29 (PDR-0009)` added framework-boundary
+enforcement to Later as PARKED+gated; `2026-06-27 (PDR-0002)` rotated
+weft-seam-conformance to Now.
 
 ## Now — the current bet
 
-**Close S0's declaration-surface false green and prove consumer-first local
-readiness without emitting new vocabulary.** A malformed builtin trust marker can
-currently drop its seed silently and suppress every tier-modulated rule
-(`wardline-4928b75782`), violating Wardline's defining promise that uncertainty is
-made explicit rather than converted into a green gate. S0 restores that promise,
-hardens the QE evidence needed by later declaration kinds, and proves that each
-consumer can dual-read the future contracts before Wardline changes what it emits.
+**Return G2 to zero known false-green holes, and prove consumer-first local readiness
+without emitting new vocabulary.** A trust annotation can be silently discarded — the
+marker is written, the engine cannot read it, the function falls out of the declared
+set, every tier-modulated rule goes quiet, and the gate exits 0. That contradicts the
+promise the product is built on: uncertainty is made *explicit* rather than converted
+into a green gate. The bet restores it, hardens the QE evidence later declaration
+kinds depend on, and proves each consumer can dual-read the future contracts before
+Wardline changes what it emits.
 
 - *Strategic trace:* primary coding-agent gate; win on deterministic, actionable
   boundary truth without enterprise process weight.
-- *Metric it moves:* **G2** back to 0 known false-green/fail-open holes while
-  holding **G1** FP rate ≤ 0.05; **G2-seam** remains honest during consumer staging.
-- *Contract and delivery anchors:* declaration-surface-v2 spec at `ed7bfe86` plus
-  the rev-3 S0 plan at `5252e3f5` (PDR-0012).
-- *Tracker:* `wardline-4928b75782` first, then `wardline-5a795253f1`.
+- *Metric it moves:* **G2** to 0 known false-green/fail-open holes while holding
+  **G1** FP rate ≤ 0.05; **G2-seam** remains honest during consumer staging.
+- *Contract and delivery anchors:* PRD-0003; declaration-surface-v2 spec **rev 10**
+  (`aa10dd3d`, blob `f4ba87c4…`); S0 plan **rev 3.8** (`0308b4e9`).
+- *Tracker:* `wardline-5a795253f1` (the S0 receipt, in progress, Tasks 9–23) plus the
+  open holes below. Closed and verified: `wardline-4928b75782`, `wardline-2b2a6cddfa`.
+- *Still open against this bet:* `wardline-b857b50b54` (Rust marker shape — owns
+  PRD-0003 criterion 6), `wardline-69a58cb05f` (re-export drops the seed with zero
+  channels), `wardline-70a8bb3875` (`--fail-on-inert` no-ops on Rust scans).
 - *Outcome boundary:* a complete isolated local receipt closes S0 with
   `published_emission_ready=false`; public generic-3/attest-3 emission is a separate
   release gate and owner decision.
