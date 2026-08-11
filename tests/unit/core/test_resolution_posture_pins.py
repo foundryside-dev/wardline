@@ -14,14 +14,25 @@ is the filed engine bug ``wardline-7e0a3b1e3d``.
 
 The gap is DEEPER than the dict literal at ``project_resolver.py`` (measured
 2026-08-12: the literal is at :291-295, not the :285-289 the plan cites). The
-histogram is built from the merged SUMMARY-level source map, and
-``summary.py:31`` types that as ``Literal["anchored", "module_default",
-"fallback"]`` — re-validated at ``summary_cache.py:311``. ``config`` is therefore
-STRUCTURALLY unable to reach the histogram, even though ``propagation.py:578``
-genuinely computes ``prov_source="config"`` into the SEPARATE provenance map.
+histogram is built from the merged SUMMARY-level source map, and the only WRITER
+of that map is ``module_summariser.py:67``, whose ``_SEED_SOURCE_TO_CLASS`` maps
+``{"provider": "anchored", "default": "fallback"}`` — with ``_merge_taint_source``
+collapsing any conflict to ``"fallback"``. So no writer ever produces ``"config"``
+at all, even though ``propagation.py:578`` genuinely computes
+``prov_source="config"`` into the SEPARATE provenance map.
+
+That distinction decides what the fix IS. ``summary.py:31`` types the map as
+``Literal["anchored", "module_default", "fallback"]``, which invites the reading
+that widening the annotation would let ``config`` through. It would not: the
+annotation is not a runtime constraint, and nothing emits ``config`` in the first
+place. Widening the literal fixes nothing — the WRITER is the gap. (An earlier
+revision of this docstring said "structurally unable to reach the histogram" and
+named the literal as the fix; that was over-precise in a way that would have sent
+the next maintainer to the wrong file.)
+
 Net: the ``config`` half of ``_RECOGNIZED_BOUNDARY_BUCKETS`` is live at this
-function's boundary and dead at the engine's. Widening the Literal is the fix;
-it is out of S0 scope because it drifts the METRIC bytes in the golden.
+function's boundary and dead at the engine's. Out of S0 scope because closing it
+drifts the METRIC bytes in the golden.
 
 The second preserved pin (``wardline-894faaec24``, PY-WL-110 counts markers off
 the AST irrespective of whether each seeded, so its message can claim a clash
@@ -36,6 +47,8 @@ task brief. Tests marked ADDED close axes no mandated row varies.
 """
 
 from __future__ import annotations
+
+import pytest
 
 from wardline.core.finding import Finding, Kind, Location, Severity, compute_finding_fingerprint
 from wardline.core.resolution_posture import (
@@ -166,6 +179,17 @@ def test_every_named_bucket_is_classified_by_the_pinned_tuple() -> None:
         assert posture.recognized_boundaries == (3 if recognised else 0)
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "wardline-70a8bb3875 — compute_resolution_posture fails OPEN on an absent "
+        "taint_source_counts histogram (inert=False, reason=None), so --fail-on-inert "
+        "silently no-ops on Rust scans, which emit no WLN-ENGINE-METRICS. This test "
+        "asserts the SOUND behaviour and is expected to fail until that is fixed; "
+        "strict=True turns the fix into an XPASS failure so the marker cannot outlive "
+        "the defect as a stale characterisation."
+    ),
+)
 def test_absent_histogram_fails_OPEN_defect_record() -> None:
     """DEFECT RECORD — not a contract, and NOT the behaviour anyone should want.
 
@@ -194,10 +218,24 @@ def test_absent_histogram_fails_OPEN_defect_record() -> None:
     (The Rust surface has its own separate "no function declares @trusted"
     warning, which did fire — the signal exists, the GATE does not.)
 
-    WHEN THIS IS FIXED, INVERT THIS TEST — do not delete it. It exists to stop
-    the fail-open being re-introduced quietly, and to stop anyone reading the
-    surrounding pins as evidence that the absent-histogram case was considered
-    and blessed. It was considered and found broken.
+    WHAT THIS TEST ASSERTS is the SOUND behaviour, not the observed one — which
+    is why it is ``xfail(strict=True)`` rather than a passing pin of the bug. A
+    passing assertion of ``inert is False`` would CERTIFY the defect: it would go
+    green today, stay green forever, and red the suite the moment someone
+    repaired the engine, leaving them to argue with a shipped contract. Asserted
+    this way round, the repair turns it into an XPASS, ``strict=True`` turns that
+    into a failure, and whoever fixes ``wardline-70a8bb3875`` is forced to come
+    back here and rewrite the test to the shape they chose.
+
+    The assertion is deliberately the WEAKEST form of soundness — "must not
+    report a healthy gate" — rather than a specific verdict, because the ticket
+    has two defensible repairs: trip (fail closed, treating no data as no
+    enforcement) or introduce a third "unknown" posture with a reason. Both make
+    this XPASS. Pinning ``inert is True`` specifically would have pre-decided
+    that design question from a test file.
+
+    Observed today, for all four absence shapes below: ``inert=False``,
+    ``reason=None``, ``functions_analyzed=0``, ``recognized_boundaries=0``.
     """
     for label, findings in (
         ("no findings at all", []),
@@ -206,12 +244,12 @@ def test_absent_histogram_fails_OPEN_defect_record() -> None:
         ("histogram present but not a dict", [_bad_counts()]),
     ):
         posture = compute_resolution_posture(findings)
-        assert posture.inert is False, label
-        assert posture.reason is None, label
-        assert posture.functions_analyzed == 0, label
-        # The tell: zero analyzed functions and a confident not-inert verdict.
-        # A sound implementation would have a third state here, or would trip.
-        assert posture.recognized_boundaries == 0, label
+        # The tell: zero analyzed functions, yet a confident not-inert verdict
+        # with nothing to say about it.
+        reports_healthy_gate_on_no_data = (
+            posture.functions_analyzed == 0 and posture.inert is False and posture.reason is None
+        )
+        assert not reports_healthy_gate_on_no_data, label
 
 
 def test_reason_is_present_exactly_when_inert() -> None:
