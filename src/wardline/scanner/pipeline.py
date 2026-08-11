@@ -342,13 +342,32 @@ def run_parse_project_stage(stage_input: ParseProjectInput) -> ParseProjectOutpu
                 # message text, the property and the fingerprint's fourth part, so
                 # output and identity cannot drift apart.
                 value_key = unicodedata.normalize("NFC", value_text)[:200]
+                # THE DECLARED-SET CLAUSE IS CONDITIONAL, and must stay conditional.
+                # On a MIXED decorator stack — say @trusted(level='ASSURED') over
+                # @trust_boundary(to_level=a()) — this marker's value is unreadable while
+                # a SIBLING marker still seeds, so the function IS declared and the
+                # unconditional "NOT in the declared set" wording asserted a false fact
+                # about the engine's own state. ``fn_seed.source`` is not a proxy for that
+                # set, it is its DEFINITION: analyzer.py:1158 builds declared_qualnames as
+                # exactly {q for q, s in seeds.items() if s.source == "provider"}, so this
+                # branch cannot drift from the truth it reports. ``properties`` and the
+                # fingerprint preimage are IDENTICAL on both branches — only the
+                # human-facing sentence moves.
+                dropped = (
+                    "no seed taken, so this function is NOT in the declared set"
+                    if fn_seed.source == "default"
+                    else (
+                        "this marker contributed no seed; the function stays in the declared "
+                        "set via another marker or a configured source"
+                    )
+                )
                 parse_findings.append(
                     Finding(
                         rule_id="WLN-ENGINE-UNREADABLE-MARKER-VALUE",
                         message=(
                             f"{ent.qualname}: builtin marker argument {arg_name}={value_key} "
-                            f"is not statically readable — no seed taken, so this function is "
-                            f"NOT in the declared set (P3 form 5 does not reach this shape)"
+                            f"is not statically readable — {dropped} "
+                            f"(P3 form 5 does not reach this shape)"
                         ),
                         severity=Severity.NONE,
                         kind=Kind.FACT,

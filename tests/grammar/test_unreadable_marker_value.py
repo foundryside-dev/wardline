@@ -317,6 +317,51 @@ def test_residual_fact_does_not_de_inert_a_scan(tmp_path: Path) -> None:
     assert "svc.f" not in result.context.declared_qualnames
 
 
+def test_mixed_stack_fact_does_not_claim_the_function_is_undeclared(tmp_path: Path) -> None:
+    # THE ONE SHAPE THE _UNREADABLE TABLE CANNOT COVER, and therefore the one where the
+    # message went wrong. Every row above asserts `qualname not in declared_qualnames`,
+    # so none of them is a MIXED stack — a marker whose value is unreadable sitting
+    # beside a marker that resolves. Here @trusted(level='ASSURED') seeds, so the
+    # function IS declared at ASSURED, while @trust_boundary(to_level=a()) still takes
+    # the residual FACT. A FACT that asserted "NOT in the declared set" here would be
+    # stating a false fact about the engine's own state — which is the failure this
+    # whole plan exists to remove, appearing in the diagnostic meant to close it.
+    #
+    # The FACT's IDENTITY is unchanged by the mixed stack: properties and the four-part
+    # fingerprint preimage are asserted here exactly as on the undeclared rows, so only
+    # the human-facing sentence is allowed to differ.
+    result = _scan(
+        tmp_path,
+        "from wardline.decorators import trusted, trust_boundary\n"
+        "def a():\n    return 'ASSURED'\n"
+        "@trusted(level='ASSURED')\n@trust_boundary(to_level=a())\ndef f(p):\n    return p\n",
+    )
+    (fact,) = _facts(result)
+    assert fact.properties == {"argument": "to_level", "value": "a()", "reason": "unreadable_level_value"}
+    assert fact.fingerprint == _fp(FACT_ID, "svc.f", "to_level", "a()")
+    # The seed SURVIVED via the sibling marker — so the function IS declared...
+    assert result.context is not None
+    assert "svc.f" in result.context.declared_qualnames
+    # ...and the message must not say otherwise.
+    assert "NOT in the declared set" not in fact.message
+    assert "stays in the declared set" in fact.message
+
+
+def test_undeclared_fact_still_states_the_declared_set_consequence(tmp_path: Path) -> None:
+    # The other side of the conditional, so the branch is pinned in BOTH directions and
+    # the fix cannot be "delete the clause". On a single unreadable marker the seed really
+    # is dropped, and that consequence — every tier-modulated rule going quiet on this
+    # function — is the most actionable thing the diagnostic carries. It must still be said.
+    result = _scan(
+        tmp_path,
+        _IMPORT + "def a():\n    return 'ASSURED'\n@trusted(level=a())\ndef f(p):\n    return p\n",
+    )
+    (fact,) = _facts(result)
+    assert result.context is not None
+    assert "svc.f" not in result.context.declared_qualnames
+    assert "NOT in the declared set" in fact.message
+
+
 def test_unreadable_module_constant_fires_the_fact_that_form_5_suppresses(tmp_path: Path) -> None:
     # THE POSITIVE ANCHOR for the negative assertion at
     # tests/unit/scanner/taint/test_decorator_provider.py:279, which asserts NO
