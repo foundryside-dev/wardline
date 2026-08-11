@@ -34,23 +34,25 @@ class FunctionSeed:
     ``WLN-ENGINE-UNPROVABLE-BOUNDARY`` FACT each. Empty for builtins and for any
     function with no such match (the common case).
 
-    ``unknown_markers`` carries the resolved FQNs of vocabulary-rooted decorators this
-    engine does not recognise — surfaced as ``WLN-ENGINE-UNKNOWN-MARKER`` FACTs. Builtin
-    malformed-CALL loudness lives in PY-WL-130 (a rule), so builtins still never appear
-    in ``unprovable_boundaries``. ``unreadable_level_values`` carries ``(argument name,
-    ast.unparse(value node))`` for every BUILTIN ``ArgKind.LEVEL`` value the shared reader
-    could not read after P3 form 5 — surfaced as ``WLN-ENGINE-UNREADABLE-MARKER-VALUE``
-    FACTs. It is builtin-only: a CUSTOM boundary's unreadable level value stays in
-    ``unprovable_boundaries``, so no site is reported on two channels. Neither field is
-    serialised — the summary cache stores ``FunctionSummary`` tuples only."""
+    ``unknown_markers`` carries ``(decorator ordinal, resolved FQN)`` for
+    vocabulary-rooted decorators this engine does not recognise — surfaced as
+    ``WLN-ENGINE-UNKNOWN-MARKER`` FACTs. Builtin malformed-CALL loudness lives in
+    PY-WL-130 (a rule), so builtins still never appear in ``unprovable_boundaries``.
+    ``unreadable_level_values`` carries ``(decorator ordinal, argument name,
+    ast.unparse(value node))`` for every BUILTIN ``ArgKind.LEVEL`` value the shared
+    reader could not read after P3 form 5 — surfaced as
+    ``WLN-ENGINE-UNREADABLE-MARKER-VALUE`` FACTs. It is builtin-only: a CUSTOM
+    boundary's unreadable level value stays in ``unprovable_boundaries``, so no site
+    is reported on two channels. Neither field is serialised — the summary cache
+    stores ``FunctionSummary`` tuples only."""
 
     qualname: str
     body_taint: TaintState
     return_taint: TaintState
     source: Literal["provider", "default"]
     unprovable_boundaries: tuple[str, ...] = ()
-    unknown_markers: tuple[str, ...] = ()
-    unreadable_level_values: tuple[tuple[str, str], ...] = ()
+    unknown_markers: tuple[tuple[int, str], ...] = ()
+    unreadable_level_values: tuple[tuple[int, str, str], ...] = ()
 
 
 def seed_function_taints(

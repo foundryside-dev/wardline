@@ -11,9 +11,9 @@ silent resolution hide intent.
 
 Declaration-gated (base severity, NOT tier-modulated). It reads RESOLVED provenance
 for the gate (``prov.source == "anchored"``) and only COUNTS markers in the decorator
-list — it never infers taint from a decorator, so the engine-layering discipline
-holds. Distinctness is by the grammar boundary type's canonical name; two ``@trusted``
-markers are not contradictory.
+list that pass the provider's shared call-shape gate — it never infers taint from a
+decorator, so the engine-layering discipline holds. Distinctness is by the grammar
+boundary type's canonical name; two ``@trusted`` markers are not contradictory.
 """
 
 from __future__ import annotations
@@ -24,8 +24,14 @@ from typing import TYPE_CHECKING
 
 from wardline.core.finding import Finding, Kind, Severity
 from wardline.core.finding import compute_finding_fingerprint as _fp
+from wardline.core.registry import REGISTRY
 from wardline.scanner.boundary_types import BUILTIN_BOUNDARY_TYPES
-from wardline.scanner.marker_reader import ModuleCensus, alias_map_for_qualname, shadowed_builtin_roots
+from wardline.scanner.marker_reader import (
+    ModuleCensus,
+    alias_map_for_qualname,
+    call_shape_offences,
+    shadowed_builtin_roots,
+)
 from wardline.scanner.marker_reader import is_builtin_decorator_fqn as _is_builtin_decorator_fqn
 from wardline.scanner.marker_reader import resolve_decorator_fqn as _resolve_decorator_fqn
 from wardline.scanner.rules._fingerprint import entity_source_fingerprint
@@ -70,12 +76,13 @@ def _marker_canonical_name(
 ) -> str | None:
     """The canonical builtin marker name *deco* resolves to, or None.
 
-    Recognition rides the SHARED engine-floor predicates (P9), so this rule cannot
-    recognise a marker the provider's seeding rejects. The shadow filter is applied
-    PER MARKER ROOT, never as a global "any shadow disables all roots" switch: a
-    scanned project defining its own top-level ``wardline`` package must not suppress
-    a genuine ``weft_markers`` marker, and vice versa (mirrors the provider's own
-    per-root rejection in ``DecoratorTaintSourceProvider._match``).
+    Recognition rides the SHARED engine-floor predicates and call-shape validator
+    (P9), so this rule cannot recognise a marker the provider's seeding rejects. The
+    shadow filter is applied PER MARKER ROOT, never as a global "any shadow disables
+    all roots" switch: a scanned project defining its own top-level ``wardline``
+    package must not suppress a genuine ``weft_markers`` marker, and vice versa
+    (mirrors the provider's own per-root rejection in
+    ``DecoratorTaintSourceProvider._match``).
     """
     fqn = _resolve_decorator_fqn(deco, alias_map, census=census, reference_site=reference_site)
     if fqn is None:
@@ -86,6 +93,15 @@ def _marker_canonical_name(
         if bt.module_prefix.split(".")[0] in shadowed_roots:
             continue
         if _is_builtin_decorator_fqn(fqn, bt.canonical_name, bt.module_prefix):
+            entry = REGISTRY[bt.canonical_name]
+            required = frozenset(level.arg_name for level in bt.level_args if level.default is None)
+            if call_shape_offences(
+                deco,
+                call_form=entry.call_form,
+                declared=entry.kwargs,
+                required=required,
+            ):
+                return None
             return bt.canonical_name
     return None
 

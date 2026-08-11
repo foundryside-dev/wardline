@@ -106,6 +106,28 @@ def test_weft_markers_fires_end_to_end(tmp_path) -> None:
     assert "PY-WL-101" in active
 
 
+def test_marker_alias_resolves_at_decorator_before_later_import(tmp_path) -> None:
+    from wardline.core.run import run_scan
+
+    (tmp_path / "m.py").write_text(
+        "from wardline.decorators import external_boundary, trusted as marker\n"
+        "@external_boundary\n"
+        "def read_raw(p):\n"
+        "    return p\n"
+        "@marker(level='ASSURED')\n"
+        "def build_record(p):\n"
+        "    return read_raw(p)\n"
+        "from wardline.decorators import external_boundary as marker\n",
+        encoding="utf-8",
+    )
+
+    result = run_scan(tmp_path)
+
+    assert result.context is not None
+    assert "m.build_record" in result.context.declared_qualnames
+    assert any(f.rule_id == "PY-WL-101" and f.qualname == "m.build_record" for f in result.findings)
+
+
 def test_external_boundary_aliased_from_import() -> None:
     out = _seed("from wardline.decorators import external_boundary as eb\n@eb\ndef read(p):\n    return p\n")
     assert out["m.read"] == FunctionTaint(T.EXTERNAL_RAW, T.EXTERNAL_RAW)

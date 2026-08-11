@@ -264,12 +264,22 @@ def test_two_unreadable_arguments_on_one_function_are_distinct(tmp_path: Path) -
     assert {f.properties["argument"] for f in facts} == {"level", "to_level"}
 
 
+def test_repeated_unreadable_markers_have_distinct_fingerprints(tmp_path: Path) -> None:
+    result = _scan(
+        tmp_path,
+        _IMPORT + "@trusted(level=DYN)\n@trusted(level=DYN)\ndef f(p):\n    return p\n",
+    )
+
+    facts = _facts(result)
+    assert len(facts) == 2
+    assert len({fact.fingerprint for fact in facts}) == 2
+
+
 def test_fingerprint_preimage_is_nfc_normalised_and_truncated(tmp_path: Path) -> None:
-    # The preimage is the SHIPPED pipeline._fp over four ordered parts —
-    # (rule id, qualname, argument name, value key) — mirroring the sibling FACT's
-    # part shape widened by one, with NO relpath part. NFC and the 200-character
-    # truncation apply to the FOURTH PART ONLY, before it becomes a part, never to
-    # the joined preimage. No new helper exists or is wanted.
+    # The preimage uses pipeline._fp over five ordered parts — rule id, qualname,
+    # argument name, value key, and within-def decorator ordinal — with NO relpath.
+    # NFC and the 200-character truncation apply to the VALUE part only, before it
+    # becomes a part, never to the joined preimage.
     long_expr = "get('" + "z" * 400 + "')"
     result = _scan(
         tmp_path,
@@ -279,7 +289,7 @@ def test_fingerprint_preimage_is_nfc_normalised_and_truncated(tmp_path: Path) ->
     key = unicodedata.normalize("NFC", long_expr)[:200]
     assert len(fact.properties["value"]) == 200
     assert fact.properties["value"] == key
-    assert fact.fingerprint == _fp(FACT_ID, "svc.f", "level", key)
+    assert fact.fingerprint == _fp(FACT_ID, "svc.f", "level", key, "decorator#0")
 
 
 def test_two_spellings_of_one_value_text_share_one_fingerprint(tmp_path: Path) -> None:
@@ -327,9 +337,8 @@ def test_mixed_stack_fact_does_not_claim_the_function_is_undeclared(tmp_path: Pa
     # stating a false fact about the engine's own state — which is the failure this
     # whole plan exists to remove, appearing in the diagnostic meant to close it.
     #
-    # The FACT's IDENTITY is unchanged by the mixed stack: properties and the four-part
-    # fingerprint preimage are asserted here exactly as on the undeclared rows, so only
-    # the human-facing sentence is allowed to differ.
+    # The FACT's semantic fields are unchanged by the mixed stack; its fingerprint also
+    # carries the marker's within-def ordinal so repeated occurrences stay distinct.
     result = _scan(
         tmp_path,
         "from wardline.decorators import trusted, trust_boundary\n"
@@ -338,7 +347,7 @@ def test_mixed_stack_fact_does_not_claim_the_function_is_undeclared(tmp_path: Pa
     )
     (fact,) = _facts(result)
     assert fact.properties == {"argument": "to_level", "value": "a()", "reason": "unreadable_level_value"}
-    assert fact.fingerprint == _fp(FACT_ID, "svc.f", "to_level", "a()")
+    assert fact.fingerprint == _fp(FACT_ID, "svc.f", "to_level", "a()", "decorator#1")
     # The seed SURVIVED via the sibling marker — so the function IS declared...
     assert result.context is not None
     assert "svc.f" in result.context.declared_qualnames

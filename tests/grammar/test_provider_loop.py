@@ -138,7 +138,7 @@ def test_unprovable_builtin_does_not_signal() -> None:
     res = provider.taint_for(ent, SeedContext(module="m", alias_map=alias_map, census=census))
     assert res.taint is None
     assert res.unprovable_boundaries == ()
-    assert res.unreadable_level_values == (("to_level", "CFG"),)
+    assert res.unreadable_level_values == ((0, "to_level", "CFG"),)
 
 
 def test_fingerprint_builtin_is_legacy_string() -> None:

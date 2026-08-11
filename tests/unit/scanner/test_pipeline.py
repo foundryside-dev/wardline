@@ -315,7 +315,7 @@ def test_config_source_override_preserves_unknown_markers(tmp_path) -> None:
     )
     seed = result.modules[0].seeds["m.feed"]
     assert seed.body_taint == T.EXTERNAL_RAW  # the directive took effect...
-    assert seed.unknown_markers == ("weft_markers.audit_record",)  # ...channel intact
+    assert seed.unknown_markers == ((0, "weft_markers.audit_record"),)  # ...channel intact
 
 
 def test_config_source_override_preserves_unprovable_boundaries(tmp_path) -> None:
@@ -377,7 +377,7 @@ def test_config_source_override_preserves_unreadable_level_values(tmp_path) -> N
     )
     seed = result.modules[0].seeds["m.feed"]
     assert seed.body_taint == T.EXTERNAL_RAW  # the directive took effect...
-    assert seed.unreadable_level_values == (("level", "DYN"),)  # ...channel intact
+    assert seed.unreadable_level_values == ((0, "level", "DYN"),)  # ...channel intact
 
 
 def test_provable_sibling_marker_still_carries_the_unreadable_level_value(tmp_path) -> None:
@@ -406,7 +406,7 @@ def test_provable_sibling_marker_still_carries_the_unreadable_level_value(tmp_pa
     seed = result.modules[0].seeds["m.feed"]
     assert seed.source == "provider"  # the provable sibling minted a seed...
     assert seed.body_taint == T.EXTERNAL_RAW
-    assert seed.unreadable_level_values == (("level", "DYN"),)  # ...and the pair rode along
+    assert seed.unreadable_level_values == ((1, "level", "DYN"),)  # ...and the value rode along
 
 
 def test_two_unreadable_builtin_markers_yield_two_residual_pairs(tmp_path) -> None:
@@ -434,5 +434,5 @@ def test_two_unreadable_builtin_markers_yield_two_residual_pairs(tmp_path) -> No
         )
     )
     seed = result.modules[0].seeds["m.feed"]
-    assert seed.unreadable_level_values == (("level", "DYN"), ("to_level", "DYN"))
+    assert seed.unreadable_level_values == ((0, "level", "DYN"), (1, "to_level", "DYN"))
     assert len(seed.unreadable_level_values) == 2  # NOT capped at one — do not assume it is

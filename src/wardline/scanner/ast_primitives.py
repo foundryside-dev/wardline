@@ -1,8 +1,9 @@
 # src/wardline/scanner/ast_primitives.py
 """Reusable, stdlib-only AST primitives ported from ``wardline.old``.
 
-- ``build_import_alias_map`` — local-name -> fully-qualified-name from a module's
-  top-level imports (resolving relative imports).
+- ``iter_import_alias_bindings`` — source-ordered local-name/FQN import bindings.
+- ``build_import_alias_map`` — final local-name -> fully-qualified-name snapshot
+  from those bindings (resolving relative imports).
 - ``iter_calls_in_function_body`` — every ``ast.Call`` in a function body without
   descending into nested function/class/lambda scopes.
 - ``resolve_call_fqn`` — resolve a call node to a fully-qualified name using
@@ -18,14 +19,14 @@ import ast
 from collections.abc import Iterator, Mapping
 
 
-def build_import_alias_map(
+def iter_import_alias_bindings(
     tree: ast.Module,
     module_path: str = "",
     *,
     is_package: bool = False,
     star_exports: Mapping[str, Mapping[str, str]] | None = None,
-) -> dict[str, str]:
-    """Build ``{local_name: fully_qualified_name}`` from module-level imports.
+) -> Iterator[tuple[str, str, int]]:
+    """Yield ``(local_name, fully_qualified_name, line)`` for top-level imports.
 
     Only top-level statements are processed (not imports inside functions). Absolute
     star imports (``from X import *``) are resolved ONLY when ``X`` is in
@@ -44,13 +45,12 @@ def build_import_alias_map(
         star_exports: ``{source_module_fqn: {local_name: target_fqn}}`` of the
             statically-known exports to materialise for an absolute ``from X import *``.
     """
-    alias_map: dict[str, str] = {}
-
     for node in ast.iter_child_nodes(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
                 local_name = alias.asname if alias.asname else alias.name.split(".")[0]
-                alias_map[local_name] = alias.name if alias.asname else alias.name.split(".")[0]
+                fqn = alias.name if alias.asname else alias.name.split(".")[0]
+                yield local_name, fqn, node.lineno
             continue
         if isinstance(node, ast.ImportFrom):
             if node.module is None and (node.level or 0) == 0:
@@ -60,7 +60,7 @@ def build_import_alias_map(
             # imports and unknown modules fall through and stay unresolved.
             if (node.level or 0) == 0 and node.module is not None and any(a.name == "*" for a in node.names):
                 for local_name, fqn in (star_exports or {}).get(node.module, {}).items():
-                    alias_map[local_name] = fqn
+                    yield local_name, fqn, node.lineno
                 continue
             for alias in node.names:
                 if alias.name == "*":
@@ -88,7 +88,25 @@ def build_import_alias_map(
                     fqn = f"{node.module}.{alias.name}"
                 else:
                     continue
-                alias_map[local_name] = fqn
+                yield local_name, fqn, node.lineno
+
+
+def build_import_alias_map(
+    tree: ast.Module,
+    module_path: str = "",
+    *,
+    is_package: bool = False,
+    star_exports: Mapping[str, Mapping[str, str]] | None = None,
+) -> dict[str, str]:
+    """Build the final ``{local_name: FQN}`` snapshot of module-level imports."""
+    alias_map: dict[str, str] = {}
+    for local_name, fqn, _line in iter_import_alias_bindings(
+        tree,
+        module_path,
+        is_package=is_package,
+        star_exports=star_exports,
+    ):
+        alias_map[local_name] = fqn
 
     return alias_map
 

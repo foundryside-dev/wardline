@@ -1495,10 +1495,10 @@ class DecoratorTaintSourceProvider:
     def taint_for(self, entity: Entity, ctx: SeedContext) -> SeedResult:
         candidates: list[FunctionTaint] = []
         unprovable: list[str] = []
-        unknown: list[str] = []
-        unreadable_levels: list[tuple[str, str]] = []
+        unknown: list[tuple[int, str]] = []
+        unreadable_levels: list[tuple[int, str, str]] = []
         shadowed_roots = _shadowed_builtin_roots(ctx.project_modules)
-        for deco in entity.node.decorator_list:
+        for deco_ordinal, deco in enumerate(entity.node.decorator_list):
             # The per-module census rides in on ``SeedContext`` and the reference site is
             # the decorated ``def``/``async def`` statement this entity already holds, so
             # P3 form 5 can evaluate in the provider.
@@ -1531,7 +1531,7 @@ class DecoratorTaintSourceProvider:
                     reference_site=entity.node,
                 )
                 if marker is not None:
-                    unknown.append(marker)
+                    unknown.append((deco_ordinal, marker))
                 elif unreadable:
                     # FOURTH ARM — a BUILTIN marker whose ArgKind.LEVEL value the shared
                     # reader could not read after P3 form 5. Mutually exclusive with the
@@ -1541,7 +1541,9 @@ class DecoratorTaintSourceProvider:
                     # gate — Task 5 runs call_shape_offences BEFORE the levels loop, so a
                     # shape-malformed marker drops its seed with no level read and takes
                     # PY-WL-130, never this arm.
-                    unreadable_levels.extend(unreadable)
+                    unreadable_levels.extend(
+                        (deco_ordinal, arg_name, value_text) for arg_name, value_text in unreadable
+                    )
         if not candidates:
             # No proven seed. Any matched-but-unreadable CUSTOM boundaries are surfaced
             # (T2.4) and the L1 fallback seeds UNKNOWN_RAW (source="default", not

@@ -100,6 +100,20 @@ def test_valid_builtin_seed_survives_beside_unknown_marker(tmp_path: Path) -> No
     assert len(_facts(result)) == 1
 
 
+def test_repeated_unknown_markers_have_distinct_fingerprints(tmp_path: Path) -> None:
+    result = _scan(
+        tmp_path,
+        "import weft_markers\n"
+        "@weft_markers.audit_record\n"
+        "@weft_markers.audit_record\n"
+        "def write_event(e):\n    return e\n",
+    )
+
+    facts = _facts(result)
+    assert len(facts) == 2
+    assert len({fact.fingerprint for fact in facts}) == 2
+
+
 def test_shadowed_root_emits_no_fact(tmp_path: Path) -> None:
     proj = tmp_path / "proj"
     (proj / "weft_markers").mkdir(parents=True)

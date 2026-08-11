@@ -110,27 +110,39 @@ def resolve_dotted_fqn(
     head_fqn = alias_map.get(head)
     if head_fqn is None:
         head_fqn = head
-    elif census is not None and census.binding_lines is not None and census.alias_lines is not None:
+    elif census is not None and census.binding_lines is not None and census.alias_bindings is not None:
         # ``alias_map`` is a module-wide import inventory, not a source-order
-        # environment. Refuse its rewrite unless the last possible module binding
-        # before this use is the direct import that supplied the alias. A later
-        # import also makes the map's final target unusable for an earlier site.
+        # environment. Select the direct import that was visible at this use, and
+        # refuse the rewrite when an intervening non-import binding won instead.
         line = getattr(resolution_site, "lineno", None)
-        alias_lines = census.alias_lines.get(head, ())
+        alias_bindings = census.alias_bindings.get(head, ())
         binding_lines = census.binding_lines.get(head, ())
-        if not alias_lines:
+        if not alias_bindings:
             # A caller may supply a pre-built alias map with no corresponding
             # source import in this tree (the public reader/unit-test contract).
             # There is no source-order evidence to contradict that environment.
             pass
-        elif line is None or any(import_line >= line for import_line in alias_lines):
+        elif line is None:
             head_fqn = head
         else:
             # A materialised star import contributes alias lines without named
             # occurrences, so both populations participate in the last-bind test.
-            prior = tuple(binding_line for binding_line in (*binding_lines, *alias_lines) if binding_line < line)
-            if not prior or max(prior) not in alias_lines:
+            prior_aliases = tuple(
+                (binding_line, target) for binding_line, target in alias_bindings if binding_line < line
+            )
+            prior_lines = tuple(
+                binding_line
+                for binding_line in (*binding_lines, *(binding_line for binding_line, _target in alias_bindings))
+                if binding_line < line
+            )
+            if not prior_aliases or not prior_lines:
                 head_fqn = head
+            else:
+                last_binding_line = max(prior_lines)
+                visible_targets = tuple(
+                    target for binding_line, target in prior_aliases if binding_line == last_binding_line
+                )
+                head_fqn = visible_targets[-1] if visible_targets else head
     return f"{head_fqn}.{rest}" if rest else head_fqn
 
 
@@ -242,8 +254,9 @@ class ModuleCensus:
     qualname or column-offset proxy can answer this test (a conditionally-defined
     module-level ``def`` has the same qualname as an unconditional one). Built
     once per module in the parse loop; never rebuilt, and no rule computes one.
-    ``binding_lines`` and ``alias_lines`` are the source-order evidence shared by
-    marker and level-head resolution so imported names cannot outlive a rebind.
+    ``binding_lines`` and ``alias_bindings`` are the source-order evidence shared
+    by marker and level-head resolution so imported names cannot outlive a rebind
+    and a later import cannot retroactively replace the target visible at a use.
     """
 
     values: Mapping[str, CensusBinding]
@@ -254,7 +267,7 @@ class ModuleCensus:
     # an explicit compatibility sentinel for hand-built censuses in reader unit
     # tests; the production builder always supplies both mappings.
     binding_lines: Mapping[str, tuple[int, ...]] | None = None
-    alias_lines: Mapping[str, tuple[int, ...]] | None = None
+    alias_bindings: Mapping[str, tuple[tuple[int, str], ...]] | None = None
 
 
 def level_token(
@@ -377,9 +390,9 @@ class LevelRead:
     the residual channel builtin-only. The text this carrier holds is RAW —
     un-normalised and untruncated. NFC normalisation and the 200-character
     truncation belong to the EMISSION site, which derives ONE key from this raw
-    text and renders the fingerprint's fourth part, the diagnostic message and
-    ``properties["value"]`` from that same key: one text, not two. This reader
-    makes no promise about the message keeping the full text.
+    text and renders the fingerprint's value-text part, the diagnostic message
+    and ``properties["value"]`` from that same key: one text, not two. The
+    provider adds the decorator ordinal used to identify repeated occurrences.
     """
 
     verdict: LevelVerdict

@@ -335,3 +335,20 @@ def test_nested_path_marker_engine_rejects_does_not_fire(tmp_path) -> None:
         """,
     )
     assert [(x.rule_id, x.qualname) for x in _run(ctx2)] == [("PY-WL-110", "m.g")]
+
+
+def test_shape_rejected_marker_is_not_counted_as_a_contradiction(tmp_path) -> None:
+    ctx = _analyze(
+        tmp_path,
+        """
+        from wardline.decorators import external_boundary, trusted
+        @trusted(level='ASSURED')
+        @external_boundary(source='http')
+        def f(p):
+            return p
+        """,
+    )
+
+    prov = ctx.taint_provenance.get("m.f")
+    assert prov is not None and prov.source == "anchored"
+    assert _run(ctx) == []

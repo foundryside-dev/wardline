@@ -38,6 +38,7 @@ import ast
 from collections.abc import Mapping
 from types import MappingProxyType
 
+from wardline.scanner.ast_primitives import iter_import_alias_bindings
 from wardline.scanner.marker_reader import CensusBinding, ModuleCensus, level_token
 
 CensusEntry = CensusBinding
@@ -84,8 +85,11 @@ def build_module_census(
     alias_map: Mapping[str, str],
     shadowed_roots: frozenset[str],
     star_exports: Mapping[str, Mapping[str, str]],
+    module_path: str = "",
+    is_package: bool = False,
 ) -> ModuleCensus:
     """Build one module's census. Called ONCE per module, from the parse loop."""
+
     # POISON. This is build_import_alias_map's OWN expansion test, inverted: it
     # materialises a star import only when the import is ABSOLUTE and the target
     # module is in star_exports. Everything else it silently skips, so the star
@@ -96,10 +100,7 @@ def build_module_census(
             return False
         if isinstance(child, ast.ImportFrom) and any(alias.name == "*" for alias in child.names):
             return not (
-                direct
-                and (child.level or 0) == 0
-                and child.module is not None
-                and child.module in star_exports
+                direct and (child.level or 0) == 0 and child.module is not None and child.module in star_exports
             )
         return any(has_unmaterialised_star(grandchild, direct=False) for grandchild in ast.iter_child_nodes(child))
 
@@ -111,25 +112,14 @@ def build_module_census(
     # Direct imports are the only imports represented by ``alias_map``. Record
     # their source lines separately from the complete module-scope binding walk so
     # readers can reject an import head after an intervening local/conditional bind.
-    alias_lines: dict[str, list[int]] = {}
-    for stmt in tree.body:
-        if isinstance(stmt, ast.Import):
-            names = tuple(alias.asname or alias.name.split(".")[0] for alias in stmt.names)
-        elif isinstance(stmt, ast.ImportFrom):
-            if (
-                (stmt.level or 0) == 0
-                and stmt.module is not None
-                and any(alias.name == "*" for alias in stmt.names)
-                and stmt.module in star_exports
-            ):
-                names = tuple(star_exports[stmt.module])
-            else:
-                names = tuple(alias.asname or alias.name for alias in stmt.names if alias.name != "*")
-        else:
-            continue
-        for name in names:
-            if name in alias_map:
-                alias_lines.setdefault(name, []).append(stmt.lineno)
+    alias_bindings: dict[str, list[tuple[int, str]]] = {}
+    for name, target, line in iter_import_alias_bindings(
+        tree,
+        module_path,
+        is_package=is_package,
+        star_exports=star_exports,
+    ):
+        alias_bindings.setdefault(name, []).append((line, target))
 
     def occurrence(name: str, line: int) -> None:
         occurrences.setdefault(name, []).append(line)
@@ -181,8 +171,8 @@ def build_module_census(
     binding_lines = MappingProxyType(
         {bound_name: tuple(bound_lines) for bound_name, bound_lines in occurrences.items()}
     )
-    frozen_alias_lines = MappingProxyType(
-        {alias_name: tuple(import_lines) for alias_name, import_lines in alias_lines.items()}
+    frozen_alias_bindings = MappingProxyType(
+        {alias_name: tuple(bindings) for alias_name, bindings in alias_bindings.items()}
     )
 
     # The one shape that may resolve: a DIRECT element of Module.body, single
@@ -233,7 +223,7 @@ def build_module_census(
                 poisoned=False,
                 reference_sites=frozenset(),
                 binding_lines=binding_lines,
-                alias_lines=frozen_alias_lines,
+                alias_bindings=frozen_alias_bindings,
             ),
             reference_site=None,
             shadowed_roots=shadowed_roots,
@@ -257,5 +247,5 @@ def build_module_census(
             stmt for stmt in tree.body if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef))
         ),
         binding_lines=binding_lines,
-        alias_lines=frozen_alias_lines,
+        alias_bindings=frozen_alias_bindings,
     )
