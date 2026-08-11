@@ -78,6 +78,7 @@ _EXPECTED_RULE_SHAPE = {
     "PY-WL-124": (Severity.ERROR, Kind.DEFECT, Maturity.PREVIEW),
     "PY-WL-125": (Severity.INFO, Kind.DEFECT, Maturity.PREVIEW),
     "PY-WL-126": (Severity.WARN, Kind.DEFECT, Maturity.PREVIEW),
+    "PY-WL-130": (Severity.ERROR, Kind.DEFECT, Maturity.STABLE),
 }
 
 

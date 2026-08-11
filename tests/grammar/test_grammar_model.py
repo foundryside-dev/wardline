@@ -62,6 +62,7 @@ def test_default_grammar_has_builtin_marker_namespaces_and_all_rules() -> None:
         "PY-WL-124",
         "PY-WL-125",
         "PY-WL-126",
+        "PY-WL-130",
     ]
 
 

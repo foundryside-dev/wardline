@@ -1,6 +1,8 @@
 # Rules
 
-Wardline ships twenty-six Python policy rules, `PY-WL-101` through `PY-WL-126`.
+Wardline ships twenty-seven Python policy rules, `PY-WL-101` through `PY-WL-126`
+plus `PY-WL-130`. (Ids `PY-WL-127`–`PY-WL-129` are unallocated — nothing ships
+under them.)
 They consume the [taint & trust model](model.md): each one looks for a place
 where a function's *declared* trust and its *actual* trust disagree, where
 untrusted data reaches a dangerous sink, or where a trusted-tier function
@@ -40,10 +42,11 @@ severity, see [Configuration](../guides/configuration.md).
 | `PY-WL-124` | Untrusted data reaches a native-library load sink (`ctypes.CDLL` family) (CWE-114). | `ERROR` | preview |
 | `PY-WL-125` | Untrusted data is the log MESSAGE format string of `logging` calls — log injection (CWE-117). | `INFO` | preview |
 | `PY-WL-126` | Untrusted data reaches the recipient/message of `smtplib` `SMTP.sendmail` — mail/header injection (CWE-93). | `WARN` | preview |
+| `PY-WL-130` | A builtin trust marker is called with a malformed argument shape (illegal bare/called form, a positional argument, an undeclared or duplicated keyword, an invalid or unreadable `**` splat, or a missing required keyword) — the engine silently drops the declaration. | `ERROR` | stable |
 
 !!! info "Declaration-gated vs. tier-modulated severity"
     `PY-WL-101`, `PY-WL-102`, `PY-WL-105`, `PY-WL-109`, `PY-WL-110`,
-    `PY-WL-111`, `PY-WL-113`, `PY-WL-114`, and `PY-WL-119` are
+    `PY-WL-111`, `PY-WL-113`, `PY-WL-114`, `PY-WL-119`, and `PY-WL-130` are
     **declaration-gated** — the decorator itself is the opt-in, so they always
     fire at their base severity. `PY-WL-103`, `PY-WL-104`, and the sink rules
     (`PY-WL-106`/`107`/`108`/`112`/`115`/`116`/`117`/`118`/`120`/`121`–`126`)
@@ -698,6 +701,70 @@ resolves the decorator to the builtin FQN (import-alias aware), so an aliased
 builtin with a typo still fires while a foreign decorator that merely happens
 to be spelled `trusted` does not. A dynamic level (`level=cfg.LEVEL`) is not
 statically readable and stays silent.
+
+### PY-WL-130 — malformed builtin trust-marker call
+
+Fires on any entity carrying a builtin trust marker (`@external_boundary`,
+`@trust_boundary`, `@trusted`) whose **call shape** is malformed: the marker is
+written bare where the runtime requires a call (or called where it has no
+decorator-factory form), carries a positional argument or a `*` expansion, uses
+an undeclared or duplicated keyword, expands a `**` mapping Wardline cannot read
+or one with a non-string constant key, or omits a required keyword. The engine
+drops the seed for every one of these shapes, so the function leaves the
+declared set and every tier-modulated rule on it goes quiet — the scan gets
+*greener* on a typo. PY-WL-130 is what makes that shape red instead.
+
+It shares the engine's own shape validator with seeding, so it fires exactly
+where the seed drops — never more, never less. It validates **builtin** markers
+only: a custom trust pack's keyword grammar is that pack's business, and a
+foreign decorator merely spelled `trusted` is not a builtin at all.
+
+The diagnostic reports one finding per offence, and its wording is truthful
+about *which* of three things is wrong:
+
+- **A proved runtime-invalid call** — `call_required`, `undeclared_kwarg`,
+  `duplicate_kwarg`, `missing_kwarg`, `invalid_splat_key`. The shipped marker
+  signatures reject these outright, so the message says the call is invalid for
+  the shipped runtime signature.
+- **An analyzer limitation** — `unreadable_splat`. A dynamic or computed-key
+  `**` mapping is frequently valid Python; Wardline simply cannot statically
+  prove what it supplies, and the message claims no more than that.
+- **A Wardline declaration-grammar rule** — `call_not_allowed` and
+  `positional_args`. `@external_boundary(some_callable)` and
+  `@trusted(audit_fn)` execute cleanly, but they attach the marker to their
+  argument rather than to your function, which is left with no `_wardline_*`
+  attributes. Nothing is declared, so Wardline's declaration grammar does not
+  honour them — keyword arguments only.
+
+```python
+@trusted(level="INTEGRAL", audit=True)      # fires — undeclared keyword
+def f(p):
+    return p
+
+@trusted("INTEGRAL")                        # fires — positional argument
+def g(p):
+    return p
+
+@external_boundary(source="http")           # fires — no decorator-factory form
+def r(p):
+    return p
+
+@trust_boundary                             # fires — call required
+def b(p):
+    if not p:
+        raise ValueError
+    return p
+
+@trusted(level="INTEGRAL")                  # clean
+def ok(p):
+    return p
+```
+
+Value problems belong to other channels and are out of scope here: a readable
+but invalid level token is `PY-WL-114`'s, and a level value that stays
+statically unreadable takes the `WLN-ENGINE-UNREADABLE-MARKER-VALUE` fact. Shape
+is decided first, so a marker that is both shape-malformed and value-unreadable
+takes PY-WL-130 alone.
 
 ## Engine diagnostics and the gate
 

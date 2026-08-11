@@ -23,6 +23,7 @@ from wardline.scanner.rules.contradictory_trust import ContradictoryTrust
 from wardline.scanner.rules.degenerate_boundary import DegenerateBoundary
 from wardline.scanner.rules.failopen_boundary import FailOpenBoundary
 from wardline.scanner.rules.invalid_decorator_level import InvalidDecoratorLevel
+from wardline.scanner.rules.malformed_marker_call import MalformedMarkerCall
 from wardline.scanner.rules.metadata import RuleMetadata
 from wardline.scanner.rules.none_leak import NoneLeak
 from wardline.scanner.rules.path_traversal import PathTraversal
@@ -77,6 +78,17 @@ _ALL_RULE_CLASSES = (
     UntrustedToNative,
     UntrustedToLog,
     UntrustedToMail,
+    # PY-WL-130 — appended LAST so every frozen ordering above is preserved.
+    #
+    # STRUCTURAL: this is the ONLY rule allowed to call the builtin shape validator
+    # (``marker_reader.call_shape_offences``) directly to EMIT on its offences. It is
+    # the declaration-shape chokepoint, and it agrees with seeding by construction
+    # because the provider gates on the same validator. A future declaration rule must
+    # reuse this chokepoint — extend PY-WL-130's reason vocabulary, or consume its
+    # findings — instead of rebuilding marker keyword grammar of its own. (PY-WL-114
+    # calls the validator too, but only to go SILENT on a malformed shape; it emits on
+    # VALUES, never on offences.)
+    MalformedMarkerCall,
 )
 
 
