@@ -53,9 +53,8 @@ accidental drift (that is a real regression; the failure dumps
 `/tmp/corpus_actual_<name>.json` + a unified diff). **Enforcement is this parity
 test in CI** — it fails any PR that changes `corpus/*` without a matching
 production change. The `--reason` flag is the accountability record stamped into
-`corpus/META.json`. *Recommended complement* (not yet wired): a `.github/CODEOWNERS`
-entry `tests/golden/identity/corpus/ @<maintainer>` so a rekey also requires
-maintainer review.
+`corpus/META.json`. Wired: `.github/CODEOWNERS` routes `tests/golden/identity/corpus/`
+to the maintainer (routing, not approval enforcement).
 
 ```bash
 cd tests && PYTHONPATH=. python -m golden.identity.regen --reason "<why>"

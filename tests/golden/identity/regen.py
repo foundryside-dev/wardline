@@ -3,9 +3,10 @@
 Run ONLY for an intentional, versioned rekey (see the ADR
 ``docs/decisions/2026-06-05-wardline-finding-identity-frozen-contract.md``) —
 NEVER to paper over an accidental drift. Requires ``--reason`` and stamps it into
-``corpus/META.json`` as the accountability record (the real enforcement is the
-parity test + CODEOWNERS on ``corpus/**``, which fails any PR that changes the
-corpus without a matching production change).
+``corpus/META.json`` as the accountability record (the hard enforcement is the
+parity test; ``.github/CODEOWNERS`` routes ``tests/golden/identity/corpus/``
+changes to the maintainer for review — approval enforcement requires the
+branch-protection Code Owners setting).
 
 Run with ``tests/`` on the path so the ``golden.identity`` package resolves:
 

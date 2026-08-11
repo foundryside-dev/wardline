@@ -1,0 +1,6 @@
+# Identity-corpus rekeys get routed to the maintainer for review. CODEOWNERS
+# ROUTES review requests; it does not by itself enforce approval — enforcement
+# is the branch-protection "require review from Code Owners" setting if/when
+# enabled. The parity test remains the hard gate on the bytes themselves
+# (tests/golden/identity/README.md).
+/tests/golden/identity/corpus/ @tachyon-beep
