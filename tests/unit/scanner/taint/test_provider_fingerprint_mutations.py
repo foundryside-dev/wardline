@@ -8,11 +8,13 @@ it. The builtin literal is pinned so a REGISTRY_VERSION drift in S0 is loud."""
 from __future__ import annotations
 
 import functools
+import importlib
 import os
 import pathlib
 import re
 import subprocess
 import sys
+import textwrap
 import time
 import types
 
@@ -2115,91 +2117,93 @@ def _dispatch_helpers(lvl: str, name: str = "wl_r9_helpers") -> types.ModuleType
 
 
 _FT = "from wardline.scanner.taint.provider import FunctionTaint\n"
-_DISPATCH = "    fn = getattr(H, 'for_' + 'assured', H.default)\n    return FunctionTaint(fn(), levels['to_level'])\n"
 
-
-def _fire_own_globals(lvl: str) -> object:
-    return _r7_pack(_FT + "def seed(levels):\n" + _DISPATCH, extra={"H": _dispatch_helpers(lvl)})["seed"]
-
-
-def _fire_closure_cell(lvl: str) -> object:
-    pack = _r7_pack(
-        _FT
-        + "def mk(H):\n    def seed(levels):\n    "
-        + _DISPATCH.replace("\n    ", "\n        ")
-        + "    return seed\n"
-    )
-    return pack["mk"](_dispatch_helpers(lvl))
-
-
-def _fire_plain_list(lvl: str) -> object:
-    return _r7_pack(_FT + "def seed(levels):\n    H = BOX[0]\n" + _DISPATCH, extra={"BOX": [_dispatch_helpers(lvl)]})[
-        "seed"
-    ]
-
-
-def _fire_class_attribute(lvl: str) -> object:
-    pack = _r7_pack(_FT + "class Holder:\n    pass\ndef seed(levels):\n    H = Holder.MOD\n" + _DISPATCH)
-    pack["Holder"].MOD = _dispatch_helpers(lvl)
-    return pack["seed"]
-
-
-def _fire_partial_seed(lvl: str) -> object:
-    pack = _r7_pack(_FT + "def _mk(levels):\n" + _DISPATCH, extra={"H": _dispatch_helpers(lvl)})
-    return functools.partial(pack["_mk"])
-
-
-def _fire_second_package(lvl: str) -> object:
-    mod = types.ModuleType("otherpkg.mod")
-    exec(  # noqa: S102
-        compile("def pick():\n    return getattr(impl, 'for_' + 'assured', impl.default)()\n", "o.py", "exec"),
-        mod.__dict__,
-    )
-    mod.__dict__["impl"] = _dispatch_helpers(lvl, "otherpkg.impl")
-    mod.__dict__["pick"].__module__ = "otherpkg.mod"
-    return _r7_pack(
-        _FT + "def seed(levels):\n    return FunctionTaint(sibling.pick(), levels['to_level'])\n",
-        extra={"sibling": mod},
-    )["seed"]
-
-
-def _fire_globals_keyed(lvl: str) -> object:
-    return _r7_pack(_GLOBALS_DISPATCH_SRC, lvl)["seed"]
-
-
-def _fire_attrgetter(lvl: str) -> object:
-    return _r7_pack(
-        "import operator\n" + _FT + "def seed(levels):\n"
-        "    fn = operator.attrgetter('for_' + 'assured')(H)\n"
-        "    return FunctionTaint(fn(), levels['to_level'])\n",
-        extra={"H": _dispatch_helpers(lvl)},
-    )["seed"]
-
-
-_GUARD_FIRES = {
-    "own_globals": _fire_own_globals,
-    "closure_cell": _fire_closure_cell,
-    "plain_list": _fire_plain_list,
-    "class_attribute": _fire_class_attribute,
-    "functools_partial_seed": _fire_partial_seed,
-    "second_top_level_package": _fire_second_package,
-    "globals_keyed": _fire_globals_keyed,
-    "operator_attrgetter": _fire_attrgetter,
+# The dispatch FORM (how a member name is computed), written unindented.
+_DISPATCH_FORMS = {
+    "getattr": "fn = getattr(H, 'for_' + 'assured', H.default)\nreturn fn()\n",
+    "attrgetter": "import operator\nfn = operator.attrgetter('for_' + 'assured')(H)\nreturn fn()\n",
+    "globals": "fn = globals().get('for_' + 'assured', H.default)\nreturn fn()\n",
 }
+# How the dispatching function REACHES the helper module.
+_REACH_MECHANISMS = ("own_globals", "closure_cell", "plain_list", "class_attribute")
 
 
-@pytest.mark.parametrize("shape", sorted(_GUARD_FIRES))
-def test_computed_dispatch_guard_fires(shape: str) -> None:
-    """Every way a pack can reach a module and then compute the member name.
+def _make_dispatcher(reach: str, form: str, module_name: str, lvl: str) -> types.ModuleType:
+    mod = types.ModuleType(module_name)
+    helper = _dispatch_helpers(lvl, (module_name.split(".")[0] + ".impl") if "." in module_name else "wl_impl")
+    body = _DISPATCH_FORMS[form]
+    if reach == "own_globals":
+        src = "def pick():\n    H = HELPERS\n" + textwrap.indent(body, "    ")
+        mod.__dict__["HELPERS"] = helper
+    elif reach == "closure_cell":
+        inner = "def pick():\n    H = HELPERS\n" + textwrap.indent(body, "    ")
+        src = "def _mk(HELPERS):\n" + textwrap.indent(inner, "    ") + "    return pick\n"
+    elif reach == "plain_list":
+        src = "def pick():\n    H = BOX[0]\n" + textwrap.indent(body, "    ")
+        mod.__dict__["BOX"] = [helper]
+    else:
+        src = "class Holder:\n    pass\ndef pick():\n    H = Holder.MOD\n" + textwrap.indent(body, "    ")
+    if form == "globals":
+        mod.__dict__["for_assured"] = helper.for_assured
+    exec(compile(src, "d.py", "exec"), mod.__dict__)  # noqa: S102
+    if reach == "closure_cell":
+        mod.__dict__["pick"] = mod.__dict__["_mk"](helper)
+    if reach == "class_attribute":
+        mod.__dict__["Holder"].MOD = helper
+    for name in ("pick", "_mk"):
+        fn = mod.__dict__.get(name)
+        if fn is not None and hasattr(fn, "__module__"):
+            fn.__module__ = module_name
+    return mod
 
-    `closure_cell`, `plain_list` and `class_attribute` are the three round 8 regressed
-    to COLLIDE; `functools_partial_seed`, `second_top_level_package` and
-    `globals_keyed` are the three round 7 missed. Both sets must fire at once — that is
-    the whole point of the union.
+
+def _build_dispatch_seed(reach: str, form: str, topology: str, wrapping: str, lvl: str) -> object:
+    if topology == "own_package":
+        mod = _make_dispatcher(reach, form, "mypack.grammar", lvl)
+        ns: dict = {"__name__": "mypack.grammar"}
+        ns.update({k: v for k, v in mod.__dict__.items() if not k.startswith("__")})
+        exec(  # noqa: S102
+            compile(_FT + "def seed(levels):\n    return FunctionTaint(pick(), levels['to_level'])\n", "m.py", "exec"),
+            ns,
+        )
+    else:
+        mod = _make_dispatcher(reach, form, "otherpkg.mod", lvl)
+        ns = {"__name__": "mypack.grammar", "sibling": mod}
+        exec(  # noqa: S102
+            compile(
+                _FT + "def seed(levels):\n    return FunctionTaint(sibling.pick(), levels['to_level'])\n",
+                "m.py",
+                "exec",
+            ),
+            ns,
+        )
+    return functools.partial(ns["seed"]) if wrapping == "partial" else ns["seed"]
+
+
+_DISPATCH_CROSS_PRODUCT = [
+    (topology, reach, form, wrapping)
+    for topology in ("own_package", "second_package")
+    for reach in _REACH_MECHANISMS
+    for form in sorted(_DISPATCH_FORMS)
+    for wrapping in ("bare", "partial")
+]
+
+
+@pytest.mark.parametrize(("topology", "reach", "form", "wrapping"), _DISPATCH_CROSS_PRODUCT)
+def test_computed_dispatch_guard_fires(topology: str, reach: str, form: str, wrapping: str) -> None:
+    """The guard, as a CROSS-PRODUCT of the three axes it actually depends on.
+
+    The previous table listed eight shapes but was only TWO predicate-arms wide: seven
+    of the eight tripped the same pack-root clause because the fixture always set
+    `__name__ = "mypack.grammar"`, and just one row exercised the surface-root arm. A
+    table that looks broad while exercising two arms is how two fail-open holes
+    survived a round — read as {reach} x {topology} x {wrapping}, 21 of these 48 rows
+    collided, every one a second-package dispatcher reaching its sibling by closure
+    cell, plain list or class attribute rather than by its own globals.
     """
-    build = _GUARD_FIRES[shape]
-    left, right = _fp(_bt(seed=build("EXTERNAL_RAW"))), _fp(_bt(seed=build("ASSURED")))
-    assert "+grammar:uncacheable-" in left, f"{shape} did not fail closed"
+    left = _fp(_bt(seed=_build_dispatch_seed(reach, form, topology, wrapping, "EXTERNAL_RAW")))
+    right = _fp(_bt(seed=_build_dispatch_seed(reach, form, topology, wrapping, "ASSURED")))
+    assert "+grammar:uncacheable-" in left, f"{topology}/{reach}/{form}/{wrapping} did not fail closed"
     assert left != right
 
 
@@ -2224,12 +2228,22 @@ def test_computed_dispatch_guard_stays_silent_for_libraries(label: str, module_n
     libraries the cost table in Appendix 7 uses.
     """
     module = pytest.importorskip(module_name)
-    pack = _r7_pack(
+    # (a) referenced as a CLASS/FUNCTION ...
+    by_member = _r7_pack(
         "from wardline.core.taints import TaintState\n" + _FT + "def seed(levels):\n"
         "    return FunctionTaint(TaintState.EXTERNAL_RAW if LIB else None, levels['to_level'])\n",
         extra={"LIB": getattr(module, attribute)},
     )
-    assert "uncacheable" not in _fp(_bt(seed=pack["seed"])), f"{label} was read as the pack's own dispatch"
+    assert "uncacheable" not in _fp(_bt(seed=by_member["seed"])), f"{label} was read as the pack's own dispatch"
+    # (b) ... and as a MODULE, which is the ordinary `import requests; requests.get(...)`
+    # idiom. Treating a directly-imported module as the pack's own surface made FIVE of
+    # these seven uncacheable; the distribution gate is what keeps them warm.
+    by_module = _r7_pack(
+        "from wardline.core.taints import TaintState\n" + _FT + "def seed(levels):\n"
+        f"    return FunctionTaint(TaintState.EXTERNAL_RAW if M.{attribute} else None, levels['to_level'])\n",
+        extra={"M": module},
+    )
+    assert "uncacheable" not in _fp(_bt(seed=by_module["seed"])), f"{label} module import went uncacheable"
 
 
 def test_module_importing_pack_stays_cacheable() -> None:
@@ -2299,24 +2313,28 @@ def test_boundary_rows_flip_when_the_trigger_set_is_widened(monkeypatch: pytest.
     assert "+grammar:uncacheable-" in _fp(_bt(seed=pack["seed"])), "the boundary row is decorative"
 
 
-def test_nested_container_subclass_graph_does_not_blow_up() -> None:
-    """Round 7 gave container SUBCLASSES per-instance state without giving them a memo.
+@pytest.mark.parametrize("flavour", ["plain_dict", "dict_subclass"])
+def test_nested_container_graph_does_not_blow_up(flavour: str) -> None:
+    """Every container needs the memo, not just subclasses.
 
-    Their whole subtree was then re-expanded at every level, and because a member may
-    itself be a container subclass the cost DOUBLED per level — measured,
-    `fingerprint()` on a `requests.Session` graph inside a populated interpreter never
-    returned. It is the same defect class as round 6's DAG-as-a-tree, on the one path
-    that was never routed through `_expanded`. This pins the shape directly rather than
-    relying on a library to reproduce it.
+    Round 7 gave container SUBCLASSES per-instance state without a memo, so their
+    subtree re-expanded at every level and cost doubled per level — `fingerprint()` on
+    a `requests.Session` graph never returned. Round 9 fixed that path and left the
+    PLAIN path exactly as it was: no memo, no cycle guard, and no budget decrement.
+    Measured on plain `dict`: 8.9 MiB at depth 16, 35.8 MiB at 18, **143 MiB / 30 s at
+    depth 20 — with `nodes=0`**, which is the proof that the plain path never even
+    reached the budget that was supposed to bound it. Round 9's appendix cited that
+    path's byte-identity as reassurance; byte-identity was the defect, not the comfort.
     """
+    ctor = "dict" if flavour == "plain_dict" else "Box"
     src = (
         "from wardline.core.taints import TaintState\n"
         "from wardline.scanner.taint.provider import FunctionTaint\n"
         "class Box(dict):\n    pass\n"
-        "LEAF = Box(v=TaintState.{lvl})\n"
+        f"LEAF = {ctor}(v=TaintState.{{lvl}})\n"
         "NODES = [LEAF]\n"
-        "for _i in range(18):\n"
-        "    NODES.append(Box(a=NODES[-1], b=NODES[-1]))\n"
+        "for _i in range(20):\n"
+        f"    NODES.append({ctor}(a=NODES[-1], b=NODES[-1]))\n"
         "def seed(levels):\n    return FunctionTaint(TaintState.EXTERNAL_RAW, levels['to_level'])\n"
         "seed.__dict__['box'] = NODES[-1]\n"
     )
@@ -2324,9 +2342,83 @@ def test_nested_container_subclass_graph_does_not_blow_up() -> None:
     a, b = _r7_pack(src), _r7_pack(src, "ASSURED")
     left = _fp(_bt(seed=a["seed"]))
     elapsed = time.perf_counter() - started
-    assert elapsed < 10.0, f"nested container subclasses took {elapsed:.1f}s"
+    assert elapsed < 10.0, f"{flavour} took {elapsed:.1f}s"
     blob = _canonical_json(_seed_identity(a["seed"]))
-    assert len(blob) < 512 * 1024, f"preimage {len(blob) / 1024:.0f} KiB — re-expanded as a tree"
+    assert len(blob) < 512 * 1024, f"{flavour} preimage {len(blob) / 1024:.0f} KiB — re-expanded as a tree"
     # ... and cheaper must not mean blinder: the shared LEAF still discriminates.
     assert left != _fp(_bt(seed=b["seed"]))
     assert left == _fp(_bt(seed=a["seed"]))
+
+
+# --- Round 10: the cold-cache claim, asserted at the level actually achieved --------
+
+_CROSS_PROCESS_STABLE = {
+    "yaml": True,
+    "json": True,
+    "packaging.version": True,
+    "click": True,
+    "requests": True,
+    "rich.console": True,
+}
+
+# Measured COLD: five fresh processes, five distinct digests, for a pack referencing
+# these libraries' CLASSES. Removing the `uncacheable-` token did NOT make them warm —
+# the object graph itself re-keys per process. Residual D3. Pinned as known-cold so the
+# suite stops reporting a property it never checked.
+_CROSS_PROCESS_COLD = {"rich.console": "Console", "jsonschema": "Draft7Validator"}
+
+
+@pytest.mark.parametrize("module_name", sorted(_CROSS_PROCESS_STABLE))
+def test_library_pack_cross_process_stability_is_reported_honestly(module_name: str) -> None:
+    """`"uncacheable" not in ...` does NOT mean the cache warms.
+
+    The shipped library test asserted only the absence of the token, so it passed for
+    `rich` and `jsonschema` while both re-keyed on every scan. This asserts the real
+    property for the libraries that achieve it.
+    """
+    pytest.importorskip(module_name)
+    assert len(_digests_across_processes(module_name, None, 2)) == 1, f"{module_name} regressed to a cold cache"
+
+
+@pytest.mark.parametrize("module_name", sorted(_CROSS_PROCESS_COLD))
+def test_known_cold_libraries_are_pinned_as_cold(module_name: str) -> None:
+    """These two do NOT warm, and the suite must say so rather than imply otherwise.
+
+    If this test starts failing, the graph stopped re-keying — which is good news:
+    move the entry into `_CROSS_PROCESS_STABLE` and update residual D3.
+    """
+    pytest.importorskip(module_name)
+    digests = _digests_across_processes(module_name, _CROSS_PROCESS_COLD[module_name], 3)
+    assert len(digests) > 1, f"{module_name} is now stable — promote it and update D3"
+
+
+def _digests_across_processes(module_name: str, attribute: str | None, runs: int) -> set[str]:
+    here = str(pathlib.Path(__file__).parent)
+    script = (
+        "import sys;"
+        f"sys.path.insert(0, {here!r});"
+        "import test_provider_fingerprint_mutations as T;"
+        f"print(T._library_digest({module_name!r}, {attribute!r}))"
+    )
+    return {
+        subprocess.run(  # noqa: S603
+            [sys.executable, "-c", script],
+            capture_output=True,
+            text=True,
+            check=True,
+            env={**os.environ, "PYTHONHASHSEED": "random"},
+        ).stdout.strip()
+        for _ in range(runs)
+    }
+
+
+def _library_digest(module_name: str, attribute: str | None = None) -> str:
+    """One grammar digest for a pack referencing a library module or one of its members."""
+    module = importlib.import_module(module_name)
+    target = getattr(module, attribute) if attribute else module
+    pack = _r7_pack(
+        "from wardline.core.taints import TaintState\n" + _FT + "def seed(levels):\n"
+        "    return FunctionTaint(TaintState.EXTERNAL_RAW if M else None, levels['to_level'])\n",
+        extra={"M": target},
+    )
+    return _grammar_digest((_bt(seed=pack["seed"]),))

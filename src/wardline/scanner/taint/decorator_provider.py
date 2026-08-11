@@ -20,6 +20,7 @@ import re
 import reprlib
 import secrets
 import sys
+from importlib.metadata import packages_distributions
 from types import CodeType, MappingProxyType, ModuleType
 from typing import TYPE_CHECKING, Any
 
@@ -80,9 +81,14 @@ def vocabulary_star_exports() -> dict[str, dict[str, str]]:
 # guard must rise rather than the record be accepted.
 _MAX_VALUE_DEPTH = 64
 # Ceiling on how many distinct objects one digest may structurally expand. Two
-# orders of magnitude above the measured worst case (180 objects, <1 ms) — a safety
+# orders of magnitude above the measured worst case for a pack's own grammar — a safety
 # valve against a seed that reaches a pathological object graph, never a routine cap.
-_MAX_EXPANDED_NODES = 20_000
+# RAISED 20 000 -> 50 000 in round 10: routing PLAIN containers through ``_expanded``
+# (the fix for a 143 MiB / 30 s blow-up that never decremented the budget at all)
+# roughly doubles the node count of a real graph — measured, mkdocs went 2 461 ->
+# 5 684. The raise restores the previous ~8x headroom; at a measured ~530 B/node the
+# preimage ceiling stays ~25 MiB, unchanged. No current grammar comes near either.
+_MAX_EXPANDED_NODES = 50_000
 
 
 class _Walk:
@@ -401,20 +407,17 @@ def _shape_record(
 ) -> dict[str, object]:
     """A shape-matched record, routed through ``_expanded`` when the type is a SUBCLASS.
 
-    A plain ``dict``/``list``/``tuple``/``set`` keeps exactly the path it had: built
-    inline, no memo, no back-reference. A SUBCLASS instead goes through ``_expanded``,
-    so it gets the memo, the cycle guard and the back-reference that ordinary instances
-    have had since round 6.
+    EVERY container goes through ``_expanded`` — memo, cycle guard, back-reference —
+    not only subclasses.
 
-    That is not tidiness — it is a HANG fix. Round 7 gave subclass containers
-    per-instance state without giving them a memo, so a graph of nested container
-    subclasses re-expanded its whole subtree at every level and the cost doubled per
-    level. Measured: ``fingerprint()`` on a ``requests.Session`` graph inside a
-    populated interpreter never returned. Same defect class as round 6's DAG-as-a-tree,
-    on the one path that was never routed through ``_expanded``.
+    Round 9 routed subclasses only, which fixed the measured hang and left the plain
+    path exactly as it was: no memo, no cycle guard, no budget decrement, and a
+    preimage that DOUBLES per level. Measured on plain ``dict``: 9.1 MiB at depth 16,
+    36.6 MiB at 18, **146 MiB / 29 s at depth 20**. Round 9's appendix cited the plain
+    path's byte-identity as reassurance when byte-identity was precisely the problem —
+    it was unchanged because it was never fixed. It is the same DAG-as-a-tree defect
+    round 6 closed for functions and classes, and the fix is the same one.
     """
-    if type(value) in _TRANSPARENT_TYPES:
-        return _typed_shape(value, build(depth), walk, depth)
     return _expanded(
         value,
         walk,
@@ -911,7 +914,7 @@ def _function_identity(fn: object, walk: _Walk, depth: int) -> dict[str, object]
     globals_map = _probe(fn, "__globals__")
     globals_record: dict[str, object] = {}
     names = _reachable_names(code)
-    if _computed_dispatch_is_unprovable(fn, names, globals_map if isinstance(globals_map, dict) else {}, walk, depth):
+    if _computed_dispatch_is_unprovable(fn, names, walk):
         # COMPUTED-NAME DISPATCH — the demand set is not statically knowable.
         #
         #     fn = getattr(helpers, "for_" + level.value.lower(), helpers.default)
@@ -999,12 +1002,40 @@ def _seed_roots(seed: object) -> str:
     return ""
 
 
-def _module_in_reach(names: tuple[str, ...], globals_map: dict[str, object]) -> bool:
-    """Does this function name a non-fenced MODULE in its own globals?"""
-    return any(
-        isinstance(target, ModuleType) and not _is_structurally_opaque_module(target)
-        for target in (globals_map.get(name) for name in names)
-    )
+_PACKAGE_DISTRIBUTIONS: dict[str, tuple[str, ...]] | None = None
+
+
+def _distributions_for(root: str) -> tuple[str, ...]:
+    """Installed distributions providing this top-level package, or ``()`` if unknown."""
+    global _PACKAGE_DISTRIBUTIONS  # noqa: PLW0603 — one lazy read of a process-constant map
+    if _PACKAGE_DISTRIBUTIONS is None:
+        try:
+            _PACKAGE_DISTRIBUTIONS = {k: tuple(v) for k, v in packages_distributions().items()}
+        except Exception:  # noqa: BLE001 — a broken metadata tree must not break the digest
+            _PACKAGE_DISTRIBUTIONS = {}
+    return _PACKAGE_DISTRIBUTIONS.get(root, ())
+
+
+def _is_foreign_distribution(root: str, pack_roots: frozenset[str]) -> bool:
+    """Is ``root`` shipped by a DIFFERENT installed distribution than the grammar?
+
+    This is what separates a second top-level package the PACK ships from an ordinary
+    third-party library, and nothing structural does: ``import otherpkg.mod as sibling``
+    and ``import yaml as Y`` are the same shape. Treating both as the pack's own made
+    five of seven common libraries uncacheable the moment a pack used the ordinary
+    ``import requests`` / ``requests.get(...)`` idiom.
+
+    FAILS CLOSED: a root with no distribution metadata — a local source tree, an
+    ``exec``-ed module — is NOT foreign, so it is treated as the pack's own and its
+    computed dispatch still fires.
+    """
+    root_dists = set(_distributions_for(root))
+    if not root_dists:
+        return False
+    pack_dists: set[str] = set()
+    for pack_root in pack_roots:
+        pack_dists.update(_distributions_for(pack_root))
+    return root_dists.isdisjoint(pack_dists)
 
 
 def _surface_roots(boundary_types: tuple[BoundaryType, ...]) -> frozenset[str]:
@@ -1033,17 +1064,7 @@ def _surface_roots(boundary_types: tuple[BoundaryType, ...]) -> frozenset[str]:
     return frozenset(roots)
 
 
-# How far off the grammar's own packages the second predicate reaches. A pack that
-# ships a second top-level package hands off to it DIRECTLY from a seed, so its
-# dispatch sits at depth 0-1 (measured). A library's internal dispatch sits far deeper
-# — ``yaml.reader.Reader.__init__`` is at depth 5 — and reading that as the pack's own
-# is what made ``rich``, ``requests`` and ``jsonschema`` uncacheable in round 8.
-_DISPATCH_SURFACE_HOPS = 3
-
-
-def _computed_dispatch_is_unprovable(
-    fn: object, names: tuple[str, ...], globals_map: dict[str, object], walk: _Walk, depth: int
-) -> bool:
+def _computed_dispatch_is_unprovable(fn: object, names: tuple[str, ...], walk: _Walk) -> bool:
     """Can this function reach a member whose NAME is computed at run time?
 
     THE UNION of two predicates, because each catches shapes the other misses and the
@@ -1054,11 +1075,20 @@ def _computed_dispatch_is_unprovable(
       care HOW a module arrives, so it covers a module reached through a closure cell,
       a plain list or a class attribute. Round 8 replaced it with the second predicate
       alone and all three of those regressed to COLLIDE.
-    * **a non-fenced module is in the function's own globals, within the grammar's own
-      dispatch surface** (round 8, now depth-bounded). This covers dispatch inside a
-      second top-level package the pack ships, which the first predicate misses because
-      that package's root is not a seed's root. Unbounded, it read library internals as
-      pack code — see ``_DISPATCH_SURFACE_HOPS``.
+    * **the function belongs to a SURFACE root** — a package a seed hands over directly
+      as a module object in its own globals. This covers dispatch inside a second
+      top-level package the pack ships, which the first predicate misses because that
+      package's root is not a seed's root.
+
+    Round 9 additionally required, for the second arm, that a non-fenced module be in
+    that function's OWN globals and that it sit within a hop bound. Both are deleted.
+    The hop bound was inert in the direction it was justified for — raising it to 99
+    flipped ZERO no-fire rows — while creating a live hole: a second-package dispatcher
+    behind a ``functools.partial`` seed sits at depth 4, ``4 <= 3`` failed, and the
+    grammars collided. The globals requirement was the other half of the same hole:
+    read across a 48-row cross-product of {reach} x {topology} x {wrapping}, **21 rows
+    collided**, every one of them a second-package dispatcher reaching its sibling by
+    closure cell, plain list or class attribute rather than by its own globals.
 
     Plus the empty case, failing CLOSED: with no identifiable pack root the guard has
     no way to tell pack code from library code, so it must not stay silent.
@@ -1076,13 +1106,10 @@ def _computed_dispatch_is_unprovable(
         return False
     if not walk.pack_roots:
         return True
-    if _module_root(fn) in walk.pack_roots:
+    root = _module_root(fn)
+    if root in walk.pack_roots:
         return True
-    return (
-        _module_root(fn) in walk.surface_roots
-        and depth <= _DISPATCH_SURFACE_HOPS
-        and _module_in_reach(names, globals_map)
-    )
+    return root in walk.surface_roots and not _is_foreign_distribution(root, walk.pack_roots)
 
 
 # Import machinery and filesystem paths in a module namespace: neither is behaviour,
