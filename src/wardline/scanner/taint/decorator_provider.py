@@ -88,8 +88,8 @@ class _Walk:
 
     A referenced global may reference back (``seed`` → ``_helper`` → ``seed``) and one
     object may be reachable by many paths, so the walk needs both cycle detection and
-    memoization: ``active`` breaks cycles, ``memo`` records the ORDINAL of an object
-    already expanded on this walk. ``alive`` pins every memoized object for the
+    memoization: ``active`` breaks cycles, ``memo`` records the STRUCTURAL HASH of an
+    object already expanded on this walk. ``alive`` pins every memoized object for the
     duration so CPython cannot recycle an ``id()`` underneath the memo.
 
     CORRECTED — this docstring previously claimed the memo made "the cost linear in the
@@ -104,15 +104,14 @@ class _Walk:
     still moves the digest, and the preimage is linear in distinct objects for real.
     """
 
-    __slots__ = ("active", "alive", "budget", "memo", "ordinal")
+    __slots__ = ("active", "alive", "budget", "memo")
 
     def __init__(self) -> None:
-        # id(obj) -> (ordinal of its FULL record, structural hash of that record).
-        self.memo: dict[int, tuple[int, str]] = {}
+        # id(obj) -> the structural hash of that object's full record.
+        self.memo: dict[int, str] = {}
         self.alive: list[object] = []
         self.active: set[int] = set()
         self.budget: int = _MAX_EXPANDED_NODES
-        self.ordinal: int = 0
 
 
 def _canonical_json(value: object) -> str:
@@ -142,17 +141,24 @@ def _expanded(value: object, walk: _Walk, depth: int, build: Callable[[int], dic
     key = id(value)
     seen = walk.memo.get(key)
     if seen is not None:
-        # The back-reference carries the object's full STRUCTURAL HASH, not just a
-        # pointer to where the record was emitted. Without ``h`` the back-reference
-        # depends on the inline record surviving, and it does not always: the walk
-        # reaches some objects twice and keeps only the second result (measured —
+        # The back-reference carries the object's full STRUCTURAL HASH, and NOTHING
+        # about where the record was emitted. Without ``h`` the back-reference depends
+        # on the inline record surviving, and it does not always: the walk reaches some
+        # objects twice and keeps only the second result (measured —
         # ``_instance_identity`` expanded ``__wrapped__`` once from the instance dict
         # and again explicitly, and the back-reference OVERWROTE the real body, so an
         # ``@lru_cache`` helper silently collided). A guard that discards a subtree
         # (``_contents``, ``_reduced_state``) can drop one the same way. Keying the
         # hash makes every back-reference discriminate on its own.
-        ordinal, digest = seen
-        return {"t": "seen", "n": ordinal, "h": digest, **_named(value)}
+        #
+        # A traversal ORDINAL used to ride here and in every expanded record. It was a
+        # defect: it put the walk's visit order into the digest, so behaviour-neutral
+        # re-authoring — swapping two method definitions, swapping two keys in a dict
+        # literal — MOVED the fingerprint and cold-invalidated every warm cache.
+        # Isolated by stripping only that key, which made the two canonical JSON
+        # documents byte-identical. It bought no discrimination: ``h`` already
+        # identifies the object's structure exactly.
+        return {"t": "seen", "h": seen, **_named(value)}
     if key in walk.active:
         # A reference cycle. The back-edge carries the NAME only; the object's own
         # structure is already being expanded higher up this same path, so the
@@ -161,22 +167,17 @@ def _expanded(value: object, walk: _Walk, depth: int, build: Callable[[int], dic
     if walk.budget <= 0:
         return {"t": "budget-exhausted", **_named(value)}
     walk.budget -= 1
-    ordinal = walk.ordinal
-    walk.ordinal += 1
     walk.active.add(key)
     try:
         record = build(depth)
     finally:
         walk.active.discard(key)
     walk.alive.append(value)
-    # Hashed BEFORE the ordinal is attached, so ``h`` is a pure structural digest of
-    # the object and carries no traversal-position information.
-    walk.memo[key] = (ordinal, hashlib.sha256(_canonical_json(record).encode("utf-8")).hexdigest())
-    # The ordinal binds every back-reference to exactly this expansion, so two
-    # same-named objects cannot share one. It makes the digest sensitive to TRAVERSAL
-    # ORDER, which is why every container is now walked in a process-stable order —
-    # see ``_set_order_key``.
-    record["n"] = ordinal
+    # A pure structural digest of the object. No traversal-position information enters
+    # it, and nothing positional is written back onto the record either — that claim is
+    # only true now that the ordinal is gone, because a child's ordinal would have been
+    # hashed into its parent.
+    walk.memo[key] = hashlib.sha256(_canonical_json(record).encode("utf-8")).hexdigest()
     return record
 
 
@@ -213,6 +214,7 @@ def _has_code(value: object) -> bool:
 # Everything else — the pack's own modules AND any third-party helper library it
 # imports — is expanded structurally.
 _OPAQUE_PACKAGES = frozenset({"builtins", "wardline"}) | frozenset(sys.stdlib_module_names)
+
 
 # CPython's default ``object.__repr__`` idiom. A memory address is process noise, never
 # durable information about a value, so it is normalised out of the last-resort arm;

@@ -1648,9 +1648,13 @@ def test_back_reference_carries_a_structural_hash_not_just_a_pointer() -> None:
     inner = record["members"]["Y"]
     assert inner["t"] == "seen"
     assert re.fullmatch(r"[0-9a-f]{64}", inner["h"])
-    assert isinstance(inner["n"], int)
+    # ... and NOTHING positional. Round 5 also put a traversal ordinal here and on
+    # every expanded record, which leaked the walk's visit order into the digest and
+    # made behaviour-neutral re-authoring cold-invalidate every warm cache.
+    assert "n" not in inner
     # X is the first reach and carries the FULL record; Y is the back-reference.
     assert record["members"]["X"]["kind"] == "class"
+    assert "n" not in record
 
 
 def test_lru_cache_helper_survives_the_double_expansion_of_wrapped() -> None:
@@ -1718,3 +1722,72 @@ def test_set_of_shared_objects_digest_is_identical_in_fresh_processes() -> None:
 def test_set_of_shared_objects_still_discriminates() -> None:
     a, b = _set_dag_pack(), _set_dag_pack(lvl="ASSURED")
     assert _fp(_bt(seed=a["seed"])) != _fp(_bt(seed=b["seed"]))
+
+
+# --- Round 6, item 1: REORDERING — the axis all 11 reformat rows missed -----------
+#
+# Every existing reformat-stability test varies whitespace, line numbers or filename.
+# NONE of them reorders anything, and that was the shared assumption that let a
+# traversal ordinal ship in round 5: `_expanded` wrote `record["n"] = ordinal`, so the
+# walk's visit order entered the digest and swapping two method definitions — or two
+# keys in a dict literal — cold-invalidated every warm cache for no discrimination.
+
+_REORDER_PAIRS: dict[str, tuple[str, str]] = {
+    "method_definition_order": (
+        "class P:\n    def a(self):\n        return 1\n    def b(self):\n        return 2\n"
+        "def seed(levels):\n    return FunctionTaint(TaintState.EXTERNAL_RAW if P else None, levels['to_level'])\n",
+        "class P:\n    def b(self):\n        return 2\n    def a(self):\n        return 1\n"
+        "def seed(levels):\n    return FunctionTaint(TaintState.EXTERNAL_RAW if P else None, levels['to_level'])\n",
+    ),
+    "dict_literal_key_order": (
+        "class A:\n    pass\nclass B:\n    pass\nREG = {{'a': A, 'b': B}}\n"
+        "def seed(levels):\n    return FunctionTaint(TaintState.EXTERNAL_RAW, levels['to_level'])\n"
+        "seed.__dict__['r'] = REG\n",
+        "class A:\n    pass\nclass B:\n    pass\nREG = {{'b': B, 'a': A}}\n"
+        "def seed(levels):\n    return FunctionTaint(TaintState.EXTERNAL_RAW, levels['to_level'])\n"
+        "seed.__dict__['r'] = REG\n",
+    ),
+    "class_attribute_order": (
+        "class A:\n    pass\nclass B:\n    pass\n"
+        "class REG:\n    a = A\n    b = B\n"
+        "def seed(levels):\n    return FunctionTaint(TaintState.EXTERNAL_RAW if REG else None, levels['to_level'])\n",
+        "class A:\n    pass\nclass B:\n    pass\n"
+        "class REG:\n    b = B\n    a = A\n"
+        "def seed(levels):\n    return FunctionTaint(TaintState.EXTERNAL_RAW if REG else None, levels['to_level'])\n",
+    ),
+}
+
+
+@pytest.mark.parametrize("shape", sorted(_REORDER_PAIRS))
+def test_member_reordering_does_not_move_the_fingerprint(shape: str) -> None:
+    head = "from wardline.core.taints import TaintState\nfrom wardline.scanner.taint.provider import FunctionTaint\n"
+    left, right = _REORDER_PAIRS[shape]
+    a, b = _carrier_pack(head + left, "EXTERNAL_RAW"), _carrier_pack(head + right, "EXTERNAL_RAW")
+    assert _fp(_bt(seed=a["seed"])) == _fp(_bt(seed=b["seed"])), f"{shape} cold-invalidated the cache"
+
+
+def test_no_expanded_record_carries_a_traversal_ordinal() -> None:
+    """The invariant, checked structurally rather than case by case."""
+    blob = _canonical_json(_seed_identity(_shared_dag_pack(6)["seed"]))
+    assert '"n":' not in blob, "a traversal ordinal is back in the preimage"
+
+
+def test_reordering_independent_assignments_is_a_CODE_change_not_an_ordinal_leak() -> None:
+    """Honest scoping: this one still moves, and NOT because of the ordinal.
+
+    Swapping `self.x = 1` and `self.y = 2` permutes the code object's `co_names` and
+    `co_consts` tables — the instruction operands index different entries — so the two
+    `__init__` code objects genuinely differ. `_code_identity` has keyed those since
+    round 0 and must: the operand tables are load-bearing, and sorting them without
+    remapping the operands would create COLLISIONS. The digest therefore
+    OVER-invalidates here, which is the safe direction (a cold cache, never a stale
+    one), and it is recorded as a residual rather than silently "fixed".
+    """
+    ns1: dict = {}
+    ns2: dict = {}
+    exec(compile("class P:\n    def __init__(self):\n        self.x = 1\n        self.y = 2\n", "m", "exec"), ns1)  # noqa: S102
+    exec(compile("class P:\n    def __init__(self):\n        self.y = 2\n        self.x = 1\n", "m", "exec"), ns2)  # noqa: S102
+    left, right = ns1["P"].__init__.__code__, ns2["P"].__init__.__code__
+    assert left.co_code == right.co_code  # same instructions ...
+    assert left.co_names != right.co_names  # ... but permuted operand tables
+    assert left.co_consts != right.co_consts
