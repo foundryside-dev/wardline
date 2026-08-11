@@ -13,10 +13,12 @@ import pathlib
 import re
 import subprocess
 import sys
+import time
 import types
 
 import pytest
 
+import wardline.scanner.taint.decorator_provider as dp
 from wardline.core.taints import TaintState
 from wardline.scanner.grammar import BoundaryType, LevelArg
 from wardline.scanner.taint.decorator_provider import (
@@ -2085,3 +2087,246 @@ def test_no_carrier_fixture_passes_on_a_random_token(carrier: str) -> None:
     fingerprint = _fp(_bt(seed=pack["seed"]))
     assert "uncacheable" not in fingerprint, f"{carrier} is answered by a random token"
     assert fingerprint == _fp(_bt(seed=pack["seed"]))
+
+
+# --- Round 9: the computed-dispatch guard, BOTH directions, per shape --------------
+#
+# Three rounds running, a change to this guard moved one direction while breaking the
+# other, so a single-direction check is not sufficient evidence. Round 7 scoped it to
+# the grammar's own package roots and missed `functools.partial`, a second package and
+# `globals()`. Round 8 replaced that with "a non-fenced module is in reach" and
+# regressed closure-cell, plain-list and class-attribute reach to COLLIDE while making
+# `rich`, `requests` and `jsonschema` uncacheable. Both tables below now ship.
+
+
+def _dispatch_helpers(lvl: str, name: str = "wl_r9_helpers") -> types.ModuleType:
+    mod = types.ModuleType(name)
+    exec(  # noqa: S102
+        compile(
+            "from wardline.core.taints import TaintState\n"
+            f"def for_assured():\n    return TaintState.{lvl}\n"
+            "def default():\n    return TaintState.UNKNOWN_RAW\n",
+            "h.py",
+            "exec",
+        ),
+        mod.__dict__,
+    )
+    return mod
+
+
+_FT = "from wardline.scanner.taint.provider import FunctionTaint\n"
+_DISPATCH = "    fn = getattr(H, 'for_' + 'assured', H.default)\n    return FunctionTaint(fn(), levels['to_level'])\n"
+
+
+def _fire_own_globals(lvl: str) -> object:
+    return _r7_pack(_FT + "def seed(levels):\n" + _DISPATCH, extra={"H": _dispatch_helpers(lvl)})["seed"]
+
+
+def _fire_closure_cell(lvl: str) -> object:
+    pack = _r7_pack(
+        _FT
+        + "def mk(H):\n    def seed(levels):\n    "
+        + _DISPATCH.replace("\n    ", "\n        ")
+        + "    return seed\n"
+    )
+    return pack["mk"](_dispatch_helpers(lvl))
+
+
+def _fire_plain_list(lvl: str) -> object:
+    return _r7_pack(_FT + "def seed(levels):\n    H = BOX[0]\n" + _DISPATCH, extra={"BOX": [_dispatch_helpers(lvl)]})[
+        "seed"
+    ]
+
+
+def _fire_class_attribute(lvl: str) -> object:
+    pack = _r7_pack(_FT + "class Holder:\n    pass\ndef seed(levels):\n    H = Holder.MOD\n" + _DISPATCH)
+    pack["Holder"].MOD = _dispatch_helpers(lvl)
+    return pack["seed"]
+
+
+def _fire_partial_seed(lvl: str) -> object:
+    pack = _r7_pack(_FT + "def _mk(levels):\n" + _DISPATCH, extra={"H": _dispatch_helpers(lvl)})
+    return functools.partial(pack["_mk"])
+
+
+def _fire_second_package(lvl: str) -> object:
+    mod = types.ModuleType("otherpkg.mod")
+    exec(  # noqa: S102
+        compile("def pick():\n    return getattr(impl, 'for_' + 'assured', impl.default)()\n", "o.py", "exec"),
+        mod.__dict__,
+    )
+    mod.__dict__["impl"] = _dispatch_helpers(lvl, "otherpkg.impl")
+    mod.__dict__["pick"].__module__ = "otherpkg.mod"
+    return _r7_pack(
+        _FT + "def seed(levels):\n    return FunctionTaint(sibling.pick(), levels['to_level'])\n",
+        extra={"sibling": mod},
+    )["seed"]
+
+
+def _fire_globals_keyed(lvl: str) -> object:
+    return _r7_pack(_GLOBALS_DISPATCH_SRC, lvl)["seed"]
+
+
+def _fire_attrgetter(lvl: str) -> object:
+    return _r7_pack(
+        "import operator\n" + _FT + "def seed(levels):\n"
+        "    fn = operator.attrgetter('for_' + 'assured')(H)\n"
+        "    return FunctionTaint(fn(), levels['to_level'])\n",
+        extra={"H": _dispatch_helpers(lvl)},
+    )["seed"]
+
+
+_GUARD_FIRES = {
+    "own_globals": _fire_own_globals,
+    "closure_cell": _fire_closure_cell,
+    "plain_list": _fire_plain_list,
+    "class_attribute": _fire_class_attribute,
+    "functools_partial_seed": _fire_partial_seed,
+    "second_top_level_package": _fire_second_package,
+    "globals_keyed": _fire_globals_keyed,
+    "operator_attrgetter": _fire_attrgetter,
+}
+
+
+@pytest.mark.parametrize("shape", sorted(_GUARD_FIRES))
+def test_computed_dispatch_guard_fires(shape: str) -> None:
+    """Every way a pack can reach a module and then compute the member name.
+
+    `closure_cell`, `plain_list` and `class_attribute` are the three round 8 regressed
+    to COLLIDE; `functools_partial_seed`, `second_top_level_package` and
+    `globals_keyed` are the three round 7 missed. Both sets must fire at once — that is
+    the whole point of the union.
+    """
+    build = _GUARD_FIRES[shape]
+    left, right = _fp(_bt(seed=build("EXTERNAL_RAW"))), _fp(_bt(seed=build("ASSURED")))
+    assert "+grammar:uncacheable-" in left, f"{shape} did not fail closed"
+    assert left != right
+
+
+_GUARD_SILENT_LIBS = [
+    ("yaml", "yaml", "safe_load"),
+    ("json", "json", "loads"),
+    ("packaging", "packaging.version", "Version"),
+    ("click", "click", "Command"),
+    ("rich", "rich.console", "Console"),
+    ("requests", "requests", "Session"),
+    ("jsonschema", "jsonschema", "Draft7Validator"),
+]
+
+
+@pytest.mark.parametrize(("label", "module_name", "attribute"), _GUARD_SILENT_LIBS)
+def test_computed_dispatch_guard_stays_silent_for_libraries(label: str, module_name: str, attribute: str) -> None:
+    """A pack that merely REFERENCES a third-party library must stay cacheable.
+
+    Round 8 applied the trigger names to everything transitively reached, so `click`,
+    `rich`, `requests` and `jsonschema` all went uncacheable — a permanently cold cache
+    plus an orphan cache entry per scan (residual D2). Four of them are the same
+    libraries the cost table in Appendix 7 uses.
+    """
+    module = pytest.importorskip(module_name)
+    pack = _r7_pack(
+        "from wardline.core.taints import TaintState\n" + _FT + "def seed(levels):\n"
+        "    return FunctionTaint(TaintState.EXTERNAL_RAW if LIB else None, levels['to_level'])\n",
+        extra={"LIB": getattr(module, attribute)},
+    )
+    assert "uncacheable" not in _fp(_bt(seed=pack["seed"])), f"{label} was read as the pack's own dispatch"
+
+
+def test_module_importing_pack_stays_cacheable() -> None:
+    """`import yaml as Y` then `Y.safe_load(...)` — a pack importing a MODULE, not a class.
+
+    This is the shape that distinguishes the two candidate scopings: deriving pack roots
+    from the seed's module imports closes the second-package case but makes THIS pack
+    uncacheable, because `yaml.reader` does computed dispatch five hops down. The
+    shipped guard gates on both the surface root AND the hop distance, so both hold.
+    """
+    yaml = pytest.importorskip("yaml")
+    pack = _r7_pack(
+        "from wardline.core.taints import TaintState\n" + _FT + "def seed(levels):\n"
+        "    return FunctionTaint(TaintState.EXTERNAL_RAW, Y.safe_load('a: 1') and levels['to_level'])\n",
+        extra={"Y": yaml},
+    )
+    assert "uncacheable" not in _fp(_bt(seed=pack["seed"]))
+
+
+# --- Boundary rows: one widening away from firing ---------------------------------
+#
+# The 29-row carrier sweep is a WEAK canary and was described as 32. No carrier row
+# names `getattr`/`vars`/`globals` and none holds a non-fenced module, so the guard
+# structurally cannot fire on that table — widening it with `len` or `isinstance` flips
+# 0 of 29. These rows sit ON the boundary instead, so a careless widening flips one.
+
+_GUARD_BOUNDARY = {
+    # Pack code holding a module AND calling a non-trigger builtin. Flips if a name
+    # like `len` or `isinstance` is ever added to the trigger set.
+    "non_trigger_builtin_with_module_in_reach": "def seed(levels):\n"
+    "    n = len(dir(H)) + isinstance(H, object)\n"
+    "    return FunctionTaint(H.for_assured() if n else None, levels['to_level'])\n",
+    # Pack code doing STATIC attribute access on a module — the shape the guard must
+    # never punish, and the one `getattr` differs from by a single character.
+    "static_attribute_on_a_module": "def seed(levels):\n"
+    "    return FunctionTaint(H.for_assured(), levels['to_level'])\n",
+    # A module held in a container but never dispatched on.
+    "module_in_reach_never_dispatched": "def seed(levels):\n"
+    "    return FunctionTaint(TaintState.EXTERNAL_RAW if H else None, levels['to_level'])\n",
+}
+
+
+@pytest.mark.parametrize("shape", sorted(_GUARD_BOUNDARY))
+def test_computed_dispatch_guard_does_not_fire_at_the_boundary(shape: str) -> None:
+    pack = _r7_pack(
+        "from wardline.core.taints import TaintState\n" + _FT + _GUARD_BOUNDARY[shape],
+        extra={"H": _dispatch_helpers("EXTERNAL_RAW")},
+    )
+    assert "uncacheable" not in _fp(_bt(seed=pack["seed"])), f"{shape} fired; the trigger set is too wide"
+
+
+def test_boundary_rows_flip_when_the_trigger_set_is_widened(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The canary must actually be alive.
+
+    Widening the trigger set with `len`/`isinstance` MUST flip the boundary row. If it
+    does not, these rows are decorative and the next regression walks straight past
+    them — exactly what happened to the 29-row carrier sweep.
+    """
+    pack = _r7_pack(
+        "from wardline.core.taints import TaintState\n"
+        + _FT
+        + _GUARD_BOUNDARY["non_trigger_builtin_with_module_in_reach"],
+        extra={"H": _dispatch_helpers("EXTERNAL_RAW")},
+    )
+    assert "uncacheable" not in _fp(_bt(seed=pack["seed"]))
+    monkeypatch.setattr(dp, "_COMPUTED_TRIGGER_NAMES", dp._COMPUTED_TRIGGER_NAMES | {"len", "isinstance"})
+    assert "+grammar:uncacheable-" in _fp(_bt(seed=pack["seed"])), "the boundary row is decorative"
+
+
+def test_nested_container_subclass_graph_does_not_blow_up() -> None:
+    """Round 7 gave container SUBCLASSES per-instance state without giving them a memo.
+
+    Their whole subtree was then re-expanded at every level, and because a member may
+    itself be a container subclass the cost DOUBLED per level — measured,
+    `fingerprint()` on a `requests.Session` graph inside a populated interpreter never
+    returned. It is the same defect class as round 6's DAG-as-a-tree, on the one path
+    that was never routed through `_expanded`. This pins the shape directly rather than
+    relying on a library to reproduce it.
+    """
+    src = (
+        "from wardline.core.taints import TaintState\n"
+        "from wardline.scanner.taint.provider import FunctionTaint\n"
+        "class Box(dict):\n    pass\n"
+        "LEAF = Box(v=TaintState.{lvl})\n"
+        "NODES = [LEAF]\n"
+        "for _i in range(18):\n"
+        "    NODES.append(Box(a=NODES[-1], b=NODES[-1]))\n"
+        "def seed(levels):\n    return FunctionTaint(TaintState.EXTERNAL_RAW, levels['to_level'])\n"
+        "seed.__dict__['box'] = NODES[-1]\n"
+    )
+    started = time.perf_counter()
+    a, b = _r7_pack(src), _r7_pack(src, "ASSURED")
+    left = _fp(_bt(seed=a["seed"]))
+    elapsed = time.perf_counter() - started
+    assert elapsed < 10.0, f"nested container subclasses took {elapsed:.1f}s"
+    blob = _canonical_json(_seed_identity(a["seed"]))
+    assert len(blob) < 512 * 1024, f"preimage {len(blob) / 1024:.0f} KiB — re-expanded as a tree"
+    # ... and cheaper must not mean blinder: the shared LEAF still discriminates.
+    assert left != _fp(_bt(seed=b["seed"]))
+    assert left == _fp(_bt(seed=a["seed"]))

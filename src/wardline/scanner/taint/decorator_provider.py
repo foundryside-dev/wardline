@@ -17,6 +17,7 @@ import hashlib
 import itertools
 import json
 import re
+import reprlib
 import secrets
 import sys
 from types import CodeType, MappingProxyType, ModuleType
@@ -105,7 +106,7 @@ class _Walk:
     still moves the digest, and the preimage is linear in distinct objects for real.
     """
 
-    __slots__ = ("active", "alive", "budget", "memo", "uncacheable")
+    __slots__ = ("active", "alive", "budget", "memo", "pack_roots", "surface_roots", "uncacheable")
 
     def __init__(self) -> None:
         # id(obj) -> the structural hash of that object's full record.
@@ -115,6 +116,11 @@ class _Walk:
         self.budget: int = _MAX_EXPANDED_NODES
         # Set when the walk meets code whose reachable member set it cannot prove.
         self.uncacheable: bool = False
+        # Top-level packages the grammar's own seeds live in.
+        self.pack_roots: frozenset[str] = frozenset()
+        # Top-level packages a seed hands over DIRECTLY, as a module object in its own
+        # globals — the pack's declared dispatch surface beyond its own root.
+        self.surface_roots: frozenset[str] = frozenset()
 
 
 def _canonical_json(value: object) -> str:
@@ -266,6 +272,34 @@ def _snapshot(items: Callable[[], Iterable[Any]]) -> list[Any]:
     return list(items())
 
 
+# A STRUCTURALLY bounded repr for the set-ordering key. ``repr()`` is unbounded: a set
+# member that is itself a large container builds a multi-megabyte string, and the key is
+# computed for every member — measured, that stalled the digest for minutes on a
+# ``requests.Session`` graph inside a populated interpreter. ``reprlib`` truncates while
+# it renders instead of afterwards, so the giant string is never built.
+_ORDER_REPR = reprlib.Repr()
+_ORDER_REPR.maxlevel = 3
+_ORDER_REPR.maxstring = 48
+_ORDER_REPR.maxother = 48
+for _attr in ("maxtuple", "maxlist", "maxdict", "maxset", "maxfrozenset", "maxarray", "maxdeque"):
+    setattr(_ORDER_REPR, _attr, 4)
+
+
+def _bounded_repr(value: object) -> str:
+    """Address-normalised repr with a hard structural bound — ORDERING use only.
+
+    Deliberately NOT used for discrimination: ``_instance_identity`` keeps the full
+    ``_safe_repr``, because truncating there would lose real signal. Here the only job
+    is a deterministic, cheap total order, and a tie merely falls back to the
+    container's own iteration order — residual R8, already named and safe-direction.
+    """
+    try:
+        text = _ORDER_REPR.repr(value)
+    except Exception:  # noqa: BLE001 — a hostile __repr__ must not break the digest
+        return "<unreprable>"
+    return _ADDRESS_RE.sub(" at 0x<addr>", text)
+
+
 def _set_order_key(value: object) -> str:
     """A cheap, process-STABLE ordering key for set members, computed without recursing.
 
@@ -278,7 +312,7 @@ def _set_order_key(value: object) -> str:
     Sorting the members first makes the traversal deterministic; the post-recursion
     sort by canonical JSON is still applied, so the OUTPUT stays canonical regardless.
     """
-    return _canonical_json([type(value).__name__, _named(value), _safe_repr(value)])
+    return _canonical_json([type(value).__name__, _named(value), _bounded_repr(value)])
 
 
 def _element(build: Callable[[], object]) -> object:
@@ -355,7 +389,38 @@ def _subclass_state(value: object, walk: _Walk, depth: int) -> dict[str, object]
     for slot in _slot_names(type(value)):
         if slot not in state:
             state[slot] = _element(lambda slot=slot: _seed_value_identity(getattr(value, slot), walk, depth))  # type: ignore[misc]
-    return {"state": state, "reduced": _reduced_state(value, walk, depth)}
+    # ``drain_items=False``: the shape arm that called us has already emitted the
+    # container's members as ``v``. What is NOT in ``v`` is the reduce ARGS tuple, which
+    # is where ``collections.defaultdict`` keeps ``default_factory`` — the carrier the
+    # round-7 fix exists for — so the args are still read.
+    return {"state": state, "reduced": _reduced_state(value, walk, depth, drain_items=False)}
+
+
+def _shape_record(
+    value: object, walk: _Walk, depth: int, build: Callable[[int], dict[str, object]]
+) -> dict[str, object]:
+    """A shape-matched record, routed through ``_expanded`` when the type is a SUBCLASS.
+
+    A plain ``dict``/``list``/``tuple``/``set`` keeps exactly the path it had: built
+    inline, no memo, no back-reference. A SUBCLASS instead goes through ``_expanded``,
+    so it gets the memo, the cycle guard and the back-reference that ordinary instances
+    have had since round 6.
+
+    That is not tidiness — it is a HANG fix. Round 7 gave subclass containers
+    per-instance state without giving them a memo, so a graph of nested container
+    subclasses re-expanded its whole subtree at every level and the cost doubled per
+    level. Measured: ``fingerprint()`` on a ``requests.Session`` graph inside a
+    populated interpreter never returned. Same defect class as round 6's DAG-as-a-tree,
+    on the one path that was never routed through ``_expanded``.
+    """
+    if type(value) in _TRANSPARENT_TYPES:
+        return _typed_shape(value, build(depth), walk, depth)
+    return _expanded(
+        value,
+        walk,
+        depth,
+        lambda dd: _typed_shape(value, build(dd), walk, dd, extra=lambda: _subclass_state(value, walk, dd)),
+    )
 
 
 def _typed_shape(
@@ -464,27 +529,28 @@ def _seed_value_identity(value: object, walk: _Walk | None = None, _depth: int =
     if isinstance(value, (tuple, list)):
         # ``type(value).__name__`` is a NAME, and a ``tuple``/``list`` SUBCLASS carries
         # a body: ``class P(NamedTuple): ... def decide(self): ...`` measured COLLIDE.
-        return _typed_shape(
+        return _shape_record(
             value,
-            {
+            walk,
+            d,
+            lambda dd: {
                 "t": type(value).__name__,
                 # SNAPSHOT before recursing: expanding a member can WRITE to the
                 # container being iterated (see ``_snapshot``).
                 "v": _contents(
                     lambda: [
-                        _element(lambda v=v: _seed_value_identity(v, walk, d))  # type: ignore[misc]
+                        _element(lambda v=v: _seed_value_identity(v, walk, dd))  # type: ignore[misc]
                         for v in _snapshot(lambda: value)
                     ]
                 ),
             },
-            walk,
-            d,
-            extra=lambda: _subclass_state(value, walk, d),
         )
     if isinstance(value, (frozenset, set)):
-        return _typed_shape(
+        return _shape_record(
             value,
-            {
+            walk,
+            d,
+            lambda dd: {
                 "t": type(value).__name__,
                 # Members are sorted BEFORE recursion, so traversal is process-stable
                 # and a back-reference lands in the same place every run; the records
@@ -492,61 +558,42 @@ def _seed_value_identity(value: object, walk: _Walk | None = None, _depth: int =
                 "v": _contents(
                     lambda: sorted(
                         (
-                            _element(lambda v=v: _seed_value_identity(v, walk, d))  # type: ignore[misc]
+                            _element(lambda v=v: _seed_value_identity(v, walk, dd))  # type: ignore[misc]
                             for v in sorted(_snapshot(lambda: value), key=_set_order_key)
                         ),
                         key=_canonical_json,
                     )
                 ),
             },
-            walk,
-            d,
-            extra=lambda: _subclass_state(value, walk, d),
         )
     if isinstance(value, (dict, MappingProxyType)):
         # ``MappingProxyType`` is NOT a ``dict`` subclass, so it used to miss this arm
         # and fall through to ``repr`` — which is how ``functools.singledispatch``'s
-        # ``registry`` (a mappingproxy of type -> implementation) hid every registered
-        # implementation behind an address-normalised string.
-        # NOTE: the round-3 pass changed this tag from the literal ``"dict"`` to
-        # ``type(value).__name__`` WITHOUT gating it — reproducing the very pattern it
-        # was fixing. A name is not a body; ``class D(dict)`` with a method measured
-        # COLLIDE until ``_typed_shape`` was added here.
-        return _typed_shape(
+        # ``registry`` hid every registered implementation behind a normalised string.
+        # The round-3 pass changed this tag from the literal ``"dict"`` to
+        # ``type(value).__name__`` WITHOUT gating it, reproducing the very pattern it
+        # was fixing; ``_typed_shape`` closed that.
+        return _shape_record(
             value,
-            {
+            walk,
+            d,
+            lambda dd: {
                 "t": type(value).__name__,
-                # INSERTION ORDER, with a positional index, and NO output sort.
-                #
-                # Sorting the pairs made key order unobservable, and key order is
-                # behaviourally LOAD-BEARING in a first-match-wins table:
-                #
-                #     FLOORS = {"assur": ASSURED, "a": EXTERNAL_RAW}
-                #     for pfx, lvl in FLOORS.items():
-                #         if name.startswith(pfx): return lvl
-                #
-                # Swapping those two keys flips the seeded level and the digest did not
-                # move. Python dicts have been insertion-ordered since 3.7, so the order
-                # is part of the value, not an artifact of iteration.
-                #
-                # KNOWN COST, accepted deliberately: a dict built at import time FROM a
-                # set inherits the degenerate ``_set_order_key`` ordering, so such a
-                # grammar may re-key between processes. Order-observability wins —
-                # over-invalidation is a cold cache, under-invalidation is a false green.
+                # INSERTION ORDER with a positional index and NO output sort: key order
+                # is behaviourally load-bearing in a first-match-wins table, and sorting
+                # made it unobservable (measured COLLIDE). Known cost: a dict built from
+                # a SET inherits that set's iteration order — residual R8.
                 "v": _contents(
                     lambda: [
                         [
                             i,
-                            _element(lambda k=k: _seed_value_identity(k, walk, d)),  # type: ignore[misc]
-                            _element(lambda v=v: _seed_value_identity(v, walk, d)),  # type: ignore[misc]
+                            _element(lambda k=k: _seed_value_identity(k, walk, dd)),  # type: ignore[misc]
+                            _element(lambda v=v: _seed_value_identity(v, walk, dd)),  # type: ignore[misc]
                         ]
                         for i, (k, v) in enumerate(_snapshot(value.items))
                     ]
                 ),
             },
-            walk,
-            d,
-            extra=lambda: _subclass_state(value, walk, d),
         )
 
     # --- Structural arms: a referenced FUNCTION or CLASS is keyed by its BODY --------
@@ -717,7 +764,7 @@ def _safe_repr(value: object) -> str:
     return _ADDRESS_RE.sub(" at 0x<addr>", text)
 
 
-def _reduced_state(value: object, walk: _Walk, depth: int) -> object:
+def _reduced_state(value: object, walk: _Walk, depth: int, *, drain_items: bool = True) -> object:
     """C-level state via the PICKLE protocol — Python's own answer to "what is in here".
 
     ``__dict__`` and ``__slots__`` see nothing inside a C object. ``functools.partial``
@@ -745,7 +792,7 @@ def _reduced_state(value: object, walk: _Walk, depth: int) -> object:
     # marker is DISTINCT from ``no-reduce`` so the two degradations stay
     # distinguishable in a preimage; both under-discriminate and are named residuals.
     try:
-        return [_reduce_part(part, walk, depth) for part in reduced[1:]]
+        return [_reduce_part(part, walk, depth, drain_items=drain_items) for part in reduced[1:]]
     except Exception:  # noqa: BLE001 — an unreadable reduce payload must not break the digest
         return {"t": "unreadable-reduce"}
 
@@ -758,7 +805,7 @@ def _reduced_state(value: object, walk: _Walk, depth: int) -> object:
 _MAX_REDUCE_ITEMS = 100_000
 
 
-def _reduce_part(part: object, walk: _Walk, depth: int) -> object:
+def _reduce_part(part: object, walk: _Walk, depth: int, *, drain_items: bool = True) -> object:
     """One element of a reduce tuple, draining the item iterators."""
     # Probe the TYPE, never the instance: a permissive ``__getattr__`` answers every
     # name, and this module has already been bitten once by an unvalidated probe.
@@ -770,6 +817,15 @@ def _reduce_part(part: object, walk: _Walk, depth: int) -> object:
     # required now, and the drain is guarded besides.
     part_type = type(part)
     if hasattr(part_type, "__next__") and hasattr(part_type, "__iter__"):
+        if not drain_items:
+            # The caller already emitted these members as the container's CONTENTS.
+            # Draining them again re-expanded the whole subtree at every level, and
+            # since a member may itself be a container subclass the cost DOUBLED per
+            # level — measured, a ``requests.Session`` graph stalled ``fingerprint()``
+            # indefinitely. Same defect class as round 6's DAG-as-a-tree blow-up, on a
+            # path that has no memo because the shape arms are not routed through
+            # ``_expanded``.
+            return {"t": "items-already-keyed"}
         # These iterators are created BY the ``__reduce_ex__`` call, so draining one
         # consumes a fresh object and cannot disturb the container itself.
         try:
@@ -855,7 +911,7 @@ def _function_identity(fn: object, walk: _Walk, depth: int) -> dict[str, object]
     globals_map = _probe(fn, "__globals__")
     globals_record: dict[str, object] = {}
     names = _reachable_names(code)
-    if isinstance(globals_map, dict) and _computed_dispatch_is_unprovable(names, globals_map):
+    if _computed_dispatch_is_unprovable(fn, names, globals_map if isinstance(globals_map, dict) else {}, walk, depth):
         # COMPUTED-NAME DISPATCH — the demand set is not statically knowable.
         #
         #     fn = getattr(helpers, "for_" + level.value.lower(), helpers.default)
@@ -906,36 +962,126 @@ def _function_identity(fn: object, walk: _Walk, depth: int) -> dict[str, object]
     }
 
 
-# Builtins that turn a NAME into an attribute lookup at run time. If a function reaches
-# either, the set of members it actually uses cannot be read off its code object.
-# Builtins that turn a NAME into an attribute lookup at run time.
-#  * ``getattr``/``vars`` matter only when a non-fenced MODULE is in reach, because
-#    module members are the one thing resolved DEMAND-DRIVEN off ``co_names``. A
-#    computed lookup on an instance or a class is already covered structurally — the
-#    instance arm expands its type, and a class record now carries ORDERED members.
-#  * ``globals`` always matters: it reaches the function's OWN module namespace.
-_COMPUTED_ATTRIBUTE_BUILTINS = frozenset({"getattr", "vars"})
-_ALWAYS_COMPUTED_BUILTINS = frozenset({"globals"})
+# Names that turn a run-time VALUE into an attribute or namespace lookup. Any of them
+# in a function's reachable code means the set of members it touches cannot be read off
+# its code object. ``attrgetter``/``methodcaller`` are the ``operator`` spellings of the
+# same thing and collided identically.
+_COMPUTED_TRIGGER_NAMES = frozenset({"getattr", "vars", "globals", "attrgetter", "methodcaller"})
 
 
-def _computed_dispatch_is_unprovable(names: tuple[str, ...], globals_map: dict[str, object]) -> bool:
-    """Can this function reach a module member whose NAME is computed at run time?
+def _module_root(value: object) -> str:
+    """The top-level package an object's ``__module__`` names, or ``""``."""
+    module = _probe(value, "__module__")
+    return module.split(".", 1)[0] if isinstance(module, str) and module else ""
 
-    Scoping this by the grammar's own top-level packages was a FAIL-OPEN inside the
-    fail-closed mechanism: a ``functools.partial``-wrapped seed resolves ``__module__``
-    to ``functools``, which the fence filters out, leaving the root set EMPTY — and an
-    empty root set silently disabled the guard for the whole grammar (measured
-    COLLIDE). Dispatch inside a SECOND top-level package the pack ships collided for
-    the same reason. Keying on what is actually in reach removes the root set from the
-    decision entirely, so there is no empty case left to fail open.
+
+def _seed_roots(seed: object) -> str:
+    """The top-level package a SEED really belongs to, unwrapping the usual wrappers.
+
+    ``functools.partial(_mk)`` answers ``functools`` for ``__module__``, which the fence
+    then filters out — that is how the root set came to be empty, and an empty root set
+    silently disabled the guard for a whole grammar. Unwrapping recovers the real root
+    so the empty case is rare; ``_grammar_digest`` still fails closed when it happens.
     """
-    if _ALWAYS_COMPUTED_BUILTINS.intersection(names):
-        return True
-    if not _COMPUTED_ATTRIBUTE_BUILTINS.intersection(names):
-        return False
+    seen: set[int] = set()
+    current = seed
+    for _ in range(8):
+        if current is None or id(current) in seen:
+            break
+        seen.add(id(current))
+        root = _module_root(current)
+        if root and root not in _OPAQUE_PACKAGES:
+            return root
+        nxt = _probe(current, "func") or _probe(current, "__func__") or _probe(current, "__wrapped__")
+        if nxt is None and not _has_code(current):
+            nxt = type(current)
+        current = nxt
+    return ""
+
+
+def _module_in_reach(names: tuple[str, ...], globals_map: dict[str, object]) -> bool:
+    """Does this function name a non-fenced MODULE in its own globals?"""
     return any(
         isinstance(target, ModuleType) and not _is_structurally_opaque_module(target)
         for target in (globals_map.get(name) for name in names)
+    )
+
+
+def _surface_roots(boundary_types: tuple[BoundaryType, ...]) -> frozenset[str]:
+    """Roots a seed hands over DIRECTLY, as a module object in its own globals.
+
+    ``import otherpkg.mod as sibling`` inside the grammar module declares ``otherpkg``
+    as part of the surface the pack is responsible for. A seed that instead names a
+    CLASS or a FUNCTION from a library (``LIB = jsonschema.Draft7Validator``) declares
+    no such thing — which is the distinction that keeps ``jsonschema``'s dynamically
+    built validator methods, two hops down and naming ``getattr``, from being read as
+    the pack's own dispatch.
+    """
+    roots: set[str] = set()
+    for boundary in boundary_types:
+        target = boundary.seed
+        code = _code_of(target) or _code_of(_probe(target, "func"))
+        globals_map = _probe(target, "__globals__") or _probe(_probe(target, "func"), "__globals__")
+        if code is None or not isinstance(globals_map, dict):
+            continue
+        for name in _reachable_names(code):
+            member = globals_map.get(name)
+            if isinstance(member, ModuleType) and not _is_structurally_opaque_module(member):
+                named = str(_probe(member, "__name__") or "")
+                if named:
+                    roots.add(named.split(".", 1)[0])
+    return frozenset(roots)
+
+
+# How far off the grammar's own packages the second predicate reaches. A pack that
+# ships a second top-level package hands off to it DIRECTLY from a seed, so its
+# dispatch sits at depth 0-1 (measured). A library's internal dispatch sits far deeper
+# — ``yaml.reader.Reader.__init__`` is at depth 5 — and reading that as the pack's own
+# is what made ``rich``, ``requests`` and ``jsonschema`` uncacheable in round 8.
+_DISPATCH_SURFACE_HOPS = 3
+
+
+def _computed_dispatch_is_unprovable(
+    fn: object, names: tuple[str, ...], globals_map: dict[str, object], walk: _Walk, depth: int
+) -> bool:
+    """Can this function reach a member whose NAME is computed at run time?
+
+    THE UNION of two predicates, because each catches shapes the other misses and the
+    guard is fail-closed — a false uncacheable costs a cold scan, a false cacheable
+    costs a WRONG VERDICT:
+
+    * **the function is the pack's own code** (round 7). This is the one that does not
+      care HOW a module arrives, so it covers a module reached through a closure cell,
+      a plain list or a class attribute. Round 8 replaced it with the second predicate
+      alone and all three of those regressed to COLLIDE.
+    * **a non-fenced module is in the function's own globals, within the grammar's own
+      dispatch surface** (round 8, now depth-bounded). This covers dispatch inside a
+      second top-level package the pack ships, which the first predicate misses because
+      that package's root is not a seed's root. Unbounded, it read library internals as
+      pack code — see ``_DISPATCH_SURFACE_HOPS``.
+
+    Plus the empty case, failing CLOSED: with no identifiable pack root the guard has
+    no way to tell pack code from library code, so it must not stay silent.
+
+    SCOPED AWAY FROM FENCED CODE, and from library code that names a trigger without a
+    module in reach. Applying the trigger names to everything transitively reached made
+    ``click``, ``rich``, ``requests`` and ``jsonschema`` uncacheable — the bare name
+    ``globals`` inside ``click.parser``, with zero non-fenced modules in reach. A
+    trigger name inside somebody else's module is not evidence that the PACK does
+    computed dispatch.
+    """
+    if not _COMPUTED_TRIGGER_NAMES.intersection(names):
+        return False
+    if _is_structurally_opaque(fn):
+        return False
+    if not walk.pack_roots:
+        return True
+    if _module_root(fn) in walk.pack_roots:
+        return True
+    return (
+        _module_root(fn) in walk.surface_roots
+        and depth <= _DISPATCH_SURFACE_HOPS
+        and _module_in_reach(names, globals_map)
     )
 
 
@@ -1175,6 +1321,8 @@ def _grammar_digest(boundary_types: tuple[BoundaryType, ...]) -> str:
     # expanded once and both records carry that same expansion, so the cost stays
     # linear in distinct reachable objects while every body change still moves it.
     walk = _Walk()
+    walk.pack_roots = frozenset(root for root in (_seed_roots(bt.seed) for bt in boundary_types) if root)
+    walk.surface_roots = _surface_roots(boundary_types)
     records: list[dict[str, object]] = [
         {
             "canonical_name": bt.canonical_name,
