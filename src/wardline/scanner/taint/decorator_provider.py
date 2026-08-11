@@ -14,10 +14,11 @@ from __future__ import annotations
 
 import ast
 import hashlib
+import itertools
 import json
 import re
 import sys
-from types import CodeType, ModuleType
+from types import CodeType, MappingProxyType, ModuleType
 from typing import TYPE_CHECKING
 
 from wardline.core.registry import REGISTRY, REGISTRY_VERSION
@@ -139,8 +140,22 @@ def _expanded(value: object, walk: _Walk, depth: int, build: Callable[[int], dic
     return record
 
 
+def _code_of(value: object) -> CodeType | None:
+    """The object's ``__code__``, but ONLY if it really is a code object.
+
+    Every duck-typing probe in this module has to validate what it gets back. A
+    permissive ``__getattr__`` answers EVERY name — measured on an ordinary pack, an
+    instance with ``def __getattr__(self, name): return TaintState.EXTERNAL_RAW``
+    answered ``__code__`` and the digest tried to read ``co_argcount`` off a
+    ``TaintState``, raising ``AttributeError`` out of ``fingerprint()`` and taking the
+    whole scan down. Probe, then check the type.
+    """
+    code = getattr(value, "__code__", None)
+    return code if isinstance(code, CodeType) else None
+
+
 def _has_code(value: object) -> bool:
-    return getattr(value, "__code__", None) is not None
+    return _code_of(value) is not None
 
 
 # Top-level packages whose bodies are NOT part of a pack's declaration identity and
@@ -164,6 +179,12 @@ _OPAQUE_PACKAGES = frozenset({"builtins", "wardline"}) | frozenset(sys.stdlib_mo
 # matching " at 0x…" rather than bare "0x…" keeps genuine hex literals in a repr
 # (``Mask(bits=0xFF)``) discriminating.
 _ADDRESS_RE = re.compile(r" at 0x[0-9a-fA-F]+")
+
+
+def _is_structurally_opaque_module(module: ModuleType) -> bool:
+    """Fence for a MODULE, keyed on its own name rather than its ``__module__``."""
+    name = str(getattr(module, "__name__", "") or "")
+    return (not name) or name.split(".", 1)[0] in _OPAQUE_PACKAGES
 
 
 def _is_structurally_opaque(value: object) -> bool:
@@ -230,17 +251,25 @@ def _seed_value_identity(value: object, walk: _Walk | None = None, _depth: int =
         # processes and sensitive to pure layout.
         return {"t": "code", "v": _code_identity(value, walk, d)}
     if isinstance(value, ModuleType):
-        return {"t": "module", "v": str(getattr(value, "__name__", ""))}
+        # Reached with no demand information (from a closure cell, a class attribute, a
+        # container): keyed by NAME. Reached from a function's globals — the shape that
+        # matters — the caller resolves the ATTRIBUTES that function actually uses; see
+        # ``_module_identity`` and its call site in ``_function_identity``.
+        return {"t": "module", "v": str(getattr(value, "__name__", "") or "")}
     if isinstance(value, (tuple, list)):
         return {"t": type(value).__name__, "v": [_seed_value_identity(v, walk, d) for v in value]}
     if isinstance(value, (frozenset, set)):
         items = [_seed_value_identity(v, walk, d) for v in value]
         items.sort(key=_canonical_json)
         return {"t": type(value).__name__, "v": items}
-    if isinstance(value, dict):
+    if isinstance(value, (dict, MappingProxyType)):
+        # ``MappingProxyType`` is NOT a ``dict`` subclass, so it used to miss this arm
+        # and fall through to ``repr`` — which is how ``functools.singledispatch``'s
+        # ``registry`` (a mappingproxy of type -> implementation) hid every registered
+        # implementation behind an address-normalised string.
         pairs = [[_seed_value_identity(k, walk, d), _seed_value_identity(v, walk, d)] for k, v in value.items()]
         pairs.sort(key=_canonical_json)
-        return {"t": "dict", "v": pairs}
+        return {"t": type(value).__name__, "v": pairs}
 
     # --- Structural arms: a referenced FUNCTION or CLASS is keyed by its BODY --------
     #
@@ -250,14 +279,24 @@ def _seed_value_identity(value: object, walk: _Walk | None = None, _depth: int =
     # shape. Under a name-only key, editing `_helper` to return ASSURED instead of
     # EXTERNAL_RAW leaves the digest byte-identical and a warm cache answers the new
     # grammar with the old grammar's verdicts. The body has to be in the preimage.
+    # staticmethod / classmethod / BOUND METHOD wrappers around a real function. This
+    # arm MUST precede the plain-function arm: a bound method carries BOTH ``__code__``
+    # and ``__func__``, so tested second it matched as a bare function and its
+    # ``__self__`` — the receiver holding the configuration the method reads, as in
+    # ``DECIDE = Policy(EXTERNAL_RAW).decide`` — was silently dropped. Measured COLLIDE.
+    inner = getattr(value, "__func__", None)
+    if inner is not None and _has_code(inner):
+        bound_self = getattr(value, "__self__", None)
+        return {
+            "t": "wrapped_function",
+            "wrapper": type(value).__name__,
+            "v": _seed_value_identity(inner, walk, d),
+            "self": _seed_value_identity(bound_self, walk, d) if bound_self is not None else {"t": "none"},
+        }
     if _has_code(value) and not _is_structurally_opaque(value):
         return _expanded(value, walk, d, lambda dd: _function_identity(value, walk, dd))
     if isinstance(value, type) and not _is_structurally_opaque(value):
         return _expanded(value, walk, d, lambda dd: _class_identity(value, walk, dd))
-    # staticmethod / classmethod / bound method wrappers around a real function.
-    inner = getattr(value, "__func__", None)
-    if inner is not None and _has_code(inner):
-        return {"t": "wrapped_function", "wrapper": type(value).__name__, "v": _seed_value_identity(inner, walk, d)}
     if isinstance(value, property):
         return {
             "t": "property",
@@ -266,13 +305,20 @@ def _seed_value_identity(value: object, walk: _Walk | None = None, _depth: int =
             "fdel": _seed_value_identity(value.fdel, walk, d),
         }
 
-    module = getattr(value, "__module__", None)
-    qualname = getattr(value, "__qualname__", None)
-    if isinstance(module, str) and isinstance(qualname, str):
-        return {"t": "ref", "module": module, "qualname": qualname}
-    name = getattr(value, "__name__", None)
-    if isinstance(module, str) and isinstance(name, str):
-        return {"t": "ref", "module": module, "name": name}
+    # NAME-ONLY arms, and they fire ONLY for objects the fence has already declared
+    # out of scope. Ungated, they were a fail-open: ``functools.wraps`` /
+    # ``update_wrapper`` COPY a str ``__module__`` and ``__qualname__` onto the wrapper,
+    # so an ``@lru_cache``-decorated pack helper — and any class-based decorator using
+    # ``functools.wraps`` — matched here and collapsed to the wrapped function's NAME,
+    # never reaching the structural instance arm below. A name is not a body.
+    if _is_structurally_opaque(value):
+        module = getattr(value, "__module__", None)
+        qualname = getattr(value, "__qualname__", None)
+        if isinstance(module, str) and isinstance(qualname, str):
+            return {"t": "ref", "module": module, "qualname": qualname}
+        name = getattr(value, "__name__", None)
+        if isinstance(module, str) and isinstance(name, str):
+            return {"t": "ref", "module": module, "name": name}
     # INSTANCE ARM. An instance must not HIDE the class that gives it behaviour.
     #
     # The ordinary pack shape hoists the instantiation to module scope:
@@ -286,10 +332,15 @@ def _seed_value_identity(value: object, walk: _Walk | None = None, _depth: int =
     # the preimage, and normalising the address out of that ``repr`` made two
     # differently-CONFIGURED instances collide outright. So the instance is keyed
     # STRUCTURALLY: its type (through the fenced class arm, so a pack class is expanded
-    # and a stdlib one stays a name), its instance state, and its normalised ``repr``.
-    # All three, because each catches what the others miss — ``repr`` still carries the
-    # C-level content of objects with no readable ``__dict__``/``__slots__``
-    # (``functools.partial``'s target and bound arguments, for one).
+    # and a stdlib one stays a name), its instance state, its PICKLE-protocol state, and
+    # its normalised ``repr`` — four sources because no one of them is sufficient.
+    #
+    # CORRECTED: an earlier revision of this comment claimed ``repr`` was retained
+    # because it carries "the C-level content of objects with no readable
+    # ``__dict__``/``__slots__`` (``functools.partial``'s target and bound arguments,
+    # for one)". Measured, that is false — ``repr(partial)`` prints the target's NAME
+    # only, so changing the target's BODY collided. ``__reduce_ex__`` is what actually
+    # reaches that content; ``repr`` is retained as a genuine last resort, nothing more.
     return _expanded(value, walk, d, lambda dd: _instance_identity(value, walk, dd))
 
 
@@ -318,8 +369,59 @@ def _safe_repr(value: object) -> str:
     return _ADDRESS_RE.sub(" at 0x<addr>", text)
 
 
+def _reduced_state(value: object, walk: _Walk, depth: int) -> object:
+    """C-level state via the PICKLE protocol — Python's own answer to "what is in here".
+
+    ``__dict__`` and ``__slots__`` see nothing inside a C object. ``functools.partial``
+    is the measured case: ``state`` is ``{}``, its ``type`` is fenced to ``functools``,
+    and its ``repr`` prints only the target's NAME, so changing the target function's
+    BODY collided. ``__reduce_ex__`` yields the target, the bound args and the keywords
+    as real objects, which then expand structurally like anything else. Guarded: a
+    reduce that raises, or is absent, simply contributes nothing.
+    """
+    try:
+        reduced = value.__reduce_ex__(2)
+    except Exception:  # noqa: BLE001 — an unpicklable object must not break the digest
+        return {"t": "no-reduce"}
+    if isinstance(reduced, str):
+        return {"t": "str", "v": reduced}
+    if not isinstance(reduced, tuple):
+        return {"t": "no-reduce"}
+    # Element 0 is the reconstructor callable (the class, or copyreg._reconstructor);
+    # the payload that distinguishes two instances is everything after it.
+    return [_reduce_part(part, walk, depth) for part in reduced[1:]]
+
+
+# Slots 3 and 4 of a reduce tuple are the "listitems"/"dictitems" ITERATORS through
+# which a C container hands pickle its contents. Measured: a ``collections.deque``
+# holding a pack helper collided, because those items live in C storage that
+# ``__dict__``, ``__slots__`` and the reduce ARGS tuple all miss. The cap is a guard
+# against a pathological custom ``__reduce__``, set far above any real container.
+_MAX_REDUCE_ITEMS = 100_000
+
+
+def _reduce_part(part: object, walk: _Walk, depth: int) -> object:
+    """One element of a reduce tuple, draining the item iterators."""
+    # Probe the TYPE, never the instance: a permissive ``__getattr__`` answers every
+    # name, and this module has already been bitten once by an unvalidated probe.
+    if hasattr(type(part), "__next__"):
+        # These iterators are created BY the ``__reduce_ex__`` call, so draining one
+        # consumes a fresh object and cannot disturb the container itself.
+        items = list(itertools.islice(part, _MAX_REDUCE_ITEMS))  # type: ignore[call-overload]
+        return {"t": "reduce-items", "v": [_seed_value_identity(item, walk, depth) for item in items]}
+    return _seed_value_identity(part, walk, depth)
+
+
 def _instance_identity(value: object, walk: _Walk, depth: int) -> dict[str, object]:
-    """Structural record for an ordinary object: its type, its state, and its repr."""
+    """Structural record for an ordinary object: type, state, reduced state, and repr.
+
+    Four sources because no one of them is sufficient, which is the lesson of the last
+    three review rounds: ``type`` carries the class and metaclass bodies (and so covers
+    ``__getattr__``- and ``property``-computed behaviour, whose CODE lives on the
+    class); ``state`` carries ``__dict__``/``__slots__`` configuration; ``reduced``
+    carries C-level payload neither of those sees; and ``repr`` is the last-resort
+    catch for anything all three miss.
+    """
     state: dict[str, object] = {}
     instance_dict = getattr(value, "__dict__", None)
     if isinstance(instance_dict, dict):
@@ -330,24 +432,37 @@ def _instance_identity(value: object, walk: _Walk, depth: int) -> dict[str, obje
             state[slot] = _seed_value_identity(getattr(value, slot), walk, depth)
         except AttributeError:
             state[slot] = {"t": "unset-slot"}
+    # The documented decorator-transparency protocol. ``functools.wraps`` sets it, and
+    # following it is what reaches the real body through an opaque wrapper.
+    wrapped = getattr(value, "__wrapped__", None)
+    if wrapped is not None:
+        state["__wrapped__"] = _seed_value_identity(wrapped, walk, depth)
     return {
         "t": "instance",
         "type": _seed_value_identity(type(value), walk, depth),
         "state": state,
+        "reduced": _reduced_state(value, walk, depth),
         "repr": _safe_repr(value),
     }
 
 
 def _function_identity(fn: object, walk: _Walk, depth: int) -> dict[str, object]:
     """Structural record for a function: its code, its bindings, and its globals."""
-    code = fn.__code__  # type: ignore[attr-defined]
+    code = _code_of(fn)
+    assert code is not None  # callers gate on _has_code
     globals_map = getattr(fn, "__globals__", None)
     globals_record: dict[str, object] = {}
     if isinstance(globals_map, dict):
         for name in code.co_names:
-            globals_record[name] = (
-                _seed_value_identity(globals_map[name], walk, depth) if name in globals_map else {"t": "missing-global"}
-            )
+            if name not in globals_map:
+                globals_record[name] = {"t": "missing-global"}
+                continue
+            target = globals_map[name]
+            if isinstance(target, ModuleType) and not _is_structurally_opaque_module(target):
+                # ``H.decide()`` — resolve the ATTRIBUTES this function names.
+                globals_record[name] = _module_identity(target, code.co_names, walk, depth)
+            else:
+                globals_record[name] = _seed_value_identity(target, walk, depth)
     return {
         "kind": "function",
         **_named(fn),
@@ -356,7 +471,50 @@ def _function_identity(fn: object, walk: _Walk, depth: int) -> dict[str, object]
         "kwdefaults": _seed_value_identity(getattr(fn, "__kwdefaults__", None), walk, depth),
         "closure": _closure_identity(fn, walk, depth),
         "globals": globals_record,
+        # Attributes set ON the function object. This is where a decorator parks the
+        # state that IS the behaviour — ``functools.singledispatch`` keeps its
+        # type -> implementation ``registry`` here, and ``functools.wraps`` its
+        # ``__wrapped__``. Neither is reachable from code, closure or globals.
+        "attrs": _seed_value_identity(getattr(fn, "__dict__", None), walk, depth),
     }
+
+
+# Import machinery and filesystem paths in a module namespace: neither is behaviour,
+# and ``__file__``/``__cached__``/``__spec__`` would re-break relocation stability.
+# ``__builtins__`` alone is the entire builtin namespace.
+_MODULE_NOISE = frozenset(
+    {"__builtins__", "__loader__", "__spec__", "__file__", "__cached__", "__path__", "__package__", "__name__"}
+)
+
+
+def _module_identity(module: ModuleType, used: tuple[str, ...], walk: _Walk, depth: int) -> dict[str, object]:
+    """Structural record for a referenced module — DEMAND-DRIVEN, not a namespace walk.
+
+    ``import mypack.helpers as H`` then ``H.decide()`` is an everyday grammar shape, and
+    keying the module by NAME alone left every helper in it invisible (measured
+    COLLIDE). But walking the whole namespace instead is not an option: measured on a
+    pack that does ``import yaml as Y``, a full walk produced a **207 MB preimage in
+    1.6 s** — deterministic, but unusable, and worse for a heavier dependency.
+
+    The asymmetry is the point: following a REFERENCE is demand-driven and pulls only
+    what the grammar uses, whereas walking a NAMESPACE pulls everything whether the
+    grammar touches it or not. So only the attribute names that appear in the referring
+    function's ``co_names`` are expanded — for ``H.decide()`` that is exactly
+    ``decide``. Same coverage on the shapes that matter, bounded cost.
+
+    Deliberately NOT memoized on the module's ``id()``: two functions may use different
+    attributes of one module, and a memo keyed on the module alone would freeze the
+    first function's attribute set and hide a change under any attribute the second one
+    uses. Recursion still terminates — every function it reaches goes through
+    ``_expanded``.
+    """
+    namespace = getattr(module, "__dict__", None)
+    members: dict[str, object] = {}
+    if isinstance(namespace, dict):
+        for key in sorted(set(used)):
+            if key in namespace and key not in _MODULE_NOISE:
+                members[str(key)] = _seed_value_identity(namespace[key], walk, depth)
+    return {"t": "module", "name": str(getattr(module, "__name__", "") or ""), "members": members}
 
 
 def _class_identity(cls: type, walk: _Walk, depth: int) -> dict[str, object]:
@@ -377,6 +535,10 @@ def _class_identity(cls: type, walk: _Walk, depth: int) -> dict[str, object]:
         **_named(cls),
         "members": members,
         "bases": [_seed_value_identity(b, walk, depth) for b in getattr(cls, "__bases__", ())],
+        # A METACLASS carries behaviour that is in neither ``vars(cls)`` nor
+        # ``__bases__``: ``Meta.__call__``, ``Meta.__getattr__``, ``Meta.decide``. Walking
+        # bases alone left every one of those invisible.
+        "metaclass": _seed_value_identity(type(cls), walk, depth),
     }
 
 

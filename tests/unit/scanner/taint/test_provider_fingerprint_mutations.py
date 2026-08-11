@@ -11,6 +11,7 @@ import pathlib
 import re
 import subprocess
 import sys
+import types
 
 import pytest
 
@@ -645,6 +646,266 @@ def test_code_identity_keys_the_exception_table() -> None:
     record = _seed_identity(guarded)
     assert record["code"]["exceptiontable"] != ""
     assert set(record["code"]["exceptiontable"]) <= set("0123456789abcdef")
+
+
+# --- Round 3: the INVARIANT, not another instance of it -------------------------
+#
+# Anything that can carry grammar behaviour must enter the preimage STRUCTURALLY; a
+# name and a `repr` are both insufficient proxies. Each row below is a distinct
+# carrier that a name or a repr hid. They are driven through one table so a new
+# carrier is one entry, not one more bespoke test.
+
+_CARRIERS: dict[str, str] = {
+    "lru_cache_wrapped_helper": (
+        "import functools\n"
+        "from wardline.core.taints import TaintState\n"
+        "from wardline.scanner.taint.provider import FunctionTaint\n"
+        "@functools.lru_cache(maxsize=None)\n"
+        "def _helper(n):\n"
+        "    return TaintState.{lvl}\n"
+        "def seed(levels):\n"
+        "    return FunctionTaint(_helper(1), levels['to_level'])\n"
+    ),
+    "functools_wraps_class_decorator": (
+        "import functools\n"
+        "from wardline.core.taints import TaintState\n"
+        "from wardline.scanner.taint.provider import FunctionTaint\n"
+        "class Memo:\n"
+        "    def __init__(self, fn):\n"
+        "        self.fn = fn\n"
+        "        functools.update_wrapper(self, fn)\n"
+        "    def __call__(self, *a):\n"
+        "        return self.fn(*a)\n"
+        "def _decide(n):\n"
+        "    return TaintState.{lvl}\n"
+        "DECIDE = Memo(_decide)\n"
+        "def seed(levels):\n"
+        "    return FunctionTaint(DECIDE(1), levels['to_level'])\n"
+    ),
+    "partial_target_body": (
+        "import functools\n"
+        "from wardline.core.taints import TaintState\n"
+        "from wardline.scanner.taint.provider import FunctionTaint\n"
+        "def _dispatch(k, n):\n"
+        "    return TaintState.{lvl}\n"
+        "H = functools.partial(_dispatch, 1)\n"
+        "def seed(levels):\n"
+        "    return FunctionTaint(H(2), levels['to_level'])\n"
+    ),
+    "getattr_backed_state": (
+        "from wardline.core.taints import TaintState\n"
+        "from wardline.scanner.taint.provider import FunctionTaint\n"
+        "class Policy:\n"
+        "    def __getattr__(self, name):\n"
+        "        return TaintState.{lvl}\n"
+        "POLICY = Policy()\n"
+        "def seed(levels):\n"
+        "    return FunctionTaint(POLICY.anything, levels['to_level'])\n"
+    ),
+    "computed_property": (
+        "from wardline.core.taints import TaintState\n"
+        "from wardline.scanner.taint.provider import FunctionTaint\n"
+        "class Policy:\n"
+        "    @property\n"
+        "    def level(self):\n"
+        "        return TaintState.{lvl}\n"
+        "POLICY = Policy()\n"
+        "def seed(levels):\n"
+        "    return FunctionTaint(POLICY.level, levels['to_level'])\n"
+    ),
+    "metaclass_method_body": (
+        "from wardline.core.taints import TaintState\n"
+        "from wardline.scanner.taint.provider import FunctionTaint\n"
+        "class Meta(type):\n"
+        "    def decide(cls):\n"
+        "        return TaintState.{lvl}\n"
+        "class Policy(metaclass=Meta):\n"
+        "    pass\n"
+        "def seed(levels):\n"
+        "    return FunctionTaint(Policy.decide(), levels['to_level'])\n"
+    ),
+    "bound_method_receiver_state": (
+        "from wardline.core.taints import TaintState\n"
+        "from wardline.scanner.taint.provider import FunctionTaint\n"
+        "class Policy:\n"
+        "    def __init__(self, lv):\n"
+        "        self.lv = lv\n"
+        "    def decide(self):\n"
+        "        return self.lv\n"
+        "DECIDE = Policy(TaintState.{lvl}).decide\n"
+        "def seed(levels):\n"
+        "    return FunctionTaint(DECIDE(), levels['to_level'])\n"
+    ),
+    "non_property_descriptor": (
+        "from wardline.core.taints import TaintState\n"
+        "from wardline.scanner.taint.provider import FunctionTaint\n"
+        "class Desc:\n"
+        "    def __get__(self, obj, owner):\n"
+        "        return TaintState.{lvl}\n"
+        "class Policy:\n"
+        "    level = Desc()\n"
+        "POLICY = Policy()\n"
+        "def seed(levels):\n"
+        "    return FunctionTaint(POLICY.level, levels['to_level'])\n"
+    ),
+    "cached_property": (
+        "import functools\n"
+        "from wardline.core.taints import TaintState\n"
+        "from wardline.scanner.taint.provider import FunctionTaint\n"
+        "class Policy:\n"
+        "    @functools.cached_property\n"
+        "    def level(self):\n"
+        "        return TaintState.{lvl}\n"
+        "POLICY = Policy()\n"
+        "def seed(levels):\n"
+        "    return FunctionTaint(POLICY.level, levels['to_level'])\n"
+    ),
+    "singledispatch_registration": (
+        "import functools\n"
+        "from wardline.core.taints import TaintState\n"
+        "from wardline.scanner.taint.provider import FunctionTaint\n"
+        "@functools.singledispatch\n"
+        "def _decide(x):\n"
+        "    return TaintState.EXTERNAL_RAW\n"
+        "@_decide.register\n"
+        "def _(x: int):\n"
+        "    return TaintState.{lvl}\n"
+        "def seed(levels):\n"
+        "    return FunctionTaint(_decide(1), levels['to_level'])\n"
+    ),
+}
+
+
+def _carrier_pack(src: str, lvl: str) -> dict:
+    ns: dict = {"__name__": "mypack.grammar"}
+    exec(compile(src.format(lvl=lvl), "mypack/grammar.py", "exec"), ns)  # noqa: S102
+    return ns
+
+
+@pytest.mark.parametrize("carrier", sorted(_CARRIERS))
+def test_behaviour_carrier_body_change_moves_the_fingerprint(carrier: str) -> None:
+    src = _CARRIERS[carrier]
+    a, b = _carrier_pack(src, "EXTERNAL_RAW"), _carrier_pack(src, "ASSURED")
+    assert a["seed"].__code__.co_code == b["seed"].__code__.co_code, "the SEED must be identical"
+    assert _fp(_bt(seed=a["seed"])) != _fp(_bt(seed=b["seed"])), f"{carrier} did not move the fingerprint"
+
+
+@pytest.mark.parametrize("carrier", sorted(_CARRIERS))
+def test_behaviour_carrier_reformat_does_not_move_the_fingerprint(carrier: str) -> None:
+    # The other direction, every round: discrimination must not be bought with a cold cache.
+    src = _CARRIERS[carrier]
+    a = _carrier_pack(src, "EXTERNAL_RAW")
+    b = _carrier_pack("\n# layout only\n" + src, "EXTERNAL_RAW")
+    assert _fp(_bt(seed=a["seed"])) == _fp(_bt(seed=b["seed"])), f"{carrier} moved on a comment"
+
+
+def _module_pack(lvl: str) -> dict:
+    helpers = types.ModuleType("wl_test_helpers_mod")
+    exec(  # noqa: S102
+        compile(
+            f"from wardline.core.taints import TaintState\ndef decide():\n    return TaintState.{lvl}\n",
+            "wl_test_helpers_mod.py",
+            "exec",
+        ),
+        helpers.__dict__,
+    )
+    ns: dict = {"__name__": "mypack.grammar", "H": helpers}
+    exec(  # noqa: S102
+        compile(
+            "from wardline.scanner.taint.provider import FunctionTaint\n"
+            "def seed(levels):\n    return FunctionTaint(H.decide(), levels['to_level'])\n",
+            "mypack/grammar.py",
+            "exec",
+        ),
+        ns,
+    )
+    return ns
+
+
+def test_referenced_module_attribute_body_change_moves_the_fingerprint() -> None:
+    """`import helpers as H` then `H.decide()` — an everyday pack shape.
+
+    Keyed by module NAME alone this collided: `decide` is an attribute access, so it
+    never appears as a resolvable global.
+    """
+    a, b = _module_pack("EXTERNAL_RAW"), _module_pack("ASSURED")
+    assert _fp(_bt(seed=a["seed"])) != _fp(_bt(seed=b["seed"]))
+
+
+def test_referenced_module_expansion_is_demand_driven_not_a_namespace_walk() -> None:
+    """Only the attributes the referring function NAMES are expanded.
+
+    A full namespace walk measured a 207 MB preimage in 1.6 s for a pack that merely
+    does `import yaml as Y`. Following a reference is demand-driven; walking a
+    namespace is not.
+    """
+    record = _seed_identity(_module_pack("EXTERNAL_RAW")["seed"])["globals"]["H"]
+    assert record["t"] == "module"
+    assert set(record["members"]) == {"decide"}  # NOT the module's whole namespace
+    assert record["members"]["decide"]["kind"] == "function"
+
+
+_C_CONTAINERS = {
+    "deque": "import collections\nBOX = collections.deque([_helper])\n",
+    "ordereddict": "import collections\nBOX = collections.OrderedDict(f=_helper)\n",
+}
+
+
+@pytest.mark.parametrize("container", sorted(_C_CONTAINERS))
+def test_helper_inside_a_fenced_c_container_still_moves_the_fingerprint(container: str) -> None:
+    """A pack helper reachable ONLY as a value inside a stdlib C container instance.
+
+    The type is fenced to a name and `__dict__`/`__slots__` see nothing, so the whole
+    burden falls on the pickle-protocol record. `collections.deque` measured COLLIDE
+    until reduce's listitems/dictitems ITERATORS were drained — a C container hands
+    pickle its contents that way, and the reduce ARGS tuple is empty.
+    """
+    body = (
+        "from wardline.core.taints import TaintState\n"
+        "from wardline.scanner.taint.provider import FunctionTaint\n"
+        "def _helper():\n    return TaintState.{lvl}\n"
+        + _C_CONTAINERS[container]
+        + "def seed(levels):\n    return FunctionTaint(TaintState.EXTERNAL_RAW, levels['to_level'])\n"
+        "seed.__dict__['box'] = BOX\n"
+    )
+    a, b = _carrier_pack(body, "EXTERNAL_RAW"), _carrier_pack(body, "ASSURED")
+    assert _fp(_bt(seed=a["seed"])) != _fp(_bt(seed=b["seed"]))
+
+
+def test_permissive_getattr_does_not_crash_the_digest() -> None:
+    """A `__getattr__` that answers EVERY name used to take the whole scan down.
+
+    It answered `__code__`, the digest treated the instance as a function, and
+    `co_argcount` raised `AttributeError` out of `fingerprint()`. Every duck-typing
+    probe now validates the type of what it gets back.
+    """
+    ns: dict = {"__name__": "mypack.grammar"}
+    exec(  # noqa: S102
+        compile(
+            "from wardline.core.taints import TaintState\n"
+            "from wardline.scanner.taint.provider import FunctionTaint\n"
+            "class Yes:\n"
+            "    def __getattr__(self, name):\n"
+            "        return TaintState.EXTERNAL_RAW\n"
+            "ANY = Yes()\n"
+            "def seed(levels):\n    return FunctionTaint(ANY.whatever, levels['to_level'])\n",
+            "mypack/grammar.py",
+            "exec",
+        ),
+        ns,
+    )
+    assert re.fullmatch(r"[0-9a-f]{64}", _grammar_digest((_bt(seed=ns["seed"]),)))
+
+
+def test_name_only_ref_arms_fire_only_for_fenced_objects() -> None:
+    # The regression that made every `functools.wraps` wrapper collide: `update_wrapper`
+    # copies a str __module__/__qualname__ onto the wrapper, so an ungated ref arm
+    # matched it and returned the WRAPPED function's name instead of any body.
+    pack = _carrier_pack(_CARRIERS["lru_cache_wrapped_helper"], "EXTERNAL_RAW")
+    record = _seed_identity(pack["seed"])["globals"]["_helper"]
+    assert record["t"] != "ref", "a wrapper must not collapse to a name"
+    # ... while a genuinely fenced object still does.
+    assert _seed_value_identity(FunctionTaint)["t"] == "ref"
 
 
 def test_custom_digest_is_full_sha256() -> None:
