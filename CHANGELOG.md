@@ -88,6 +88,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   version 1 records remain readable as OpenRouter provenance. A separately
   opted-in authenticated live test covers Codex execution and repository reads.
 
+- **`verify_attestation` reports schema recognition separately, and accepts
+  `wardline-attest-3` bundles — which Wardline does NOT yet emit.** The result
+  gains a required `schema_recognized` boolean on both the CLI and the MCP
+  `outputSchema`. It is a recognition fact, not a validity verdict: an
+  unrecognised or missing top-level `schema` tag forces `signature_valid: false`
+  too, so an unknown schema still fails closed *and* now says why —
+  distinguishable from a wrong key or a tampered payload even when the bundle
+  was correctly re-signed over its own unknown tag. `ATTEST_SCHEMA` is
+  **unchanged** at `wardline-attest-2` and `attest` still emits v2 only; this is
+  consumer-first staging, so a consumer can dual-read before Wardline changes
+  what it produces. The v3 wire contract and a shared conformance vector ship
+  alongside (`docs/contracts/wardline-attest-3.md`). Note for implementers: the
+  HMAC covers the canonical **envelope** `{"schema", "payload"}` — the tag is
+  inside the signed material — while the reproducibility comparison is over
+  `payload` alone.
+
+- **A tampered signature value is always a signature failure.** A non-ASCII
+  `signature.value` previously raised out of the constant-time comparison and
+  surfaced as a malformed-bundle error (CLI exit `2`, MCP internal error) rather
+  than a failed verification (exit `1`) — a signature problem landing on neither
+  verdict. Attestation bundles are untrusted input on a relay path; the
+  comparison is now over bytes.
+
 ### Changed
 
 - **BREAKING (analyzer-only): the legacy `to_level=` tolerance on `@trusted` is
