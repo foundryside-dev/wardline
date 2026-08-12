@@ -221,6 +221,43 @@ passing, because the fixture module carried no packaging metadata for it to read
 **After adding a component, delete it and confirm something goes red.** If nothing does, the
 suite grew without growing coverage.
 
+### 14. The bound measured on the wrong value
+
+A limit is applied to an input, and then a transformation runs that changes the size. The
+guarantee is stated about the output and enforced against the input, so it holds for exactly
+the inputs the author happened to picture.
+
+Measured: an operator-facing message bounded an untrusted string to 60 characters and *then*
+called `repr`, which escapes control characters — one NUL becomes the four characters `\x00`.
+Sixty NUL bytes rendered **242** characters against a documented 60-character limit. The test
+covering it probed with `"9" * 5000`, all-ASCII, which cannot exercise the escape path at all,
+so it passed while the bound it asserted was false.
+
+The same shape appears wherever a size check precedes an encode, a serialise, a quote, a
+compress, or a normalise. **Assert on the value you actually return**, and probe with an input
+from each class the transformation treats differently — for text that means at least one
+control-character, one backslash/quote, and one multi-byte case, never only the printable ASCII
+that made the original guarantee look true.
+
+### 15. The guard that hangs instead of failing
+
+Worse than a test that cannot fail is one that *blocks*. A red costs one run; a hang costs the
+whole job budget, and in CI it is indistinguishable from a slow build until a timeout kills
+everything downstream.
+
+Measured: a test asserted `len(frame) < 64 * 1024` with the comment "stay under the pipe buffer
+so `os.write` won't block" — checking a hardcoded constant standing in for a property it never
+measured. The real buffer was **8192** bytes (the stock default; the test's attempt to grow it
+returned `EPERM` under pipe pressure), so a 9127-byte write blocked forever with nothing
+draining the read end. On a quiet machine it passes, which is why it survived.
+
+Two lessons, and the second is the expensive one. A guard whose stated subject is a measurable
+property (*the pipe buffer*, *the disk*, *the limit*) must **query that property**, not assert a
+literal that stands in for it. And any test that can block must be made incapable of blocking —
+by measuring first and `skip`ping honestly with the numbers, or by removing the dependency
+(here, draining from a thread). **Ask of any test touching a blocking primitive — a pipe, a
+socket, a lock, a queue, a subprocess wait — what happens if this never returns?**
+
 ## Running the pass
 
 **Measure, don't reason.** Almost every confirmed finding here came from building a shape and
