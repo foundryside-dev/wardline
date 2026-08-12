@@ -242,7 +242,7 @@ default and refuses a dirty working tree unless `allow_dirty: true`, so an agent
 cannot silently attest uncommitted changes. Requires an attest key
 (`wardline install` mints one, or set `WARDLINE_ATTEST_KEY`).
 
-**Returns:** the attestation bundle (`payload` + `signature`). SEI-keyed when a
+**Returns:** the attestation bundle (`schema` + `payload` + `signature`). SEI-keyed when a
 Loomweave store is configured. Identical to the CLI `attest` by construction.
 Read-only. See the [attestation guide](../guides/attestation.md).
 
@@ -251,7 +251,9 @@ Read-only. See the [attestation guide](../guides/attestation.md).
 **Purpose:** verify an attestation bundle's signature offline (needs the project
 key) and optionally re-derive it at the current tree.
 
-**Key params:** `bundle` (required — must contain `payload` and `signature`),
+**Key params:** `bundle` (required — must contain `schema`, `payload` and
+`signature`; a bundle whose top-level `schema` tag is dropped or unrecognised
+reports `schema_recognized: false`, which forces `signature_valid: false`),
 `reproduce` (`true` re-derives at the current tree), `path`, `config`,
 `cache_dir`, `trust_packs`, `trust_local_packs`, `strict_defaults`.
 

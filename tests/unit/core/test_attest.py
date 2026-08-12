@@ -25,6 +25,7 @@ import pytest
 from wardline.core import config as config_mod
 from wardline.core.assure import build_posture
 from wardline.core.attest import (
+    ACCEPTED_ATTEST_SCHEMAS,
     _canonical_bytes,
     build_attestation,
     git_state,
@@ -329,6 +330,28 @@ def test_build_attestation_shape_and_signature(tmp_path: Path) -> None:
     tampered_schema = copy.deepcopy(bundle)
     tampered_schema["schema"] = "wardline-attest-1"  # old bundles no longer verify
     assert verify_attestation(tampered_schema, _KEY)["signature_valid"] is False
+
+
+def test_non_ascii_signature_value_is_a_signature_failure_not_a_crash(tmp_path: Path) -> None:
+    """The bundle is attacker-controlled JSON on the untrusted-relay path, so every
+    tampered signature must land on the SAME verdict surface: ``signature_valid``
+    False. ``hmac.compare_digest`` raises TypeError on a non-ASCII ``str``, which
+    would surface as a malformed-bundle error (CLI exit 2, MCP internal error)
+    instead of a failed verification (exit 1) — a signature problem misclassified
+    as neither verdict. Comparing bytes keeps the classification honest.
+
+    Both accepted schema tags are exercised: dual-read widened the set of tags that
+    reach this comparison at all, so pinning only the emitted tag would leave the
+    newly-reachable one uncovered.
+    """
+    tree = _annotated_tree(tmp_path)
+    for tag in sorted(ACCEPTED_ATTEST_SCHEMAS):
+        bundle = build_attestation(tree, _KEY, today=_PINNED)
+        bundle["schema"] = tag
+        bundle["signature"]["value"] = "café"  # noqa: RUF001 - non-ASCII is the point
+        verified = verify_attestation(bundle, _KEY)
+        assert verified["schema_recognized"] is True, tag
+        assert verified["signature_valid"] is False, tag
 
 
 # --------------------------------------------------------------------------- #

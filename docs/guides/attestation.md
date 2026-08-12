@@ -109,7 +109,7 @@ A bundle is a JSON object with schema `"wardline-attest-2"`:
 | Field | Meaning |
 |---|---|
 | `alg` | Always `"HMAC-SHA256"` |
-| `value` | HMAC-SHA256 hex digest over the canonical (compact, key-sorted) JSON bytes of `payload` |
+| `value` | HMAC-SHA256 hex digest over the canonical (compact, key-sorted) JSON bytes of the **envelope** `{"schema", "payload"}` — the outer schema tag is inside the signed material, so a bundle cannot be relabelled to another schema without invalidating the signature |
 | `key_id` | First 8 hex characters of `sha256(key)` — non-secret, lets bundles signed with different keys be distinguished |
 
 ## Dirty-tree honesty
@@ -175,8 +175,10 @@ Verification is three separable checks:
    schema fails closed *and* says why — distinguishable from a wrong key or a tampered
    payload even when the bundle was correctly re-signed over its own unknown tag.
 2. **Signature check** — always performed, offline, requires the project key. No
-   re-scan. Recomputes the HMAC over the *recorded* payload and compares in constant
-   time. A wrong key or any tampered payload field yields `signature_valid: false`.
+   re-scan. Recomputes the HMAC over the envelope `{"schema", "payload"}` built from
+   the *recorded* payload and the bundle's own tag, and compares in constant time. A
+   wrong key, a relabelled schema, or any tampered payload field yields
+   `signature_valid: false`.
 3. **Reproducibility check** (`--reproduce` / `reproduce: true`) — re-derives the
    payload at the *current* tree and compares canonical bytes. Equal → `reproduced:
    true`. A mismatch may mean the tree moved on since the bundle was produced — not
@@ -212,7 +214,11 @@ The `bundle` argument is required (the parsed JSON object, not a path). `reprodu
 defaults to `false`. The tool returns the result object above.
 
 CLI exit codes for `--verify`: `0` if `signature_valid` (and, when `--reproduce`
-is passed, also `reproduced`); `1` otherwise. So without `--reproduce` the
+is passed, also `reproduced`); `1` when a verdict was reached and it failed; `2`
+when no verdict could be reached at all, because the bundle is not a well-formed
+attestation bundle (missing `payload`, a non-object payload, unreadable JSON). The
+`2` case prints an `error:` line and no result object — do not read a missing
+result as a pass. So without `--reproduce` the
 reproducibility result does not affect the exit code, but with `--reproduce` a
 reproducibility mismatch yields exit `1` even when the signature is valid. The rule
 needs no `schema_recognized` clause: recognition is a conjunct of `signature_valid`,
@@ -296,7 +302,9 @@ re-scan.
 
 ## Determinism guarantee
 
-The canonical bytes signed by HMAC are also the reproducibility target. Two builds
+The canonical `payload` bytes are the reproducibility target. (They are not the
+signed bytes: the HMAC covers the envelope `{"schema", "payload"}`, one level out.
+Reproducibility compares `payload` against `payload`.) Two builds
 of the same unchanged tree produce byte-identical canonical payloads because:
 
 - Every list in the payload is sorted on a stable key (boundaries by `qualname`;

@@ -384,7 +384,11 @@ def verify_attestation(
         and schema_recognized
         and signature.get("alg") == "HMAC-SHA256"
         and signature.get("key_id") == key_id(key)
-        and hmac.compare_digest(expected, str(signature.get("value") or ""))
+        # Compare BYTES, not str: hmac.compare_digest raises TypeError on a non-ASCII
+        # str, and the bundle is attacker-controlled JSON on the untrusted-relay path.
+        # A tampered value must read as a signature failure (signature_valid False,
+        # CLI exit 1), never as a malformed-bundle crash (AttestError, CLI exit 2).
+        and hmac.compare_digest(expected.encode("utf-8"), str(signature.get("value") or "").encode("utf-8"))
     )
 
     note = "reproducibility holds against the RECORDED commit; a mismatch may mean the tree moved, not tamper."

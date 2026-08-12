@@ -25,7 +25,11 @@ IS the contract):
 
 RE-FREEZE PROCEDURE — when a tool's outputSchema legitimately changes:
     1. Regenerate the golden from the live surface (canonical JSON: ``json.dumps(
-       schemas, indent=2, sort_keys=True) + "\n"``).
+       schemas, indent=2, sort_keys=True) + "\n"``). Outside pytest, drive the real
+       handshake first — ``initialize`` then ``notifications/initialized``, as the
+       sibling oracle's ``fixture_server`` does — because this module's private
+       ``_live_output_schemas`` skips it via an autouse fixture that will not run,
+       and a bare ``tools/list`` answers ``-32600 server not initialized``.
     2. Update ``VENDORED_BLOB_SHA`` to ``git hash-object
        tests/conformance/mcp_output_schemas.golden.json`` in the SAME commit.
     3. Re-run conformance and confirm the sibling structured-output oracle stays green.
@@ -68,8 +72,9 @@ _GOLDEN: dict[str, Any] = json.loads(_GOLDEN_PATH.read_text("utf-8"))
 # PROCEDURE in this module's header.
 VENDORED_BLOB_SHA = "8f54e83ce379d2cca28114dc95c95d941942ed2e"
 
-# The published 18-tool surface (advertisement order), pinned independently of the
-# sibling oracle so a surface change is caught here too.
+# The published 18-tool surface, pinned as a SET independently of the sibling oracle
+# so a surface change is caught here too. Listed in advertisement order for reading
+# convenience only — the order itself is pinned by the sibling oracle, not here.
 EXPECTED_TOOLS = (
     "scan",
     "scan_job_start",
@@ -109,8 +114,12 @@ def _live_output_schemas() -> dict[str, Any]:
 
 
 def test_golden_covers_exactly_the_published_surface() -> None:
-    # The golden is canonical-sorted JSON (sort_keys), so compare the surface as a SET;
-    # advertisement order is pinned separately by the live-bytes / byte-pin layers.
+    # The golden is canonical-sorted JSON (sort_keys), so compare the surface as a SET.
+    # Advertisement ORDER is not pinned by any layer in this module — both byte layers
+    # serialize with sort_keys and are order-blind (measured: rotating the live
+    # tools/list reproduces these exact bytes). The sole order pin is the sibling
+    # oracle's tuple compare, ``test_mcp_structured_output.py`` ``EXPECTED_TOOLS``.
+    # Do not weaken or relocate it, and do not add a second order pin here.
     assert set(_GOLDEN) == set(EXPECTED_TOOLS)
 
 

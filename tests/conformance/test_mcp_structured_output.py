@@ -336,6 +336,23 @@ def test_attest_and_verify_attestation_structured_output(tmp_path: Path, monkeyp
     assert verified["signature_valid"] is True
     assert verified["schema_recognized"] is True
 
+    # verify_attestation has THREE return sites, one per `reproduced` value, and each
+    # builds its result dict by hand. Validating only the reproduce=false site leaves
+    # the other two free to drop a required property while the suite stays green —
+    # measured: stripping `schema_recognized` from either reproduce site reds nothing.
+    # `_validated` re-checks the advertised outputSchema (additionalProperties: false,
+    # `schema_recognized` required), so these two rows are the pin for those sites.
+    reproduced_true = _validated(server, "verify_attestation", {"bundle": bundle, "reproduce": True})
+    assert reproduced_true["reproduced"] is True
+    assert reproduced_true["schema_recognized"] is True
+
+    # Move the tree so the payload cannot re-derive: the reproduced=false site.
+    (proj / "svc2.py").write_text(_LEAKY, encoding="utf-8")
+    reproduced_false = _validated(server, "verify_attestation", {"bundle": bundle, "reproduce": True})
+    assert reproduced_false["reproduced"] is False
+    assert reproduced_false["mismatches"]
+    assert reproduced_false["schema_recognized"] is True
+
 
 def test_file_finding_structured_output(tmp_path: Path) -> None:
     from wardline.core.filigree_issue import FileResult
