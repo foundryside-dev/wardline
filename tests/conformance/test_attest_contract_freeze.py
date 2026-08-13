@@ -77,3 +77,20 @@ def test_attest_3_contract_doc_states_its_draft_terms() -> None:
         "wardline-attest-3-conformance-vector-key",  # the public, test-only key
     ):
         assert required in text, f"wardline-attest-3.md must state {required!r}"
+
+    # The no-verdict-meaning invariant, pinned on COLLAPSED whitespace so a
+    # re-wrap of the paragraph cannot break the pin — the claim is the subject
+    # here, not the line breaks. (Checked verbatim first, these span wraps.)
+    flowed = " ".join(text.split())
+    for claim in (
+        # The half that was left implicit, and the half that decides whether a
+        # consumer may safely ignore a v3 field it has not learned yet.
+        "no v3 payload field may downgrade or disqualify a verdict either",
+        # Why that is a description of the design rather than a new restriction.
+        "acts UPSTREAM of the verdict",
+        "structurally grant-blind",
+        # The consequence that protects consumer-first staging: a field that must
+        # change a verdict is not additive.
+        "a schema bump that old consumers reject",
+    ):
+        assert claim in flowed, f"wardline-attest-3.md must state {claim!r}"

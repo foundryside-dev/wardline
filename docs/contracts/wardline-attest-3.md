@@ -46,13 +46,53 @@ rules, **plus** the proposed declaration fields:
 | `declarations` | list | One entry per declaration in scope: `{declaration_id, kind, content_digest, verification_class, subject}`. `kind` ∈ the declaration-surface families; `verification_class` records whether the claim was machine-verified or is record-only. |
 | `declaration_counts` | object | Per-family totals: `{contracts, facets, restoration, sensitivity, dependency_taint}`. |
 | `declaration_debt` | object | Outstanding declaration debt: `{lapsed_expiries, stale_dependency_pins, record_only_claims}`. A non-zero count is **debt, not a verdict**. |
-| `grants` | object | The trust grants the run was executed under: `{trusted_packs, trust_dependency_taint, strict_defaults}`. |
+| `grants` | object | The trust grants the run was executed under: `{trusted_packs, trust_dependency_taint, strict_defaults}`. **Upstream provenance, not a verdict modifier** — see the invariant below. |
 | `dependency_taint_digest` | string \| null | Digest of the dependency-taint input set, or `null` when dependency taint was not computed. |
 | `authorship_note` | string | Fixed caveat restating that the HMAC attests domain-internal integrity, not third-party identity. |
 
 Consumer rule (unchanged in spirit from v2): a declaration is **evidence about a claim**,
 never a substitute for `boundaries[].verdict`. `record_only_claims > 0` does not upgrade
 anything, and no consumer may derive a clean verdict from `declarations`.
+
+### Invariant: no v3 payload field carries verdict meaning — in EITHER direction
+
+The consumer rule above forbids a v3 field **upgrading** a verdict. This invariant states
+the other half, which was left implicit and is the half that decides whether a consumer may
+safely ignore a field it has not learned yet: **no v3 payload field may downgrade or
+disqualify a verdict either.** `boundaries[].verdict` is the only field that carries verdict
+meaning, and it says everything the bundle claims about an entity.
+
+This is a statement of what the design already does, not a new restriction:
+
+- **`grants` acts UPSTREAM of the verdict, not on it.** `trusted_packs`, `strict_defaults`
+  and the proposed `trust_dependency_taint` are *inputs to the scan*. They shape which
+  findings fire, so a granted run simply produces different findings and therefore different
+  verdicts. By the time a verdict exists the grant has already done its work. A consumer
+  cannot re-apply it, and `verdict` cannot express it: `classify_entity_trust` derives the
+  verdict per-entity from active DEFECT findings, under-scan FACTs and declared/actual return
+  taints, and is structurally grant-blind. Answering "what would this have been under
+  stricter assumptions?" requires **re-running the scan**, which is a different bundle, not a
+  field.
+- **`declaration_debt` is debt, not a verdict** — already stated in its own row.
+- **`declaration_counts` and `dependency_taint_digest`** are inventory and input identity.
+
+**What `grants` IS for.** Two bundles can both report `clean` while one was computed under
+weaker assumptions. `grants` is what lets an operator tell those apart — the *strength of the
+claim*, recorded alongside it. A consumer that drops `grants` loses that distinction and
+nothing else; it does not thereby read a verdict as stronger than the bundle asserts.
+
+**Why this belongs in the contract rather than in each consumer.** Consumer-first staging
+means consumers accept v3 *before* the producer emits it, and therefore before they have
+learned any particular field. That property only holds while ignoring an unlearned field is
+safe. A field with disqualifying intent would break it permanently: every consumer that had
+already staged dual-accept would have to be updated again, and until it was, it would read
+through the disqualifier. So a field that must change a verdict is **not an additive v3
+field** — it is a schema bump that old consumers reject, or it belongs in
+`boundaries[].verdict` where every consumer already reads it.
+
+Consequence for implementers: a consumer may project any subset of the v3 payload it finds
+useful and ignore the rest, and that remains correct as the field set grows. Warpline does
+exactly this.
 
 ## Shared vector
 
