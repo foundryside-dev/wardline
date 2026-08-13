@@ -487,25 +487,32 @@
     ]
   },
   {
-    "seam": "Wardline\u2192warpline attest / change-impact contract (wardline-attest-2): a planned versioned attest surface where wardline publishes a signed, full-scan, commit-pinned evidence bundle whose per-boundary entries carry a content_hash binding key + 3-valued clean/defect/unknown verdict, and warpline pulls it to do mechanical (commit, content_hash) equality to decide \"proven clean at commit X\". Wardline owns the trust verdict; warpline never declares clean.",
+    "seam": "Wardline\u2192warpline attest / change-impact contract: wardline publishes a signed, full-scan, commit-pinned evidence bundle whose per-boundary entries carry a content_hash binding key and a 3-valued clean/defect/unknown verdict, and warpline pulls it to do mechanical (commit, content_hash) equality to decide \"proven clean at commit X\". Wardline owns the trust verdict; warpline never declares clean. Now two-sided across TWO schema versions: wardline still EMITS wardline-attest-2 in S0, wardline's key-holding verifier ACCEPTS wardline-attest-2|wardline-attest-3 and verifies the HMAC, and warpline ACCEPTS both as an UNTRUSTED RELAY that holds no wardline key and never verifies the signature. The coordinated Task 23 / release receipt enforces byte identity of the shared v3 conformance vector across both repositories, while each side's standalone suite enforces its own half \u2014 wardline's signer, warpline's canonicalization re-derivation.",
     "authority": "wardline",
     "consumer_or_second_producer": "warpline",
-    "wire": "wardline-attest-2 attest / change-impact contract (producer IMPLEMENTED: ATTEST_SCHEMA='wardline-attest-2', per-boundary {qualname, sei, content_hash, verdict, tier}, content_hash=entity-body span blake3 from EntityBinding (identity-resolve granularity); warpline consumer NOT YET wired)",
+    "wire": "attest / change-impact contract, dual-read. PRODUCER: ATTEST_SCHEMA='wardline-attest-2' \u2014 S0 emission is UNCHANGED and stays v2. VERIFIER: ACCEPTED_ATTEST_SCHEMAS=('wardline-attest-2','wardline-attest-3'), reporting schema_recognized separately from signature_valid; recognition is a conjunct of validity, so an unrecognised tag fails closed and says why. Per-boundary {qualname, sei, content_hash, verdict, tier}; content_hash = entity-body span blake3 from EntityBinding (identity-resolve granularity). CONSUMER: warpline accepts both tags as untrusted relay input (ACCEPTED_ATTEST_SCHEMAS literals, attest-1 and anything else rejected), names the consumed tag in its verdict source, holds no wardline HMAC key and does NOT verify the signature \u2014 its signature_verified is a constant false, not a check.",
     "two_sided": true,
-    "oracle_shape": null,
-    "oracle_test": null,
+    "oracle_shape": "shared_signed_vector",
+    "oracle_test": "tests/conformance/test_attest_dual_read.py",
     "marker": null,
     "drift_alarm": null,
     "drift_test": null,
-    "bar_verdict": "gap",
+    "bar_verdict": "at_bar",
     "deferred_reason": null,
-    "wire_change": "none",
+    "wire_change": "additive reader expansion; S0 emission remains wardline-attest-2",
     "evidence_paths": [
-      "src/wardline/core/attest.py:62",
+      "src/wardline/core/attest.py:63",
+      "src/wardline/core/attest.py:68",
       "src/wardline/core/attest.py:216-224",
+      "tests/conformance/test_attest_dual_read.py",
+      "tests/conformance/fixtures/wardline-attest-3.vector.json",
       "tests/conformance/test_attest_contract_freeze.py",
-      "docs/contracts/wardline-attest-2.md"
-    ]
+      "docs/contracts/wardline-attest-2.md",
+      "docs/contracts/wardline-attest-3.md",
+      "docs/contracts/wardline-attest-2-consumer-prompt.md",
+      "docs/guides/attestation.md"
+    ],
+    "peer_conformance": "Warpline consumer WIRED and released: warpline@b74ac6691408eccce63ae3e2d02f988f6aed4f6b src/warpline/_attest.py (ACCEPTED_ATTEST_SCHEMAS literals; verdict source names the consumed tag), pinned by warpline tests/test_attest.py, which vendors this repository's tests/conformance/fixtures/wardline-attest-3.vector.json byte-for-byte and re-derives its HMAC over the canonical envelope {schema, payload} from first principles as a canonicalization drift pin. The prior row's 'warpline consumer NOT YET wired' clause was already false before S0 \u2014 warpline has shipped src/warpline/_attest.py since 1.3.0 (worklist_risk imported at commands.py:8, called at commands.py:1117) \u2014 and this is the first task whose Files list carries this path, so it dies here."
   },
   {
     "seam": "legis\u2192warpline preflight_impact advisory read (warpline.preflight_impact.v1 envelope = warpline_impact_radius_get; consumer legis, producer warpline; reverify_worklist consumption ruled OUT per hub ruling PDR-0037)",
