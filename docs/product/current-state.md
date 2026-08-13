@@ -29,9 +29,14 @@ resident on `release/2.0.0`.
 ## Open questions / blocked-on-owner
 
 1. **41 commits are unpushed.** Tasks 1–17 exist only locally. Durability risk — push?
-2. **Branch protection is off**, so Task 17's CODEOWNERS is pure routing and the identity-corpus
-   review gate does not gate. Verified live (`branches/main/protection` → 404, `rulesets` → `[]`).
-   Enable "require review from Code Owners"?
+2. ~~**Branch protection is off**~~ — **DECIDED 2026-08-13, not an open question.** Owner's call:
+   `main` gets protected when 2.0 is ready to merge into the public release, not before. Until
+   then Task 17's CODEOWNERS is routing-only by design, and the identity-corpus hard gate is the
+   parity test, not review. Re-verified live at the decision (`main` and `release/2.0.0`:
+   `branches/…/protection` → 404, repo `rulesets` → `[]`, and effective `rules/branches/…` → `[]`,
+   which would have shown an inherited org ruleset if one existed). Public org repo, so no plan
+   gate — it is off because it was never enabled. **Trigger to revisit: opening the 2.0 → public
+   release merge.** Do not re-raise before then.
 3. **Cross-repo readiness audit was still running at checkpoint** (`wf_b8fb2102-3ab`) — five
    lenses verifying every anchor Tasks 19–23 cite across loomweave/warpline/legis, the last
    re-freeze budget, and whether the five close conditions are checkable. Read its verdict before
