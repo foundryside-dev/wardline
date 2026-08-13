@@ -1,0 +1,34 @@
+{
+  "contract": "weft/wardline-scan-artifact-declarations-preview",
+  "description": "S0 preview vector for wardline's S1 additive `declarations` member (declaration-surface-v2 §13.1 item 3). Pins legis's stated posture TODAY: unknown top-level keys are accepted, swept into the signed payload, and shift scan_digest (audit-visible, by design). Authored in wardline, vendored byte-identical in legis.",
+  "signing": {
+    "key_utf8": "test-shared-secret-key",
+    "scheme": "hmac-sha256:v2",
+    "policy": "no expected_signature hex: the consumer test signs and verifies live, so the S1 producer can extend `declarations` without a two-sided hex re-pin of THIS vector (the main scan-artifact vector keeps that role)."
+  },
+  "valid": [
+    {
+      "name": "declarations_preview_signed",
+      "description": "The golden single-defect artifact widened with an empty declarations ledger: signature must cover it, verification must accept it, scan_digest must shift.",
+      "artifact": {
+        "scanner_identity": "wardline@1.5.0",
+        "rule_set_version": "sha256:deadbeef",
+        "commit_sha": "cccccccccccccccccccccccccccccccccccccccc",
+        "tree_sha": "tttttttttttttttttttttttttttttttttttttttt",
+        "findings": [
+          {
+            "rule_id": "PY-WL-101",
+            "message": "leak",
+            "severity": "ERROR",
+            "kind": "defect",
+            "fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "qualname": "svc.leaky",
+            "properties": {"declared_return": "INTEGRAL", "actual_return": "EXTERNAL_RAW"},
+            "suppression_state": "active"
+          }
+        ],
+        "declarations": []
+      }
+    }
+  ]
+}
