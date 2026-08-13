@@ -53,6 +53,75 @@ def test_attest_3_vector_signature_is_internally_consistent() -> None:
 # ---- the six-case recognition/validity matrix ----
 
 
+# ---- the preview's shape agrees with the live producer (wardline-b59cbea4bc) ----
+#
+# The vector is what S1's producer preflight byte- and semantic-compares its first
+# real attest-3 output against (§13.3). A preview that contradicts the live payload
+# cannot be reproduced without shipping the wrong shape, so these pin the agreement
+# rather than the bytes. They compute the expected key set from AssurancePosture
+# instead of transcribing it — transcription is precisely how the stub got in.
+
+
+def test_attest_3_vector_posture_is_the_live_posture_plus_declaration_debt() -> None:
+    from wardline.core.assure import AssurancePosture
+
+    live_keys = set(
+        AssurancePosture(
+            boundaries_total=0, proven=0, defect_total=0, unknown=[], engine_limited=0,
+            coverage_pct=None, unanalyzed_total=0, unanalyzed_rule_ids=[], waiver_debt=[],
+            baselined_total=0, judged_total=0,
+        ).to_dict()
+    )
+    posture = _bundle()[PAYLOAD_FIELD]["posture"]
+    # §11.2 puts declaration debt IN the posture — one home, no top-level sibling.
+    assert set(posture) == live_keys | {"declaration_debt"}
+    assert "declaration_debt" not in _bundle()[PAYLOAD_FIELD]
+    # `unknown` is a LIST OF OBJECTS (UnknownBoundary.to_dict()), never a count —
+    # the single most misread key in this payload.
+    assert all(isinstance(u, dict) and "location" in u for u in posture["unknown"])
+    assert posture["proven"] + posture["defect_total"] + len(posture["unknown"]) == posture["boundaries_total"]
+
+
+def test_attest_3_vector_posture_and_boundaries_describe_the_same_scan() -> None:
+    # attest.py builds `boundaries` and `posture` from ONE scan over the same
+    # declared_qualnames, so a preview whose counters outrun its boundary rows is
+    # describing a scan that cannot exist.
+    payload = _bundle()[PAYLOAD_FIELD]
+    verdicts = [b["verdict"] for b in payload["boundaries"]]
+    posture = payload["posture"]
+    assert posture["boundaries_total"] == len(verdicts)
+    assert posture["proven"] == verdicts.count("clean")
+    assert posture["defect_total"] == verdicts.count("defect")
+    assert len(posture["unknown"]) == verdicts.count("unknown")
+    assert {u["qualname"] for u in posture["unknown"]} == {
+        b["qualname"] for b in payload["boundaries"] if b["verdict"] == "unknown"
+    }
+    assert payload["boundaries"] == sorted(payload["boundaries"], key=lambda b: b["qualname"])
+
+
+def test_attest_3_vector_declaration_vocabulary_is_self_consistent() -> None:
+    payload = _bundle()[PAYLOAD_FIELD]
+    counts = payload["declaration_counts"]
+    for declaration in payload["declarations"]:
+        # PLURAL family token in the singular `kind` field: the ledger and the
+        # counters share one vocabulary, so a consumer can group one by the other.
+        assert declaration["kind"] in counts, declaration["kind"]
+        # §11.1's three classes. `machine_verified` on a facet is the specific
+        # error this pin exists for: §7's emitted-text discipline forbids claiming
+        # wardline verified the legal record. Whether a facet is
+        # `recorded_unverified` or `structurally_verified` is an OPEN S1 ruling —
+        # change this line deliberately, with the ruling, not in passing.
+        assert declaration["verification_class"] in {
+            "machine_verified", "structurally_verified", "recorded_unverified"
+        }
+        if declaration["kind"] == "facets":
+            assert declaration["verification_class"] == "recorded_unverified"
+    for kind, total in counts.items():
+        assert total == sum(1 for d in payload["declarations"] if d["kind"] == kind), kind
+    # every declared subject is a boundary this same scan reports on
+    assert {d["subject"] for d in payload["declarations"]} <= {b["qualname"] for b in payload["boundaries"]}
+
+
 def test_valid_v3_is_recognised_and_valid() -> None:
     report = verify_attestation(_bundle(), GOLDEN_KEY)
     assert report["schema_recognized"] is True

@@ -9,6 +9,20 @@
         "sei": "loomweave:eid:9adc480cd5aa4d71503c19fd8b29907e",
         "tier": "ASSURED",
         "verdict": "clean"
+      },
+      {
+        "content_hash": "blake3:9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a",
+        "qualname": "svc.render_invoice",
+        "sei": "loomweave:eid:1f70b6c2e4d84a0fbb1c5d9e3a72640b",
+        "tier": null,
+        "verdict": "unknown"
+      },
+      {
+        "content_hash": "blake3:7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e",
+        "qualname": "svc.write_audit_event",
+        "sei": "loomweave:eid:5c2e91ab7f3d40e6982b0c4d17ae5f38",
+        "tier": "INTEGRAL",
+        "verdict": "clean"
       }
     ],
     "commit": "ed7bfe860d83000000000000000000000000dead",
@@ -19,18 +33,13 @@
       "restoration": 0,
       "sensitivity": 0
     },
-    "declaration_debt": {
-      "lapsed_expiries": 0,
-      "record_only_claims": 0,
-      "stale_dependency_pins": 0
-    },
     "declarations": [
       {
         "content_digest": "sha256:1212121212121212121212121212121212121212121212121212121212121212",
         "declaration_id": "wlds1:efefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefef",
-        "kind": "facet",
+        "kind": "facets",
         "subject": "svc.write_audit_event",
-        "verification_class": "machine_verified"
+        "verification_class": "recorded_unverified"
       }
     ],
     "dependency_taint_digest": null,
@@ -41,9 +50,32 @@
       "trusted_packs": []
     },
     "posture": {
-      "functions_analyzed": 12,
-      "inert": false,
-      "recognized_boundaries": 3
+      "baselined_total": 0,
+      "boundaries_total": 3,
+      "coverage_pct": 66.7,
+      "declaration_debt": {
+        "lapsed_expiries": 0,
+        "record_only_claims": 0,
+        "stale_dependency_pins": 0
+      },
+      "defect_total": 0,
+      "engine_limited": 0,
+      "judged_total": 0,
+      "proven": 2,
+      "unanalyzed_rule_ids": [],
+      "unanalyzed_total": 0,
+      "unknown": [
+        {
+          "location": {
+            "line": 41,
+            "path": "svc.py"
+          },
+          "qualname": "svc.render_invoice",
+          "reason": null,
+          "tier": null
+        }
+      ],
+      "waiver_debt": []
     },
     "ruleset_hash": "sha256:abababababababababababababababababababababababababababababababab",
     "sei_diagnostics": [],
@@ -54,6 +86,6 @@
   "signature": {
     "alg": "HMAC-SHA256",
     "key_id": "4486a79d",
-    "value": "b3ffd116c35b7adac964e597173855195ae694fc287211fa210ce8be223fd791"
+    "value": "2bf72310053eca0b0bcd80972659370e724ad43531e26f77d200411bc02b5a04"
   }
 }

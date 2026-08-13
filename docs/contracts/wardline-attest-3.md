@@ -43,12 +43,39 @@ rules, **plus** the proposed declaration fields:
 
 | Key | Type | Meaning (DRAFT) |
 | --- | --- | --- |
-| `declarations` | list | One entry per declaration in scope: `{declaration_id, kind, content_digest, verification_class, subject}`. `kind` ∈ the declaration-surface families; `verification_class` records whether the claim was machine-verified or is record-only. |
+| `declarations` | list | One entry per declaration in scope: `{declaration_id, kind, content_digest, verification_class, subject}`. `kind` is one of the declaration-surface family tokens, spelled exactly as the `declaration_counts` keys are (`facets`, not `facet`), so the ledger and the counters share one vocabulary. `verification_class` ∈ `{machine_verified, structurally_verified, recorded_unverified}` per declaration-surface-v2 §11.1 — three classes, not a verified/unverified pair. |
 | `declaration_counts` | object | Per-family totals: `{contracts, facets, restoration, sensitivity, dependency_taint}`. |
-| `declaration_debt` | object | Outstanding declaration debt: `{lapsed_expiries, stale_dependency_pins, record_only_claims}`. A non-zero count is **debt, not a verdict**. |
 | `grants` | object | The trust grants the run was executed under: `{trusted_packs, trust_dependency_taint, strict_defaults}`. **Upstream provenance, not a verdict modifier** — see the invariant below. |
 | `dependency_taint_digest` | string \| null | Digest of the dependency-taint input set, or `null` when dependency taint was not computed. |
 | `authorship_note` | string | Fixed caveat restating that the HMAC attests domain-internal integrity, not third-party identity. |
+
+### `posture` — the v2 shape plus posture-resident declaration debt
+
+`posture` is the same object v2 carries: the eleven `AssurancePosture` keys
+(`boundaries_total`, `proven`, `defect_total`, `unknown`, `engine_limited`, `coverage_pct`,
+`unanalyzed_total`, `unanalyzed_rule_ids`, `waiver_debt`, `baselined_total`, `judged_total`),
+with the same meanings, the same invariant (`proven + defect_total + len(unknown) ==
+boundaries_total`), and the same `unknown` shape — a **list of objects**, one per
+honesty-gap boundary, never a count.
+
+v3 adds exactly one key **inside** it:
+
+| Key (in `posture`) | Type | Meaning (DRAFT) |
+| --- | --- | --- |
+| `declaration_debt` | object | Outstanding declaration debt: `{lapsed_expiries, stale_dependency_pins, record_only_claims}`. A non-zero count is **debt, not a verdict**. |
+
+Declaration-surface-v2 §11.2 places declaration debt "in the posture", and that is the
+**only** home: there is no top-level `declaration_debt` sibling. A consumer reads
+`payload.posture.declaration_debt`, and a producer emitting the retired top-level form is
+wrong rather than tolerated — honouring both homes is how two implementations drift apart
+while both look green.
+
+The wire shape is what this contract fixes; **how** a producer arrives at it is not
+constrained. S1 may extend `AssurancePosture` with the field or merge it in at the attest
+boundary — the vector mandates neither. This matters because §11.1 has attest, assure/dossier
+and the legis artifact consuming one inventory: a dataclass field would surface debt in those
+other outputs and their goldens too, which is a design decision this contract does not make
+for them.
 
 Consumer rule (unchanged in spirit from v2): a declaration is **evidence about a claim**,
 never a substitute for `boundaries[].verdict`. `record_only_claims > 0` does not upgrade
@@ -73,7 +100,8 @@ This is a statement of what the design already does, not a new restriction:
   taints, and is structurally grant-blind. Answering "what would this have been under
   stricter assumptions?" requires **re-running the scan**, which is a different bundle, not a
   field.
-- **`declaration_debt` is debt, not a verdict** — already stated in its own row.
+- **`posture.declaration_debt` is debt, not a verdict** — as its row above states. It sits
+  beside `posture`'s own counters, which have never been verdict-bearing either.
 - **`declaration_counts` and `dependency_taint_digest`** are inventory and input identity.
 
 **What `grants` IS for.** Two bundles can both report `clean` while one was computed under
