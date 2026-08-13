@@ -248,6 +248,25 @@ git commit -m "test(conformance): pin the §4.3 extension checklist before its f
 
 ### Task 2: Attest-3 preview erratum — `wardline-b59cbea4bc` (wardline + warpline)
 
+> **DONE before S1 started — SKIP THIS TASK ENTIRELY. Do not re-sign the vector.**
+> Landed 2026-08-13 as wardline `8a9aaed2` + warpline `44b0d4e`; `wardline-b59cbea4bc`
+> is closed. All seven steps are complete, not just through Step 4. Three corrections
+> to the text below, recorded so a later reader does not re-derive them:
+> - **The Files list was incomplete.** This was a two-sided *source* change, not a
+>   fixture edit plus a re-vendor: warpline's `parse_attest_bundle` read
+>   `payload["declaration_debt"]` and had to move to `payload.posture.declaration_debt`
+>   (`src/warpline/_attest.py`, `tests/test_attest.py` — neither was listed).
+> - **Step 3 was a no-op.** `test_attest_3_vector_signature_is_internally_consistent`
+>   re-derives the HMAC; there is no hex pin anywhere in the repo to update.
+> - **Two of the Step-1 suggested values were wrong** and were not used: `unknown` is a
+>   list of `UnknownBoundary` objects, not a count, and `boundaries_total: 3` against a
+>   one-row `boundaries[]` describes a scan that cannot exist. The vector is now
+>   generated against `AssurancePosture.to_dict()` rather than transcribed, and
+>   `boundaries[]` carries three rows so the counters and the rows agree.
+>
+> Task 10 is unaffected: this was the first of the vector's two sanctioned moves, and
+> Task 10 remains the second.
+
 The S0-staged preview vector contradicts the live producer and the spec in four places (the ticket carries the full statement): `posture` is a three-key `ResolutionPosture`-ish stub where the live attest-2 `posture` is `AssurancePosture.to_dict()` (11 keys); `declaration_debt` sits top-level where §11.2 puts it in the posture; `kind` is singular `"facet"` against the plural group vocabulary everywhere else; and the facet example claims `machine_verified` against §7's own text discipline. S1's Task 10 preflight compares real bytes against this vector, so it must be corrected while it is still cheap — it is DRAFT by its own terms. **Check the ticket first: if the S0 review already fixed it, verify and skip to Step 5.**
 
 **Files:**
