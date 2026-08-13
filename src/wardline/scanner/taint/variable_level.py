@@ -33,7 +33,7 @@ from typing import TYPE_CHECKING
 from wardline.core.taints import _PROVENANCE_CLASH, RAW_ZONE, TRUST_RANK, TaintState, combine
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Iterable, Iterator
 
 # Serialisation sinks — calls that cross the representation boundary. Their
 # output sheds validation provenance (raw bytes/str), so → UNKNOWN_RAW. This is
@@ -2519,7 +2519,7 @@ def compute_return_taint(
     """
     returns: list[tuple[TaintState, str | None, ast.expr]] = []
     _collect_return_paths(
-        list(func_node.body),
+        func_node.body,
         function_taint,
         taint_map,
         var_taints,
@@ -2568,7 +2568,7 @@ def compute_return_callee(
     """
     returns: list[tuple[TaintState, str | None, ast.expr]] = []
     _collect_return_paths(
-        list(func_node.body),
+        func_node.body,
         function_taint,
         taint_map,
         var_taints,
@@ -2589,14 +2589,14 @@ def compute_return_callee(
     #    a direct call. Provenance only — never changes a fire/no-fire decision.
     for taint, callee, node in returns:
         if taint == worst and callee is None and isinstance(node, ast.Name):
-            indirect = _assignment_callee(list(func_node.body), node.id, worst, function_taint, taint_map, var_taints)
+            indirect = _assignment_callee(func_node.body, node.id, worst, function_taint, taint_map, var_taints)
             if indirect is not None:
                 return indirect
     return None
 
 
 def _assignment_callee(
-    nodes: list[ast.AST],
+    nodes: Iterable[ast.AST],
     name: str,
     worst: TaintState,
     function_taint: TaintState,
@@ -2629,9 +2629,7 @@ def _assignment_callee(
                 and _resolve_expr(node.value, function_taint, taint_map, var_taints) == worst
             ):
                 result = callee
-        nested = _assignment_callee(
-            list(ast.iter_child_nodes(node)), name, worst, function_taint, taint_map, var_taints
-        )
+        nested = _assignment_callee(ast.iter_child_nodes(node), name, worst, function_taint, taint_map, var_taints)
         if nested is not None:
             result = nested
     return result
@@ -2648,7 +2646,7 @@ def _return_callee(node: ast.expr) -> str | None:
 
 
 def _collect_return_paths(
-    nodes: list[ast.AST],
+    nodes: Iterable[ast.AST],
     function_taint: TaintState,
     taint_map: dict[str, TaintState],
     var_taints: dict[str, TaintState],
@@ -2686,7 +2684,7 @@ def _collect_return_paths(
                     _CURRENT_VAR_TYPES.reset(token_types)
             out.append((taint, _return_callee(node.value), node.value))
         _collect_return_paths(
-            list(ast.iter_child_nodes(node)),
+            ast.iter_child_nodes(node),
             function_taint,
             taint_map,
             var_taints,
