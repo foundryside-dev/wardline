@@ -67,6 +67,12 @@ _SERIALISATION_SINKS: frozenset[str] = frozenset(
         "tomllib.load",
         "tomli_w.dumps",
         "tomli_w.dump",
+        "dill.load",
+        "dill.loads",
+        "joblib.load",
+        "jsonpickle.decode",
+        "shelve.open",
+        "torch.load",
     }
 )
 
