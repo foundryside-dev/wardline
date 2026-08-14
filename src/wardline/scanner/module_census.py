@@ -25,11 +25,18 @@ Last-binding-wins is refused outright. Decorator expressions are evaluated at
 position is a trust escalation: any second occurrence — at any statement depth,
 of any kind — makes the name unreadable rather than resolving to one of the pair.
 
-OVER-APPROXIMATION IS DELIBERATE AND FAILS CLOSED. A comprehension is its own
-scope, yet the binding walk counts a comprehension's iteration target — and a
-walrus target written inside one — as a module-scope occurrence. Over-counting
-can only make a name UNREADABLE; it can never resolve one. Do not "fix" either
-into a fail-open by teaching the walk to skip comprehension scopes.
+TWO POPULATIONS, OPPOSITE FAIL-CLOSED DIRECTIONS. The walk that feeds ``values``
+OVER-APPROXIMATES DELIBERATELY: a comprehension is its own scope, yet its
+iteration target counts as a module-scope occurrence, because over-counting can
+only make a name UNREADABLE for form 5 — and that refusal is observable (the
+unreadable-level FACT). The SAME over-count is fail-OPEN in ``binding_lines``,
+the resolver's import-visibility evidence: a phantom rebind refuses the alias
+rewrite, the marker stops matching vocabulary, and the seed drops with no
+diagnostic, so a validly-marked module scans inert. ``binding_lines`` therefore
+records only bindings that can actually rebind the module name at runtime
+(comprehension targets and lambda bodies are excluded; a walrus inside a
+comprehension and a lambda argument default bind in the enclosing scope and are
+kept). Do not merge the two populations in either direction.
 """
 
 from __future__ import annotations
@@ -107,6 +114,8 @@ def build_module_census(
     poisoned = any(has_unmaterialised_star(stmt, direct=True) for stmt in tree.body)
 
     occurrences: dict[str, list[int]] = {}
+    rebinds: dict[str, list[int]] = {}
+    nonimport_rebinds: dict[str, list[int]] = {}
     declared_global: set[str] = set()
 
     # Direct imports are the only imports represented by ``alias_map``. Record
@@ -124,15 +133,36 @@ def build_module_census(
     def occurrence(name: str, line: int) -> None:
         occurrences.setdefault(name, []).append(line)
 
-    def visit(child: ast.AST) -> None:
+    def rebind(name: str, line: int, *, from_import: bool = False) -> None:
+        rebinds.setdefault(name, []).append(line)
+        # The non-import subset is the resolver's TIE evidence: a line carrying
+        # both an import and a non-import binding cannot be ordered by lineno, so
+        # the alias rewrite is refused there rather than resolved to the import.
+        if not from_import:
+            nonimport_rebinds.setdefault(name, []).append(line)
+
+    # ONE walk, TWO populations, opposite fail-closed directions. ``occurrences``
+    # is the conservative census behind ``values``: over-counting there can only
+    # make a name UNREADABLE for form 5, and the refusal is observable (the
+    # unreadable-level FACT). ``rebinds`` is the resolver's import-visibility
+    # evidence, where over-counting runs FAIL-OPEN: a phantom rebind refuses the
+    # alias rewrite, the marker stops matching vocabulary, and the seed drops with
+    # no diagnostic at all. So ``rebinds`` records only bindings that can actually
+    # rebind the module name at runtime: a comprehension's iteration target is
+    # local to the comprehension's implicit scope and a lambda's body binds the
+    # lambda's locals, so neither enters it — while a walrus inside a
+    # comprehension (PEP 572) and a lambda ARGUMENT DEFAULT both bind in the
+    # enclosing scope and do. ``rebinds_module`` carries that scope distinction.
+    def visit(child: ast.AST, *, rebinds_module: bool = True) -> None:
         line = getattr(child, "lineno", 0)
         if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
             # The def/class statement BINDS its own name — omitting it runs
             # fail-open: form 5 would resolve a token the code has since replaced
             # with a function or a class.
             occurrence(child.name, line)
+            rebind(child.name, line)
             for sub in _enclosing_scope_exprs(child):
-                visit(sub)
+                visit(sub, rebinds_module=rebinds_module)
             return  # separate scope — the body never enters the census
         if isinstance(child, (ast.Import, ast.ImportFrom)):
             # An import IS a binding occurrence; the value it binds lives in
@@ -140,22 +170,50 @@ def build_module_census(
             for alias in child.names:
                 if alias.name == "*":
                     continue
-                occurrence(alias.asname or alias.name.split(".")[0], line)
+                bound = alias.asname or alias.name.split(".")[0]
+                occurrence(bound, line)
+                rebind(bound, line, from_import=True)
+            return
+        if isinstance(child, ast.Lambda):
+            # Defaults are evaluated in the ENCLOSING scope at definition time;
+            # the body is the lambda's own scope, so a walrus inside it binds a
+            # lambda local, never the module name.
+            for default in (*child.args.defaults, *(d for d in child.args.kw_defaults if d is not None)):
+                visit(default, rebinds_module=rebinds_module)
+            visit(child.body, rebinds_module=False)
+            return
+        if isinstance(child, (ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)):
+            # Iteration targets are local to the comprehension's implicit scope;
+            # every other child expression evaluates — and a walrus inside one
+            # binds (PEP 572) — in the scope CONTAINING the comprehension, so the
+            # current flag propagates to them unchanged.
+            elements = (child.key, child.value) if isinstance(child, ast.DictComp) else (child.elt,)
+            for element in elements:
+                visit(element, rebinds_module=rebinds_module)
+            for generator in child.generators:
+                visit(generator.target, rebinds_module=False)
+                visit(generator.iter, rebinds_module=rebinds_module)
+                for condition in generator.ifs:
+                    visit(condition, rebinds_module=rebinds_module)
             return
         if isinstance(child, ast.Name) and isinstance(child.ctx, (ast.Store, ast.Del)):
             # One test covers Assign, AnnAssign, AugAssign, walrus, for/with/
             # comprehension targets, tuple and starred unpacking, and `del`.
             occurrence(child.id, line)
+            if rebinds_module:
+                rebind(child.id, line)
         elif isinstance(child, (ast.ExceptHandler, ast.MatchAs, ast.MatchStar)) and child.name is not None:
             # `except ... as e`, a `match` capture and a `match` star-capture all
             # carry their bound name on ``.name``; merged into ONE branch because
             # ruff's SIM114 refuses the three-way `elif` chain that states them
             # separately. Semantics are unchanged — same names, same lines.
             occurrence(child.name, line)
+            rebind(child.name, line)
         elif isinstance(child, ast.MatchMapping) and child.rest is not None:
             occurrence(child.rest, line)
+            rebind(child.rest, line)
         for grandchild in ast.iter_child_nodes(child):
-            visit(grandchild)
+            visit(grandchild, rebinds_module=rebinds_module)
 
     for stmt in tree.body:
         visit(stmt)
@@ -169,10 +227,13 @@ def build_module_census(
             declared_global.update(node.names)
 
     binding_lines = MappingProxyType(
-        {bound_name: tuple(bound_lines) for bound_name, bound_lines in occurrences.items()}
+        {bound_name: tuple(bound_lines) for bound_name, bound_lines in rebinds.items()}
     )
     frozen_alias_bindings = MappingProxyType(
         {alias_name: tuple(bindings) for alias_name, bindings in alias_bindings.items()}
+    )
+    nonimport_binding_lines = MappingProxyType(
+        {bound_name: tuple(bound_lines) for bound_name, bound_lines in nonimport_rebinds.items()}
     )
 
     # The one shape that may resolve: a DIRECT element of Module.body, single
@@ -224,6 +285,7 @@ def build_module_census(
                 reference_sites=frozenset(),
                 binding_lines=binding_lines,
                 alias_bindings=frozen_alias_bindings,
+                nonimport_binding_lines=nonimport_binding_lines,
             ),
             reference_site=None,
             shadowed_roots=shadowed_roots,
@@ -248,4 +310,5 @@ def build_module_census(
         ),
         binding_lines=binding_lines,
         alias_bindings=frozen_alias_bindings,
+        nonimport_binding_lines=nonimport_binding_lines,
     )

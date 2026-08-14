@@ -148,6 +148,19 @@ _UNREADABLE = [
         "CFG",
         id="unbound_name_on_to_level",
     ),
+    # An import and a rebind of its alias on ONE physical line share a lineno, so
+    # source-line evidence cannot prove which binding a later use sees. Letting the
+    # import win the tie read `T.ASSURED` as the real enum although `T = object`
+    # executed last — a minted ASSURED seed for a rebound name, with no diagnostic.
+    # The tie must refuse, which routes the form-5 read here, to the residual FACT.
+    pytest.param(
+        _IMPORT + "from wardline.core.taints import TaintState as T; T = object\n"
+        "LEVEL = T.ASSURED\n@trusted(level=LEVEL)\ndef f(p):\n    return p\n",
+        "svc.f",
+        "level",
+        "LEVEL",
+        id="same_line_import_and_rebind_tie",
+    ),
 ]
 
 

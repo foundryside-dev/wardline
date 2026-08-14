@@ -134,6 +134,99 @@ def test_second_occurrence_at_any_depth_makes_the_name_unreadable(second: str) -
     assert census.values["X"].token is None
 
 
+# ── Resolver rebind evidence: scope-correct, unlike the occurrence census ────────
+#
+# ``binding_lines`` feeds ``resolve_dotted_fqn``'s import-visibility test, where the
+# conservative walk's over-count runs FAIL-OPEN: a phantom rebind refuses the alias
+# rewrite, the marker stops matching vocabulary, and the seed drops with no
+# diagnostic. ``values`` keeps the conservative population — form 5's refusal is
+# observable as the unreadable-level FACT — so each consumer gets the direction
+# that fails closed FOR IT.
+
+_PKG_ALIAS = {"T": "pkg.helper"}
+
+
+@pytest.mark.parametrize(
+    "comp",
+    [
+        "unused = [T for T in ()]\n",
+        "unused = {T for T in ()}\n",
+        "unused = {T: 1 for T in ()}\n",
+        "unused = list(T for T in ())\n",
+        "unused = [[T for T in ()] for x in ()]\n",
+    ],
+)
+def test_comprehension_target_is_an_occurrence_but_not_a_rebind(comp: str) -> None:
+    census = _census("from pkg import helper as T\n" + comp, alias_map=_PKG_ALIAS)
+    # Conservative census: the name stays unreadable for form 5 (observable channel).
+    assert census.values["T"].token is None
+    # Scope-correct rebind evidence: a comprehension target is LOCAL to the
+    # comprehension's implicit scope and cannot rebind module ``T`` at runtime.
+    assert census.binding_lines is not None
+    assert census.binding_lines.get("T") == (1,)
+
+
+def test_walrus_inside_a_comprehension_is_a_rebind() -> None:
+    # PEP 572: an assignment expression inside a comprehension binds in the scope
+    # CONTAINING the comprehension — at module scope that genuinely rebinds T.
+    census = _census("from pkg import helper as T\nunused = [(T := x) for x in ()]\n", alias_map=_PKG_ALIAS)
+    assert census.binding_lines is not None
+    assert census.binding_lines.get("T") == (1, 2)
+
+
+def test_lambda_body_walrus_is_an_occurrence_but_not_a_rebind() -> None:
+    # A walrus in a lambda BODY binds the lambda's local, never module scope.
+    census = _census("from pkg import helper as T\ncb = lambda: (T := 1)\n", alias_map=_PKG_ALIAS)
+    assert census.values["T"].token is None
+    assert census.binding_lines is not None
+    assert census.binding_lines.get("T") == (1,)
+
+
+def test_lambda_default_walrus_is_a_rebind() -> None:
+    # Defaults are evaluated in the ENCLOSING scope at definition time.
+    census = _census("from pkg import helper as T\ncb = lambda x=(T := 1): x\n", alias_map=_PKG_ALIAS)
+    assert census.binding_lines is not None
+    assert census.binding_lines.get("T") == (1, 2)
+
+
+# ── Intra-line binding order: line evidence cannot order bindings WITHIN a line ──
+
+
+def test_same_line_import_and_rebind_tie_refuses_the_alias() -> None:
+    # ``from ... import TaintState as T; T = object`` — one physical line, two
+    # bindings, one lineno. The assignment won at runtime, so letting the import
+    # win the tie seeds the real enum for a name that no longer binds it (the
+    # ASSURED-although-rebound shape). The resolver must refuse the rewrite, which
+    # lands the form-5 read in the observable unreadable-level channel.
+    census = _census(
+        "from wardline.core.taints import TaintState as T; T = object\nLEVEL = T.ASSURED\n",
+        alias_map={"T": "wardline.core.taints.TaintState"},
+    )
+    assert census.values["LEVEL"].token is None
+
+
+def test_same_line_rebind_then_import_also_refuses_the_alias() -> None:
+    # The mirrored tie: here the IMPORT won at runtime, so refusal is conservative
+    # rather than strictly necessary — but line evidence cannot tell the two
+    # orders apart, and only refusal is fail-closed for both.
+    census = _census(
+        "T = object; from wardline.core.taints import TaintState as T\nLEVEL = T.ASSURED\n",
+        alias_map={"T": "wardline.core.taints.TaintState"},
+    )
+    assert census.values["LEVEL"].token is None
+
+
+def test_two_imports_of_one_alias_on_one_line_resolve_to_the_last() -> None:
+    # An import-import tie carries no rebind ambiguity the census cannot see:
+    # alias evidence is recorded in statement order, so the later import is the
+    # visible one and the rewrite stands.
+    census = _census(
+        "import cfg as T; from wardline.core.taints import TaintState as T\nLEVEL = T.ASSURED\n",
+        alias_map={"T": "wardline.core.taints.TaintState"},
+    )
+    assert census.values["LEVEL"].token == "ASSURED"
+
+
 def test_conditional_platform_rebind_is_unreadable_not_the_top_level_one() -> None:
     # The realistic ESCALATION shape, named because it is the one a last-wins or a
     # first-wins reader gets wrong in the seed-minting direction.

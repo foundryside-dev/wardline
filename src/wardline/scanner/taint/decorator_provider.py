@@ -397,8 +397,16 @@ def _subclass_state(value: object, walk: _Walk, depth: int) -> dict[str, object]
     state: dict[str, object] = {}
     instance_dict = _probe(value, "__dict__")
     if isinstance(instance_dict, dict):
-        for key, item in _snapshot(instance_dict.items):
-            state[str(key)] = _element(lambda item=item: _seed_value_identity(item, walk, depth))  # type: ignore[misc]
+        # GUARDED for the same reason as ``_instance_identity``'s snapshot: the
+        # ``isinstance`` gate admits dict SUBCLASSES whose ``items()`` runs pack
+        # code inside ``fingerprint()``, before any per-file isolation exists.
+        try:
+            entries = [(str(key), item) for key, item in _snapshot(instance_dict.items)]
+        except Exception:  # noqa: BLE001 — hostile dict internals must not break the digest
+            state["__dict__"] = {"t": "unreadable-instance-dict"}
+        else:
+            for key, item in entries:
+                state[key] = _element(lambda item=item: _seed_value_identity(item, walk, depth))  # type: ignore[misc]
     for slot in _slot_names(type(value)):
         if slot not in state:
             state[slot] = _element(lambda slot=slot: _seed_value_identity(getattr(value, slot), walk, depth))  # type: ignore[misc]
@@ -860,8 +868,18 @@ def _instance_identity(value: object, walk: _Walk, depth: int) -> dict[str, obje
     instance_dict = _probe(value, "__dict__")
     if isinstance(instance_dict, dict):
         # SNAPSHOT: expanding a value can set another attribute on the same instance.
-        for key, item in _snapshot(instance_dict.items):
-            state[str(key)] = _seed_value_identity(item, walk, depth)
+        # GUARDED: the ``isinstance`` gate admits dict SUBCLASSES, and a pack's
+        # ``__getattribute__`` can hand one out whose ``items()`` — or a key's
+        # ``__str__`` — runs pack code and raises. This executes inside
+        # ``fingerprint()``, BEFORE the parse loop's per-file isolation, so an
+        # escape here aborts the whole scan instead of degrading the digest.
+        try:
+            entries = [(str(key), item) for key, item in _snapshot(instance_dict.items)]
+        except Exception:  # noqa: BLE001 — hostile dict internals must not break the digest
+            state["__dict__"] = {"t": "unreadable-instance-dict"}
+        else:
+            for key, item in entries:
+                state[key] = _seed_value_identity(item, walk, depth)
     for slot in _slot_names(type(value)):
         if slot in state:
             # Already carried by ``__dict__``; re-expanding would replace the inline

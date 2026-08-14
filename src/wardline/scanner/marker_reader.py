@@ -139,10 +139,25 @@ def resolve_dotted_fqn(
                 head_fqn = head
             else:
                 last_binding_line = max(prior_lines)
-                visible_targets = tuple(
-                    target for binding_line, target in prior_aliases if binding_line == last_binding_line
+                nonimport_lines = (
+                    ()
+                    if census.nonimport_binding_lines is None
+                    else census.nonimport_binding_lines.get(head, ())
                 )
-                head_fqn = visible_targets[-1] if visible_targets else head
+                if last_binding_line in nonimport_lines:
+                    # An import and a non-import binding share the last physical
+                    # line (semicolon-joined). Line evidence cannot order bindings
+                    # WITHIN a line, so which one this use sees is unprovable —
+                    # refuse the rewrite rather than let the import win a tie its
+                    # rebind may have won at runtime (fail closed). An import-only
+                    # tie stays resolvable below: alias evidence is recorded in
+                    # statement order, so the later import is ``[-1]``.
+                    head_fqn = head
+                else:
+                    visible_targets = tuple(
+                        target for binding_line, target in prior_aliases if binding_line == last_binding_line
+                    )
+                    head_fqn = visible_targets[-1] if visible_targets else head
     return f"{head_fqn}.{rest}" if rest else head_fqn
 
 
@@ -263,11 +278,18 @@ class ModuleCensus:
     poisoned: bool
     reference_sites: frozenset[ast.stmt]
     # Source-order evidence for deciding whether an import alias is still the
-    # visible binding at a decorator or level expression. ``None`` is retained as
-    # an explicit compatibility sentinel for hand-built censuses in reader unit
-    # tests; the production builder always supplies both mappings.
+    # visible binding at a decorator or level expression. ``binding_lines`` is
+    # SCOPE-CORRECT — only bindings that can actually rebind the module name at
+    # runtime (comprehension targets and lambda bodies are excluded), because a
+    # phantom rebind refuses the rewrite fail-OPEN: the marker silently stops
+    # matching vocabulary. ``nonimport_binding_lines`` is its non-import subset,
+    # the tie evidence: a line carrying both an import and a non-import binding
+    # cannot be ordered by lineno, so the rewrite is refused there. ``None`` is
+    # retained as an explicit compatibility sentinel for hand-built censuses in
+    # reader unit tests; the production builder always supplies all three.
     binding_lines: Mapping[str, tuple[int, ...]] | None = None
     alias_bindings: Mapping[str, tuple[tuple[int, str], ...]] | None = None
+    nonimport_binding_lines: Mapping[str, tuple[int, ...]] | None = None
 
 
 def level_token(

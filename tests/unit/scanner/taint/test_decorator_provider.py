@@ -35,6 +35,49 @@ def _custom_provider_fingerprint(seed: object) -> str:
     return DecoratorTaintSourceProvider(boundary_types=(boundary,)).fingerprint()
 
 
+def test_hostile_instance_dict_snapshot_degrades_instead_of_raising() -> None:
+    # A custom pack controls its seed completely: ``__getattribute__`` may expose a
+    # dict SUBCLASS as ``__dict__`` whose ``items()`` runs pack code and raises. The
+    # provider fingerprint is computed BEFORE the parse loop's per-file isolation
+    # (pipeline.py), so an escape here aborts the whole scan with no degradation
+    # marker and the trust-boundary gate never runs. Both snapshot sites —
+    # ``_instance_identity`` and ``_subclass_state`` — must degrade, never raise.
+    class EvilItems(dict):
+        def items(self):  # noqa: D102 - hostile fixture
+            raise RuntimeError("pack boom in items()")
+
+    class HostileSeed:
+        def __call__(self, levels):  # noqa: ANN001, ANN204 - never called
+            return None
+
+        def __getattribute__(self, name: str):  # noqa: ANN204
+            if name == "__dict__":
+                return EvilItems()
+            return object.__getattribute__(self, name)
+
+    fp_instance = _custom_provider_fingerprint(HostileSeed())
+    assert isinstance(fp_instance, str) and fp_instance
+
+    class HostileMapping(dict):
+        # A transparent-builtin SUBCLASS routes through ``_subclass_state`` — the
+        # second site with the same unguarded snapshot.
+        def __getattribute__(self, name: str):  # noqa: ANN204
+            if name == "__dict__":
+                return EvilItems()
+            return object.__getattribute__(self, name)
+
+    def template(levels):  # noqa: ANN001, ANN202 - never called
+        return HOSTILE  # noqa: F821 - resolved via injected globals
+
+    seed_fn = types.FunctionType(template.__code__, {"HOSTILE": HostileMapping()}, name="seed")
+    seed_fn.__module__ = "custom_pack"
+    seed_fn.__qualname__ = "seed"
+    fp_subclass = _custom_provider_fingerprint(seed_fn)
+    assert isinstance(fp_subclass, str) and fp_subclass
+    # Degradation, not blinding: the two hostile shapes still discriminate.
+    assert fp_instance != fp_subclass
+
+
 def test_custom_seed_fingerprint_includes_referenced_global_names() -> None:
     seed_a = eval("lambda levels: safe_seed")  # noqa: S307 - local test fixture, no user input
     seed_b = eval("lambda levels: raw_seed")  # noqa: S307 - local test fixture, no user input
@@ -118,6 +161,33 @@ def test_marker_alias_resolves_at_decorator_before_later_import(tmp_path) -> Non
         "def build_record(p):\n"
         "    return read_raw(p)\n"
         "from wardline.decorators import external_boundary as marker\n",
+        encoding="utf-8",
+    )
+
+    result = run_scan(tmp_path)
+
+    assert result.context is not None
+    assert "m.build_record" in result.context.declared_qualnames
+    assert any(f.rule_id == "PY-WL-101" and f.qualname == "m.build_record" for f in result.findings)
+
+
+def test_comprehension_target_does_not_shadow_a_marker_alias(tmp_path) -> None:
+    # A module-level comprehension target is LOCAL to the comprehension's implicit
+    # scope: at runtime ``marker`` still binds the real decorator, so the marker is
+    # live and must seed. Counting the target as a module rebind refused the alias
+    # rewrite and dropped the seed with EVERY diagnostic channel empty — an inert
+    # scan over a validly-marked module (the fail-open direction).
+    from wardline.core.run import run_scan
+
+    (tmp_path / "m.py").write_text(
+        "from wardline.decorators import external_boundary, trusted as marker\n"
+        "unused = [marker for marker in ()]\n"
+        "@external_boundary\n"
+        "def read_raw(p):\n"
+        "    return p\n"
+        "@marker(level='ASSURED')\n"
+        "def build_record(p):\n"
+        "    return read_raw(p)\n",
         encoding="utf-8",
     )
 
