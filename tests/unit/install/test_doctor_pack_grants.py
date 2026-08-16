@@ -66,9 +66,7 @@ def test_project_mcp_check_accepts_grant_flags(tmp_path: Path, monkeypatch: pyte
     assert check.ok, check.message
 
 
-def test_project_mcp_check_names_divergence_not_missing(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_project_mcp_check_names_divergence_not_missing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     # A present-but-noncanonical entry is a different failure than an absent one;
     # "missing wardline server" for a visibly present entry sent the operator
     # chasing the wrong problem.
