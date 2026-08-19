@@ -1,5 +1,5 @@
 {
   "corpus_version": 6,
   "fingerprint_scheme": "wlfp2",
-  "reason": "call-site full-span discriminator"
+  "reason": "added third-party serialization sinks to _SERIALISATION_SINKS"
 }
