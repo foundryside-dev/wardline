@@ -1,0 +1,3 @@
+## 2025-02-28 - AST Traversal Memory Optimization
+**Learning:** Eagerly materializing AST nodes into lists via `list(ast.iter_child_nodes(node))` during deep recursive AST traversal creates unnecessary memory allocations and GC pressure, particularly in hot paths like taint analysis.
+**Action:** When implementing or modifying AST traversal functions, accept `Iterable[ast.AST]` in the signature and pass generators directly instead of eagerly materializing them into lists to prevent unnecessary memory allocations.
