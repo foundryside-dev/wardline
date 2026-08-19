@@ -24,9 +24,7 @@ PACK_NAME = "scripts.grantpack"
 def _pack_project(tmp_path: Path) -> Path:
     proj = tmp_path / "proj"
     (proj / "scripts").mkdir(parents=True)
-    (proj / "scripts" / "grantpack.py").write_text(
-        'config = {"exclude": ["skipped_by_pack.py"]}\n', encoding="utf-8"
-    )
+    (proj / "scripts" / "grantpack.py").write_text('config = {"exclude": ["skipped_by_pack.py"]}\n', encoding="utf-8")
     (proj / "weft.toml").write_text(f'[wardline]\npacks = ["{PACK_NAME}"]\n', encoding="utf-8")
     (proj / "kept.py").write_text("def kept():\n    return 1\n", encoding="utf-8")
     (proj / "skipped_by_pack.py").write_text("def skipped():\n    return 1\n", encoding="utf-8")
