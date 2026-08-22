@@ -549,9 +549,7 @@ def test_repair_preserves_trust_pack_grant_flags(tmp_path: Path, monkeypatch: py
         "--allow-custom-packs",
     ]
     (tmp_path / ".mcp.json").write_text(
-        json.dumps(
-            {"mcpServers": {"wardline": {"type": "stdio", "command": "/bin/wardline", "args": list(args)}}}
-        ),
+        json.dumps({"mcpServers": {"wardline": {"type": "stdio", "command": "/bin/wardline", "args": list(args)}}}),
         encoding="utf-8",
     )
     assert merge_mcp_entry(tmp_path) == "unchanged"
@@ -581,9 +579,7 @@ def test_repair_preserves_repeated_trust_pack_grants(tmp_path: Path, monkeypatch
     assert merge_mcp_entry(tmp_path) == "unchanged"
 
 
-def test_repair_drops_dangling_trust_pack_but_keeps_bare_grant(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_repair_drops_dangling_trust_pack_but_keeps_bare_grant(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     # A --trust-pack with a missing or flag-shaped value is malformed: it must be
     # dropped cleanly, and must never swallow the following --allow-custom-packs.
     monkeypatch.setattr("wardline.install.mcp_json._find_wardline_command", lambda: "/bin/wardline")
