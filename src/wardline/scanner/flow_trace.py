@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import ast
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 
 from wardline.core.finding import Finding, Location
@@ -52,7 +52,7 @@ def _arg_taint_local(
     return None
 
 
-def _find_assignment_callee(nodes: Sequence[ast.AST], name: str, entity_node: ast.AST) -> str | None:
+def _find_assignment_callee(nodes: Iterable[ast.AST], name: str, entity_node: ast.AST) -> str | None:
     result: str | None = None
     for node in nodes:
         if (
@@ -67,7 +67,7 @@ def _find_assignment_callee(nodes: Sequence[ast.AST], name: str, entity_node: as
             if callee is not None and any(isinstance(t, ast.Name) and t.id == name for t in node.targets):
                 result = callee
         for child in ast.iter_child_nodes(node):
-            nested = _find_assignment_callee([child] if isinstance(child, ast.stmt) else [], name, entity_node)
+            nested = _find_assignment_callee((child,) if isinstance(child, ast.stmt) else (), name, entity_node)
             if nested is not None:
                 result = nested
     return result
